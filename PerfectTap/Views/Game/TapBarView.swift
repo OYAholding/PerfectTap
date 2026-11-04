@@ -18,6 +18,7 @@ struct TapBarView: View {
     private let perfectHalf: CGFloat = 0.04   // ±4% from center (before scaling)
     private let greatHalf: CGFloat   = 0.10   // ±10%
     private let goodHalf: CGFloat    = 0.20   // ±20%
+    private let glowPadding: CGFloat = 32     // ≥ largest shadow radius
 
     var body: some View {
         VStack(spacing: 6) {
@@ -59,7 +60,12 @@ struct TapBarView: View {
                         .shadow(color: Color.white.opacity(0.9), radius: 6)
                         .shadow(color: theme.glowColor.opacity(0.7), radius: 14)
                         .shadow(color: theme.glowColor.opacity(0.3), radius: 24)
+                        // Give the rasterized layer room for the glow, otherwise
+                        // drawingGroup clips the shadows to a hard 20×48 box.
+                        // The negative padding restores the original layout size.
+                        .padding(glowPadding)
                         .drawingGroup()  // rasterize shadows — GPU compositing instead of per-frame calculation
+                        .padding(-glowPadding)
                         .offset(x: w * indicatorRelay.position - 10)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 18))
