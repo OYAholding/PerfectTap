@@ -15,11 +15,16 @@ struct GameOverView: View {
     @State private var xpBarProgress: Double = 0
     @State private var isWatchingAd = false
     @State private var didDoubleCoins = false
+    /// Blocks double taps on PLAY AGAIN / HOME while the (async) post-game
+    /// interstitial check runs — otherwise two GameViews could be pushed.
+    @State private var isNavigating = false
 
     @State private var profile: PlayerProfile = PlayerProfile.load() ?? PlayerProfile()
 
     @MainActor
     private func navigateWithPostGameInterstitial(_ navigation: @escaping () -> Void) {
+        guard !isNavigating else { return }
+        isNavigating = true
         gameOverAdFlowLog(
             "navigateWithPostGameInterstitial called: mode=\(result.mode.rawValue), isDuelSession=\(result.isDuelSession)"
         )

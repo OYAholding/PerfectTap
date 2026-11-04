@@ -67,6 +67,20 @@ final class AuthViewModel: ObservableObject {
                     currentUID = firebaseUID ?? profile.uid
                 }
                 authState = profile.username.isEmpty ? .needsUsername : .authenticated
+            } else if firebaseUID != nil,
+                      let cloudProfile = await FirebaseService.shared.loadProfile(),
+                      !cloudProfile.username.isEmpty {
+                // No local profile, but Firebase restored a session (Keychain
+                // survives reinstall) and the cloud has this player's progress.
+                // Restore it instead of creating a blank profile — previously the
+                // blank profile was saved with merge:true and wiped cloud coins,
+                // levels, purchases and best scores.
+                var restored = cloudProfile
+                restored.uid = firebaseUID ?? cloudProfile.uid
+                if restored.friendCode.isEmpty { restored.friendCode = generateFriendCode() }
+                restored.save()
+                currentUID = restored.uid
+                authState = .authenticated
             } else {
                 // First launch — create guest profile with Firebase UID
                 let uid = firebaseUID ?? getOrCreateDeviceUID()

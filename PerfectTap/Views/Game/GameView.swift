@@ -65,7 +65,9 @@ struct GameView: View {
             vm.cleanup()
             SoundEngine.shared.stopBgMusic()
         }
-        .onChange(of: vm.lastTapAccuracy) { _ in
+        // Keyed on a per-tap counter so repeated identical results
+        // (PERFECT → PERFECT) still show the popup and particles.
+        .onChange(of: vm.tapSequence) { _ in
             withAnimation(.easeOut(duration: 0.15)) {
                 showAccuracy = true
             }
@@ -282,9 +284,11 @@ struct GameView: View {
 
     // MARK: - Tap button (sole gameplay input)
     private var tapButton: some View {
-        Button {
-            vm.handleTap()
-        } label: {
+        // Touch-DOWN input: scores the instant the finger lands, using the
+        // touch's own timestamp (a SwiftUI Button only fires on release).
+        TouchDownTapArea(accessibilityLabel: "TAP!", onTouchDown: { timestamp in
+            vm.handleTap(touchTimestamp: timestamp)
+        }) {
             RoundedRectangle(cornerRadius: 20)
                 .fill(buttonGradient)
                 .frame(height: 80)
@@ -295,8 +299,8 @@ struct GameView: View {
                         .foregroundColor(.white)
                 )
                 .shadow(color: modeShadowColor.opacity(0.3), radius: 20)
+                .accessibilityHidden(true)
         }
-        .buttonStyle(TapButtonStyle())
     }
 
     private var quitButton: some View {

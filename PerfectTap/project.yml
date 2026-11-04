@@ -1,6 +1,8 @@
 name: PerfectTap
 options:
   bundleIdPrefix: com.perfecttap
+  # Settings below were previously set by hand in Xcode and are mirrored here
+  # so `xcodegen generate` never drops them.
   deploymentTarget:
     iOS: "16.0"
   xcodeVersion: "15.0"
@@ -10,6 +12,10 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: ""
+    DEAD_CODE_STRIPPING: YES
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    STRING_CATALOG_GENERATE_SYMBOLS: YES
 
 packages:
   GoogleMobileAds:
@@ -29,6 +35,7 @@ targets:
           - project.yml
           - SETUP.md
           - PerfectTapUITests/**
+          - PerfectTapTests/**
           - "*.xcodeproj"
           - "*.xcworkspace"
     dependencies:
@@ -50,7 +57,9 @@ targets:
         INFOPLIST_GENERATION_MODE: GeneratedFile
         PRODUCT_BUNDLE_IDENTIFIER: com.perfecttap.app
         PRODUCT_NAME: PerfectTap
-        MARKETING_VERSION: "1.0.0"
+        DEVELOPMENT_TEAM: K88C7DPG4C
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.arcade-games"
+        MARKETING_VERSION: "1.0.2"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -115,6 +124,23 @@ targets:
           - SKAdNetworkIdentifier: 3rd42ekr43.skadnetwork
           - SKAdNetworkIdentifier: 3qcr597p9d.skadnetwork
 
+  PerfectTapTests:
+    type: bundle.unit-test
+    supportedDestinations: [iOS]
+    platform: iOS
+    sources:
+      - path: PerfectTapTests
+    dependencies:
+      - target: PerfectTap
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.perfecttap.app.tests
+        DEVELOPMENT_TEAM: K88C7DPG4C
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PerfectTap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PerfectTap"
+
   PerfectTapUITests:
     type: bundle.ui-testing
     supportedDestinations: [iOS]
@@ -126,5 +152,15 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.perfecttap.app.uitests
+        DEVELOPMENT_TEAM: K88C7DPG4C
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
+
+schemes:
+  PerfectTap:
+    build:
+      targets:
+        PerfectTap: all
+    test:
+      targets:
+        - PerfectTapTests

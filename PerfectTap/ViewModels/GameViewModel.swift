@@ -2,22 +2,7 @@ import Foundation
 import QuartzCore
 import Combine
 
-// MARK: - Accuracy result from a tap
-enum TapAccuracy: String {
-    case perfect = "PERFECT"
-    case great   = "GREAT"
-    case good    = "GOOD"
-    case miss    = "MISS"
-
-    var color: String {
-        switch self {
-        case .perfect: return "violet"
-        case .great:   return "green"
-        case .good:    return "yellow"
-        case .miss:    return "red"
-        }
-    }
-}
+// TapAccuracy lives in Utils/TimingEngine.swift (pure, unit-tested).
 
 // MARK: - Game phase
 enum GamePhase {
@@ -60,6 +45,9 @@ final class GameViewModel: ObservableObject {
     @Published var timeLeft: Double = GameConfig.timedDuration
     @Published var lastTapAccuracy: TapAccuracy? = nil
     @Published var lastTapPoints: Int = 0
+    /// Increments on every scored tap — drives feedback even when the
+    /// accuracy repeats (onChange(of: lastTapAccuracy) misses PERFECT→PERFECT).
+    @Published private(set) var tapSequence: Int = 0
     @Published var showReviveModal: Bool = false
     @Published var zenPerfects: Int = 0
     @Published var zenGreats: Int = 0
@@ -96,6 +84,7 @@ final class GameViewModel: ObservableObject {
     private var displayLink: CADisplayLink?
     private var displayLinkProxy: DisplayLinkProxy?
     private var lastTimestamp: CFTimeInterval = 0
+    private var lastFrameDuration: CFTimeInterval = 1.0 / 60.0
     private var gameStartTime: CFTimeInterval = 0
     private var timedStartTime: CFTimeInterval = 0
     private var lifecyclePauseStart: CFTimeInterval? = nil
@@ -250,21 +239,17 @@ final class GameViewModel: ObservableObject {
         guard !gameOverRef, !pausedRef else { return }
 
         let now = link.timestamp
+        let frame = link.targetTimestamp - link.timestamp
+        if frame > 0, frame < 0.1 { lastFrameDuration = frame }
         if lastTimestamp == 0 { lastTimestamp = now }
         let delta = now - lastTimestamp
         lastTimestamp = now
 
-        // Move indicator
-        let step = delta / speedRef
-        positionRef += directionRef * step
-
-        if positionRef >= 1.0 {
-            positionRef = 1.0
-            directionRef = -1.0
-        } else if positionRef <= 0.0 {
-            positionRef = 0.0
-            directionRef = 1.0
-        }
+        // Move indicator (reflects off edges, carrying overshoot)
+        let moved = TimingEngine.advance(position: positionRef, direction: directionRef,
+                                         dt: delta, speed: speedRef)
+        positionRef = moved.position
+        directionRef = moved.direction
 
         // Update position via relay — only TapBarView observes this,
         // so only the tap bar re-renders, not the entire GameView.
@@ -327,7 +312,13 @@ final class GameViewModel: ObservableObject {
     }
 
     // MARK: - Tap handler
-    func handleTap() {
+    /// - Parameter touchTimestamp: the UITouch timestamp (same clock as
+    ///   CADisplayLink: CACurrentMediaTime). When provided, the tap is scored at
+    ///   the indicator position the player was actually SEEING when the finger
+    ///   landed: touch time minus one frame of display latency, extrapolated
+    ///   from the last simulated frame. This removes the random 0–16 ms error
+    ///   of "whatever the last tick was" and makes scoring deterministic.
+    func handleTap(touchTimestamp: CFTimeInterval? = nil) {
         #if DEBUG
         let tapStartedAt = CACurrentMediaTime()
         defer {
@@ -340,8 +331,15 @@ final class GameViewModel: ObservableObject {
 
         guard case .playing = phase, !gameOverRef, !pausedRef else { return }
 
-        let pos = positionRef
-        let distFromCenter = abs(pos - 0.5) / 0.5
+        var pos = positionRef
+        if let touchTimestamp, lastTimestamp > 0 {
+            let seenAt = touchTimestamp - lastFrameDuration * TimingEngine.displayLatencyFrames
+            let dt = seenAt - lastTimestamp
+            if abs(dt) <= TimingEngine.maxTouchExtrapolation {
+                pos = TimingEngine.advance(position: positionRef, direction: directionRef,
+                                           dt: dt, speed: speedRef).position
+            }
+        }
 
         // Dynamic zone scaling for Precision and Tiny Window modes
         let dynamicPerfectScale: Double
@@ -354,25 +352,12 @@ final class GameViewModel: ObservableObject {
         } else {
             dynamicPerfectScale = mode.perfectZoneScale
         }
-        let pZone = GameConfig.perfectZone * dynamicPerfectScale
-        let gZone = GameConfig.greatZone
-        let oZone = GameConfig.goodZone
-
-        var accuracy: TapAccuracy
-        var points: Int
-        if distFromCenter <= pZone {
-            accuracy = .perfect; points = GameConfig.perfectPoints
-        } else if distFromCenter <= gZone {
-            accuracy = .great;   points = GameConfig.greatPoints
-        } else if distFromCenter <= oZone {
-            accuracy = .good;    points = GameConfig.goodPoints
-        } else {
-            accuracy = .miss;    points = 0
-        }
-
-        if mode == .precision && accuracy != .perfect {
-            accuracy = .miss; points = 0
-        }
+        // Zones are fractions of the full bar width from center — the same
+        // geometry TapBarView draws (fixes the port bug that halved every window).
+        let accuracy = TimingEngine.accuracy(at: pos,
+                                             perfectScale: dynamicPerfectScale,
+                                             strictPerfectOnly: mode == .precision)
+        let points = TimingEngine.basePoints(for: accuracy)
 
         // Combo
         let prevCombo = comboRef
@@ -527,6 +512,7 @@ final class GameViewModel: ObservableObject {
 
         lastTapAccuracy = accuracy
         lastTapPoints = finalPoints
+        tapSequence &+= 1
     }
 
     // MARK: - Out of lives

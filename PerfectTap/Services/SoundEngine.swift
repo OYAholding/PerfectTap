@@ -30,6 +30,11 @@ final class SoundEngine {
 
     // Background music
     private var musicTimer: Timer?
+    /// Set synchronously by start/stop. Buffers are synthesized asynchronously,
+    /// so `musicTimer` alone can't tell whether music is (about to be) playing —
+    /// that let two quick starts double the loop and let stop be ignored.
+    private var musicActive = false
+    private var musicSession = 0
     private let musicPoolSize = 24
     private var musicPool: [AVAudioPlayerNode] = []
     private var nextMusicIndex = 0
@@ -242,11 +247,13 @@ final class SoundEngine {
 
     func startBgMusic() {
         guard isMusicEnabled else { return }
-        guard musicTimer == nil else { return }
-        scheduleMusicLoop()
+        guard !musicActive else { return }
+        musicActive = true
+        musicSession += 1
+        scheduleMusicLoop(session: musicSession)
     }
 
-    private func scheduleMusicLoop() {
+    private func scheduleMusicLoop(session: Int) {
         let beatDur: Double = 60.0 / 90.0
 
         // Bass notes (Hz) — same as web version
@@ -276,7 +283,7 @@ final class SoundEngine {
             }
 
             DispatchQueue.main.async { [self] in
-                guard musicTimer != nil || isMusicEnabled else { return }
+                guard musicActive, session == musicSession, isMusicEnabled else { return }
                 if !engine.isRunning { try? engine.start() }
 
                 for (buffer, delay) in musicTones {
@@ -291,7 +298,7 @@ final class SoundEngine {
                 // Schedule next loop
                 musicTimer = Timer.scheduledTimer(withTimeInterval: totalDur - 0.08, repeats: false) { [weak self] _ in
                     self?.musicTimer = nil
-                    self?.scheduleMusicLoop()
+                    self?.scheduleMusicLoop(session: session)
                 }
             }
         }
@@ -312,6 +319,8 @@ final class SoundEngine {
     }
 
     func stopBgMusic() {
+        musicActive = false
+        musicSession += 1
         musicTimer?.invalidate()
         musicTimer = nil
         // Stop all music nodes immediately

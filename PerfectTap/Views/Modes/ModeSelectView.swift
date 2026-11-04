@@ -4,6 +4,7 @@ import SwiftUI
 struct ModeSelectView: View {
     @EnvironmentObject var router: AppRouter
     @State private var profile: PlayerProfile = PlayerProfile.load() ?? PlayerProfile()
+    @State private var isLaunching = false
 
     var body: some View {
         ZStack {
@@ -35,6 +36,9 @@ struct ModeSelectView: View {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         ForEach(GameMode.selectableModes, id: \.self) { mode in
                             ModeCardView(mode: mode, bestScore: profile.bestScore(for: mode), hasPlayed: profile.bestScore(for: mode) > 0 || mode == .classic) {
+                                // Guard against double taps pushing two games.
+                                guard !isLaunching else { return }
+                                isLaunching = true
                                 router.push(.game(mode))
                             }
                         }
@@ -47,6 +51,7 @@ struct ModeSelectView: View {
         .navigationBarHidden(true)
         .onAppear {
             profile = PlayerProfile.load() ?? PlayerProfile()
+            isLaunching = false
         }
     }
 }

@@ -12,6 +12,7 @@
 		02C326F70EAED2ED101D3FF9 /* GameViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 040BE6C1FE8834C0B6BE09CD /* GameViewModel.swift */; };
 		03059B85FCE98B53354742EA /* SocialModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C19079025CBD0FC5FB0BC5A /* SocialModels.swift */; };
 		03C7912C28C0B4F5CA59F2B1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E61F57EFA0BD4D28AB27A58B /* PrivacyInfo.xcprivacy */; };
+		049C170B02536E5CD075F4BB /* TouchDownTapArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DF9866D162166E062901CE4 /* TouchDownTapArea.swift */; };
 		05FB4A51A459C8FD85C04C73 /* PlayerProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 281CC4A6F29CD6D4ED8467DB /* PlayerProfile.swift */; };
 		0B5A9741D5F8C3F398C537F3 /* ViewHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC360F8EC7742C2A17F2D8F1 /* ViewHelpers.swift */; };
 		0DEBDD647C647AA18CDCADEE /* AnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0254D8266FEBE3A7F003F704 /* AnalyticsService.swift */; };
@@ -55,6 +56,8 @@
 		C3E2B0CA1A31834FA15B832E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0646B6981291830664A76E36 /* HomeView.swift */; };
 		CADD0028F45C4499B3E63AF4 /* SeasonPassView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED41A4FDC10908AA6CDB5FEA /* SeasonPassView.swift */; };
 		CD55ECB47EAC23DF8316018A /* EconomyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5450378F4E81BAAC75EDF6 /* EconomyManager.swift */; };
+		CEBF636D4F85CFA9A567069B /* TimingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D6F40C24156BD0E3AB89584 /* TimingEngine.swift */; };
+		D3EEEB8D79675DCE566FEDBD /* TimingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C75868A125000157351554F /* TimingEngineTests.swift */; };
 		D61BBAB96666CF53CF62A821 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 09D01A97AB1450E90D47D722 /* FirebaseFunctions */; };
 		D6F4C288BCBAB831507140D8 /* ReviveModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67EEC02093E6A68BB1D8D0C9 /* ReviveModalView.swift */; };
 		DD540EF8DDE124CA7828A42D /* AdManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC219F16D11B4A20869DC746 /* AdManager.swift */; };
@@ -69,6 +72,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		22636FB18D9433D8FB03D9B6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BB6A3835B93C3A7397217A92 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F02F8AA841056D6ED520ACBC;
+			remoteInfo = PerfectTap;
+		};
 		E5E7059F81CBB290CDAF9922 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = BB6A3835B93C3A7397217A92 /* Project object */;
@@ -88,6 +98,7 @@
 		08A4A1CF1221F95BF5131884 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		09DE701071D3DBAE85A7BA9A /* LegalTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalTextView.swift; sourceTree = "<group>"; };
 		0C19079025CBD0FC5FB0BC5A /* SocialModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialModels.swift; sourceTree = "<group>"; };
+		0D6F40C24156BD0E3AB89584 /* TimingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingEngine.swift; sourceTree = "<group>"; };
 		0E791510610BEA4F3B739915 /* DuelResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelResultsView.swift; sourceTree = "<group>"; };
 		15438D58AB3BA7798AD8F377 /* Quest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Quest.swift; sourceTree = "<group>"; };
 		1A8FC689866162402B344D47 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -99,11 +110,13 @@
 		38AF5DD8F1F1A59913B28ED8 /* FriendDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendDetailView.swift; sourceTree = "<group>"; };
 		488E5B36207209905F8D101A /* ShopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopView.swift; sourceTree = "<group>"; };
 		4B7EA7D37E17D5DDA68AE21F /* FirebaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseService.swift; sourceTree = "<group>"; };
+		4C75868A125000157351554F /* TimingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingEngineTests.swift; sourceTree = "<group>"; };
 		5743C0587E2AA0DE2A228632 /* SetUsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetUsernameView.swift; sourceTree = "<group>"; };
 		6329CE3AEC170E6896B415D9 /* LuckyWheelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuckyWheelView.swift; sourceTree = "<group>"; };
 		651BB85DC7EADE374D1F5C74 /* ModeSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectView.swift; sourceTree = "<group>"; };
 		67EEC02093E6A68BB1D8D0C9 /* ReviveModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviveModalView.swift; sourceTree = "<group>"; };
 		6BAC5A30E439191D71C2BB9B /* AchievementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AchievementsView.swift; sourceTree = "<group>"; };
+		6DF9866D162166E062901CE4 /* TouchDownTapArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchDownTapArea.swift; sourceTree = "<group>"; };
 		854CD79F2CC57FC0F1622D1A /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
 		8AB144655DBE70DAD84BC758 /* DuelLobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelLobbyView.swift; sourceTree = "<group>"; };
 		8BBF645FEB2EED69BFB0EF77 /* GameConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameConfig.swift; sourceTree = "<group>"; };
@@ -116,7 +129,7 @@
 		A52B866522210CECF111961F /* ModeRuntimeQATests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeRuntimeQATests.swift; sourceTree = "<group>"; };
 		A7873DC6E5FAE59984C052C2 /* GameOverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOverView.swift; sourceTree = "<group>"; };
 		AC6D3450CFE33A0B375A5B9D /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
-		AD736F75085FE008815E13EA /* PerfectTapUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PerfectTapUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AD736F75085FE008815E13EA /* PerfectTapUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PerfectTapUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AFC8C8DA628428FF25DCAD1B /* GameSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSettingsView.swift; sourceTree = "<group>"; };
 		BE5450378F4E81BAAC75EDF6 /* EconomyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconomyManager.swift; sourceTree = "<group>"; };
 		C3F851EE18AE036813192424 /* SoundEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundEngine.swift; sourceTree = "<group>"; };
@@ -126,10 +139,11 @@
 		CC88E58BD5DF643239BF3C13 /* ShopItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopItem.swift; sourceTree = "<group>"; };
 		CDA347BF7085D0C57524AEF4 /* GameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameView.swift; sourceTree = "<group>"; };
 		CF05286A4FD96F6397E237D4 /* ParticleEffectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParticleEffectView.swift; sourceTree = "<group>"; };
+		D161CB014BDEF7939B0BD369 /* PerfectTapTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PerfectTapTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8F0EBB76E8A3A4254DC7793 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		D9B6BC6DFC04AC77F9307006 /* PerfectTap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PerfectTap.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D9B6BC6DFC04AC77F9307006 /* PerfectTap.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PerfectTap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DC360F8EC7742C2A17F2D8F1 /* ViewHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewHelpers.swift; sourceTree = "<group>"; };
-		E61F57EFA0BD4D28AB27A58B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		E61F57EFA0BD4D28AB27A58B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		E9F9EA6B3A63A91A7E177720 /* SeasonPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeasonPass.swift; sourceTree = "<group>"; };
 		EC243613CC9EE154AF0F856A /* ChallengesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengesView.swift; sourceTree = "<group>"; };
 		ED41A4FDC10908AA6CDB5FEA /* SeasonPassView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeasonPassView.swift; sourceTree = "<group>"; };
@@ -158,8 +172,17 @@
 			isa = PBXGroup;
 			children = (
 				CF05286A4FD96F6397E237D4 /* ParticleEffectView.swift */,
+				6DF9866D162166E062901CE4 /* TouchDownTapArea.swift */,
 			);
 			path = Components;
+			sourceTree = "<group>";
+		};
+		1932DC08638C6103DD3A9261 /* PerfectTapTests */ = {
+			isa = PBXGroup;
+			children = (
+				4C75868A125000157351554F /* TimingEngineTests.swift */,
+			);
+			path = PerfectTapTests;
 			sourceTree = "<group>";
 		};
 		1C7236A3CAB72F3D11B7C9D9 /* Profile */ = {
@@ -202,6 +225,7 @@
 				AC6D3450CFE33A0B375A5B9D /* AppRouter.swift */,
 				8BBF645FEB2EED69BFB0EF77 /* GameConfig.swift */,
 				1F19064322EEC58A61CCBCE2 /* ThemeManager.swift */,
+				0D6F40C24156BD0E3AB89584 /* TimingEngine.swift */,
 				DC360F8EC7742C2A17F2D8F1 /* ViewHelpers.swift */,
 			);
 			path = Utils;
@@ -243,6 +267,7 @@
 				15E1B6149D749E35ABF884C6 /* Components */,
 				353BB5DEE68AF30FDF922BE4 /* Models */,
 				D6C23ECD74BAD2B868DA3E2F /* PerfectTap */,
+				1932DC08638C6103DD3A9261 /* PerfectTapTests */,
 				E43766FAAAAB71C1FFCC60C8 /* PerfectTapUITests */,
 				33FC09F5B5836DB87FDB66A1 /* Services */,
 				33CA5E33ED3B770FBDC68BE7 /* Utils */,
@@ -256,6 +281,7 @@
 			isa = PBXGroup;
 			children = (
 				D9B6BC6DFC04AC77F9307006 /* PerfectTap.app */,
+				D161CB014BDEF7939B0BD369 /* PerfectTapTests.xctest */,
 				AD736F75085FE008815E13EA /* PerfectTapUITests.xctest */,
 			);
 			name = Products;
@@ -324,6 +350,12 @@
 				8CFF05E8BA3D2C59F97A17AD /* Info.plist */,
 				CBA39D902F0065CF4B2C51CB /* PerfectTapApp.swift */,
 				E61F57EFA0BD4D28AB27A58B /* PrivacyInfo.xcprivacy */,
+				15E1B6149D749E35ABF884C6 /* Components */,
+				353BB5DEE68AF30FDF922BE4 /* Models */,
+				33FC09F5B5836DB87FDB66A1 /* Services */,
+				33CA5E33ED3B770FBDC68BE7 /* Utils */,
+				E8D4EB1FD5DC56FD4CE07CF5 /* ViewModels */,
+				1E2ACB8602FCB4FC762AA88C /* Views */,
 			);
 			name = PerfectTap;
 			path = .;
@@ -389,6 +421,24 @@
 			productReference = AD736F75085FE008815E13EA /* PerfectTapUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		34A3337D8DFEDDA6336EB07B /* PerfectTapTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DF7501577CB994DDECE4FA10 /* Build configuration list for PBXNativeTarget "PerfectTapTests" */;
+			buildPhases = (
+				9DEB89C2BB6BD190A4CA86D0 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				6851536214FE08034B3411EB /* PBXTargetDependency */,
+			);
+			name = PerfectTapTests;
+			packageProductDependencies = (
+			);
+			productName = PerfectTapTests;
+			productReference = D161CB014BDEF7939B0BD369 /* PerfectTapTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		F02F8AA841056D6ED520ACBC /* PerfectTap */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F32A1B8BBA1CC23C02FB2D3D /* Build configuration list for PBXNativeTarget "PerfectTap" */;
@@ -422,13 +472,19 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					193F79436D07CD98CAF2E847 = {
+						DevelopmentTeam = K88C7DPG4C;
 						ProvisioningStyle = Automatic;
 						TestTargetID = F02F8AA841056D6ED520ACBC;
 					};
+					34A3337D8DFEDDA6336EB07B = {
+						DevelopmentTeam = K88C7DPG4C;
+						ProvisioningStyle = Automatic;
+					};
 					F02F8AA841056D6ED520ACBC = {
+						DevelopmentTeam = K88C7DPG4C;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -452,6 +508,7 @@
 			projectRoot = "";
 			targets = (
 				F02F8AA841056D6ED520ACBC /* PerfectTap */,
+				34A3337D8DFEDDA6336EB07B /* PerfectTapTests */,
 				193F79436D07CD98CAF2E847 /* PerfectTapUITests */,
 			);
 		};
@@ -521,8 +578,18 @@
 				334CDB83691177A98E5D02AE /* SoundEngine.swift in Sources */,
 				A7B86CE07ACB635EA7604F65 /* TapBarView.swift in Sources */,
 				6CF52BA882A844CE31E94D02 /* ThemeManager.swift in Sources */,
+				CEBF636D4F85CFA9A567069B /* TimingEngine.swift in Sources */,
+				049C170B02536E5CD075F4BB /* TouchDownTapArea.swift in Sources */,
 				13D63030334F8CA482A662F7 /* TutorialView.swift in Sources */,
 				0B5A9741D5F8C3F398C537F3 /* ViewHelpers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9DEB89C2BB6BD190A4CA86D0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D3EEEB8D79675DCE566FEDBD /* TimingEngineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -542,6 +609,11 @@
 			target = F02F8AA841056D6ED520ACBC /* PerfectTap */;
 			targetProxy = E5E7059F81CBB290CDAF9922 /* PBXContainerItemProxy */;
 		};
+		6851536214FE08034B3411EB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F02F8AA841056D6ED520ACBC /* PerfectTap */;
+			targetProxy = 22636FB18D9433D8FB03D9B6 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -553,7 +625,6 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = K88C7DPG4C;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -649,6 +720,52 @@
 			};
 			name = Debug;
 		};
+		3529994E09A8614CD7667A38 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = K88C7DPG4C;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.perfecttap.app.tests;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PerfectTap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PerfectTap";
+			};
+			name = Release;
+		};
+		54A165AE38F187C51CF724A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = K88C7DPG4C;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.perfecttap.app.tests;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PerfectTap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PerfectTap";
+			};
+			name = Debug;
+		};
 		7F072F38FA5973FD5E559913 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -657,7 +774,6 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = K88C7DPG4C;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -800,6 +916,15 @@
 			buildConfigurations = (
 				1DCF47838B4391B7C1CDCFBC /* Debug */,
 				BB23133AD91FA2529D72A072 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DF7501577CB994DDECE4FA10 /* Build configuration list for PBXNativeTarget "PerfectTapTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				54A165AE38F187C51CF724A9 /* Debug */,
+				3529994E09A8614CD7667A38 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
