@@ -79,6 +79,8 @@ final class GameViewModel: ObservableObject {
     private var hasUsedReviveRef: Bool = false
     private var perfectsInFirst20Ref: Int = 0
     private var didFinalizeRef: Bool = false  // guard against double finalize
+    /// Server-issued session (Cloud Function `startGame`), requested at GO.
+    private var scoreSessionTask: Task<String?, Never>? = nil
 
     // Timing — use a proxy object to break retain cycle
     private var displayLink: CADisplayLink?
@@ -190,6 +192,10 @@ final class GameViewModel: ObservableObject {
                     guard let self, !self.gameOverRef else { return }
                     if count == 0 {
                         self.soundEngine?.play(.countdownGo)
+                        let launchedMode = self.mode
+                        self.scoreSessionTask = Task {
+                            await FirebaseService.shared.startGameSession(mode: launchedMode)
+                        }
                         self.phase = .playing
                         self.startGameLoop()
                         self.gameStartTime = CACurrentMediaTime()
@@ -677,7 +683,10 @@ final class GameViewModel: ObservableObject {
 
         Task {
             await FirebaseService.shared.saveProfile(profile)
-            await FirebaseService.shared.submitScore(mode: mode, score: scoreRef, maxCombo: maxComboRef, profile: profile)
+            let sessionId = await scoreSessionTask?.value
+            await FirebaseService.shared.submitScore(mode: mode, score: scoreRef, maxCombo: maxComboRef,
+                                                     taps: totalTapsRef, perfects: perfectCountRef,
+                                                     sessionId: sessionId)
             if hasValidDuelContext, let ctx = duelContext {
                 await FirebaseService.shared.submitDuelScore(duelId: ctx.duelId, role: ctx.role.rawValue, score: scoreRef, maxCombo: maxComboRef)
                 // NOTE: Do NOT clear DuelContext here — DuelResultsView reads it on appear.

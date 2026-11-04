@@ -11,6 +11,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         FirebaseApp.configure()
+        FirebaseService.connectToLocalEmulatorsIfRequested()
         AdManager.shared.initializeSDK()
         return true
     }

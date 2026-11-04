@@ -121,6 +121,10 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
 
     var hasTimer: Bool { self == .timed || self == .rush }
 
+    /// Ranked on the server-verified leaderboard (must match MODES in
+    /// functions/src/scoring.ts).
+    var isRanked: Bool { trackScore && self != .duel }
+
     var isClassicLike: Bool { self == .classic || self == .duel }
 
     /// Duration for timer-based modes

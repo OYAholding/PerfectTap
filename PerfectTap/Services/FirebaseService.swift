@@ -507,16 +507,64 @@ final class FirebaseService {
         #endif
     }
 
-    // MARK: - Score submission (calls Cloud Function for server-side validation)
-    func submitScore(mode: GameMode, score: Int, maxCombo: Int, profile: PlayerProfile) async {
+    // MARK: - Local emulators (DEBUG only)
+    /// Launch with env PT_USE_EMULATORS=1 (simulator: SIMCTL_CHILD_PT_USE_EMULATORS=1)
+    /// to run against `firebase emulators:start` instead of production.
+    /// Must run right after FirebaseApp.configure(), before any Firebase call.
+    static func connectToLocalEmulatorsIfRequested() {
+        #if DEBUG && canImport(FirebaseFirestore)
+        guard ProcessInfo.processInfo.environment["PT_USE_EMULATORS"] == "1" else { return }
+        Auth.auth().useEmulator(withHost: "127.0.0.1", port: 9099)
+        let settings = Firestore.firestore().settings
+        settings.host = "127.0.0.1:8080"
+        settings.isSSLEnabled = false
+        settings.cacheSettings = MemoryCacheSettings()
+        Firestore.firestore().settings = settings
+        Functions.functions(region: functionsRegion).useEmulator(withHost: "127.0.0.1", port: 5001)
+        print("[FirebaseService] ⚠️ Using LOCAL Firebase emulators")
+        #endif
+    }
+
+    // MARK: - Verified scores (Cloud Functions: functions/src/index.ts)
+    // Functions live next to Firestore (eur3) in europe-west1.
+    static let functionsRegion = "europe-west1"
+
+    /// Asks the server for a single-use, server-timed game session.
+    /// Returns nil when offline / not signed in / mode unranked — the run is then
+    /// simply not ranked on the verified leaderboard.
+    func startGameSession(mode: GameMode) async -> String? {
+        guard mode.isRanked else { return nil }
         #if canImport(FirebaseFunctions)
-        let functions = Functions.functions()
+        let functions = Functions.functions(region: Self.functionsRegion)
+        guard let result = try? await functions.httpsCallable("startGame").call(["mode": mode.rawValue]),
+              let dict = result.data as? [String: Any],
+              let sessionId = dict["sessionId"] as? String, !sessionId.isEmpty
+        else { return nil }
+        return sessionId
+        #else
+        return nil
+        #endif
+    }
+
+    /// Submits a finished run for server validation. Best-effort: local progress
+    /// is already saved; this only affects the verified leaderboard.
+    func submitScore(mode: GameMode, score: Int, maxCombo: Int, taps: Int, perfects: Int,
+                     sessionId: String?) async {
+        guard mode.isRanked, let sessionId else { return }
+        #if canImport(FirebaseFunctions)
+        let functions = Functions.functions(region: Self.functionsRegion)
         let data: [String: Any] = [
+            "sessionId": sessionId,
             "mode": mode.rawValue,
             "score": score,
-            "maxCombo": maxCombo
+            "maxCombo": maxCombo,
+            "taps": taps,
+            "perfects": perfects
         ]
-        _ = try? await functions.httpsCallable("submitScore").call(data)
+        let result = try? await functions.httpsCallable("submitScore").call(data)
+        #if DEBUG
+        print("[FirebaseService][submitScore] \(String(describing: result?.data))")
+        #endif
         #endif
     }
 
@@ -750,6 +798,24 @@ final class FirebaseService {
         #if canImport(FirebaseFirestore)
         guard !Task.isCancelled else { return [] }
         let db = Firestore.firestore()
+        // Verified, server-written leaderboard first.
+        if mode.isRanked,
+           let verified = try? await db.collection("leaderboard").document(mode.rawValue)
+                .collection("scores")
+                .order(by: "score", descending: true)
+                .limit(to: limit)
+                .getDocuments(),
+           !verified.documents.isEmpty {
+            guard !Task.isCancelled else { return [] }
+            return verified.documents.compactMap { doc in
+                let data = doc.data()
+                guard let username = data["username"] as? String, !username.isEmpty,
+                      let score = data["score"] as? Int else { return nil }
+                return (username, score)
+            }
+        }
+        // Fallback while the verified board is still empty after launch:
+        // self-reported bests (unverified).
         let field = mode.bestScoreKey
         guard !field.isEmpty else { return [] }
         guard let snap = try? await db.collection("players")

@@ -116,4 +116,14 @@ final class TimingEngineTests: XCTestCase {
         XCTAssertEqual(GameConfig.comboMultiplier(combo: 5, isComboFrenzy: false), 2)
         XCTAssertEqual(GameConfig.comboMultiplier(combo: 20, isComboFrenzy: true), 6)
     }
+
+    // MARK: Contract with the server (functions/src/scoring.ts MODES[*].ranked)
+
+    func testRankedModesMatchServer() {
+        let ranked = Set(GameMode.allCases.filter(\.isRanked).map(\.rawValue))
+        XCTAssertEqual(ranked, [
+            "classic", "endless", "timed", "sudden_death", "combo_frenzy", "precision",
+            "chaos", "mirror", "invisible_zone", "rush", "hardcore_combo", "tiny_window",
+        ])
+    }
 }
