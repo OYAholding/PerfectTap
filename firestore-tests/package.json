@@ -1,0 +1,13 @@
+{
+  "name": "perfecttap-firestore-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Security-rules tests: replays the iOS client's exact Firestore writes plus attack attempts against the emulator.",
+  "scripts": {
+    "test": "firebase emulators:exec --config ../firebase.json --only firestore --project demo-perfecttap \"node --test rules.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.1.0"
+  }
+}

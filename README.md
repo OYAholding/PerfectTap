@@ -90,9 +90,10 @@ AdMob app ID in `project.yml`/`Info.plist`, signing team `K88C7DPG4C`.
 ## Known issues & technical debt (Nov 2026 audit)
 
 Critical / High — **not fixed yet, need decisions or backend work**:
-1. `firestore.rules`: a player can write any value to their own doc (coins, best scores,
-   purchases) → leaderboard is trivially cheatable.
-2. `firestore.rules`: any signed-in user can set themselves as a duel guest and rewrite scores.
+1. ~~Duel takeover / score rewrite~~ and ~~free-form player docs~~ — hardened in
+   `firestore.rules` (Nov 2026, 52 emulator tests in `firestore-tests/`), **not yet deployed**.
+   Remaining gap: plausible fake coins/scores on one's *own* doc need Cloud Functions.
+2. (see 1)
 3. No server-side score validation: `submitScore` callable doesn't exist (the `functions/`
    folder is Base44/Deno code). The call fails silently.
 4. Sign-out keeps the local profile and copies it into the next anonymous account
