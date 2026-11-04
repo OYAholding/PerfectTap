@@ -91,7 +91,8 @@ AdMob app ID in `project.yml`/`Info.plist`, signing team `K88C7DPG4C`.
 
 Critical / High — **not fixed yet, need decisions or backend work**:
 1. ~~Duel takeover / score rewrite~~ and ~~free-form player docs~~ — hardened in
-   `firestore.rules` (Nov 2026, 52 emulator tests in `firestore-tests/`), **not yet deployed**.
+   `firestore.rules` (52 emulator tests in `firestore-tests/`), **deployed to production 2026-11-04**.
+   Rollback: `docs/rules-backups/firestore.rules.prod-2026-11-04` (exact copy of the previous live rules).
    Remaining gap: plausible fake coins/scores on one's *own* doc need Cloud Functions.
 2. (see 1)
 3. No server-side score validation: `submitScore` callable doesn't exist (the `functions/`
