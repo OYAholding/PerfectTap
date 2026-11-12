@@ -26,12 +26,12 @@ grep -q "https://$PERFECTTAP_REF.supabase.co" PerfectTap/project.yml \
 cat <<PLAN
 
 Plan (hosted, project $PERFECTTAP_REF only):
-  1. supabase link --project-ref $PERFECTTAP_REF        (asks for the DB password)
+  1. supabase link --project-ref $PERFECTTAP_REF        (CLI login role; no DB password needed on CLI 2.119)
   2. supabase db push --linked                          (2 migrations: core schema, legacy import)
   3. supabase secrets set FIREBASE_PROJECT_ID / FIREBASE_WEB_API_KEY
   4. supabase functions deploy claim-legacy-account delete-account
-  5. supabase db advisors --linked
-Manual (dashboard → Authentication → Sign In / Providers): enable "Allow anonymous sign-ins".
+  5. scripts/push-auth-config.sh (anonymous sign-ins, email confirmation, OTP; templates skipped on default SMTP)
+  6. supabase db advisors --linked
 PLAN
 
 [[ "${1:-}" == "--apply" ]] || { echo; echo "Dry run only. Re-run with --apply to deploy."; exit 0; }
@@ -40,9 +40,10 @@ supabase link --project-ref "$PERFECTTAP_REF"
 LINKED="$(cat supabase/.temp/project-ref 2>/dev/null || true)"
 [[ "$LINKED" == "$PERFECTTAP_REF" ]] || { echo "REFUSING: linked ref is '$LINKED'" >&2; exit 2; }
 
-supabase db push --linked
+supabase db push --linked --yes
 supabase secrets set --project-ref "$PERFECTTAP_REF" \
   FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
 supabase functions deploy claim-legacy-account delete-account --project-ref "$PERFECTTAP_REF"
+./scripts/push-auth-config.sh "$PERFECTTAP_REF" --yes
 supabase db advisors --linked || true
-echo "Done. Remember: enable anonymous sign-ins in the dashboard (step 'Manual' above)."
+echo "Done. Run the cloud smoke test: see supabase/tests/cloud/smoke.test.ts"

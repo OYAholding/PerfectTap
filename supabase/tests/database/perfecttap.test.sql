@@ -1,7 +1,14 @@
 -- pgTAP suite for the PerfectTap schema. Run: supabase test db --local
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(66);
+-- pgTAP may live in a different schema locally vs. hosted: put it on the path.
+do $$
+declare s text;
+begin
+  select n.nspname into s from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pgtap';
+  perform set_config('search_path', 'public, ' || quote_ident(coalesce(s, 'extensions')), false);
+end $$;
+select plan(67);
 
 -- ---------- fixtures ----------
 insert into auth.users (id, email, aud, role) values
@@ -27,6 +34,10 @@ $$;
 select is(
   (select count(*)::int from pg_tables where schemaname = 'public' and not rowsecurity), 0,
   'every public table has RLS enabled');
+select is(
+  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prosecdef and has_function_privilege('authenticated', p.oid, 'EXECUTE')), 0,
+  'no SECURITY DEFINER function is client-callable in the exposed public schema');
 
 -- ---------- profiles ----------
 select pg_temp.as_user('11111111-1111-1111-1111-111111111111');

@@ -79,8 +79,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         # Public client config only (publishable key is safe to ship).
         # NEVER put a secret / service_role key in the app.
-        SUPABASE_URL: ""   # set by scripts/use-supabase-project.sh <ref>
-        SUPABASE_PUBLISHABLE_KEY: ""
+        SUPABASE_URL: "https://pgvtaotdyspwnpqtxpju.supabase.co"   # set by scripts/use-supabase-project.sh <ref>
+        SUPABASE_PUBLISHABLE_KEY: "sb_publishable_F6bkQwmaoL_yAi1N3iElGQ_2HVEH8xV"
       configs:
         # Backend switch (Backend.swift). Release stays on Firebase until cutover
         # (docs/SUPABASE_MIGRATION.he.md §cutover); flip to "supabase" to ship.

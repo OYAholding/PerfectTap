@@ -677,8 +677,8 @@
 				PRODUCT_NAME = PerfectTap;
 				PT_BACKEND = firebase;
 				SDKROOT = auto;
-				SUPABASE_PUBLISHABLE_KEY = "";
-				SUPABASE_URL = "";
+				SUPABASE_PUBLISHABLE_KEY = sb_publishable_F6bkQwmaoL_yAi1N3iElGQ_2HVEH8xV;
+				SUPABASE_URL = "https://pgvtaotdyspwnpqtxpju.supabase.co";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
@@ -829,8 +829,8 @@
 				PRODUCT_NAME = PerfectTap;
 				PT_BACKEND = supabase;
 				SDKROOT = auto;
-				SUPABASE_PUBLISHABLE_KEY = "";
-				SUPABASE_URL = "";
+				SUPABASE_PUBLISHABLE_KEY = sb_publishable_F6bkQwmaoL_yAi1N3iElGQ_2HVEH8xV;
+				SUPABASE_URL = "https://pgvtaotdyspwnpqtxpju.supabase.co";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;

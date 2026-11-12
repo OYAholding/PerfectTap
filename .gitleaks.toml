@@ -1,0 +1,19 @@
+# PerfectTap secret scanning (gitleaks). Default rules + narrow allowlist.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public-by-design client identifiers"
+regexTarget = "match"
+regexes = [
+  # Supabase publishable key: shipped in the iOS app, safe to publish.
+  # (sb_secret_… keys are NOT allowlisted and still fail the scan.)
+  '''sb_publishable_[A-Za-z0-9_-]+''',
+]
+
+# Default rules don't know Supabase secret keys — catch them explicitly.
+[[rules]]
+id = "supabase-secret-key"
+description = "Supabase secret / service key"
+regex = '''sb_secret_[A-Za-z0-9_-]{20,}'''
+keywords = ["sb_secret_"]
