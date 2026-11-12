@@ -260,6 +260,13 @@ struct GameView: View {
             Text(acc.rawValue)
                 .font(.system(size: 22, weight: .black))
                 .foregroundColor(accuracyColor(acc))
+            if let timing = vm.lastTapTiming {
+                // Coaching hint: which way to adjust next time.
+                Text(timing.rawValue)
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(2)
+                    .foregroundColor(.white.opacity(0.55))
+            }
             if vm.lastTapPoints > 0 {
                 Text("+\(vm.lastTapPoints)")
                     .font(.system(size: 14, weight: .bold))

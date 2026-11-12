@@ -58,6 +58,8 @@ final class GameViewModel: ObservableObject {
     @Published var lives: Int = 3
     @Published var timeLeft: Double = GameConfig.timedDuration
     @Published var lastTapAccuracy: TapAccuracy? = nil
+    /// EARLY/LATE hint for the last non-PERFECT tap (nil for PERFECT).
+    @Published private(set) var lastTapTiming: TapTiming? = nil
     @Published var lastTapPoints: Int = 0
     /// Increments on every scored tap — drives feedback even when the
     /// accuracy repeats (onChange(of: lastTapAccuracy) misses PERFECT→PERFECT).
@@ -453,12 +455,15 @@ final class GameViewModel: ObservableObject {
         lastAcceptedTapAt = tapAt
 
         var pos = positionRef
+        var dirAtTap = directionRef
         if let touchTimestamp, lastTimestamp > 0 {
             let seenAt = touchTimestamp - lastFrameDuration * TimingEngine.displayLatencyFrames
             let dt = seenAt - lastTimestamp
             if abs(dt) <= TimingEngine.maxTouchExtrapolation {
-                pos = TimingEngine.advance(position: positionRef, direction: directionRef,
-                                           dt: dt, speed: speedRef).position
+                let seen = TimingEngine.advance(position: positionRef, direction: directionRef,
+                                                dt: dt, speed: speedRef)
+                pos = seen.position
+                dirAtTap = seen.direction
             }
         }
 
@@ -632,6 +637,7 @@ final class GameViewModel: ObservableObject {
         }
 
         lastTapAccuracy = accuracy
+        lastTapTiming = accuracy == .perfect ? nil : TimingEngine.timing(position: pos, direction: dirAtTap)
         lastTapPoints = finalPoints
         tapSequence &+= 1
     }

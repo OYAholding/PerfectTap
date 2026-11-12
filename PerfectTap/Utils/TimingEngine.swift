@@ -27,6 +27,12 @@ enum TapAccuracy: String {
     }
 }
 
+/// EARLY = tapped before the indicator reached the center; LATE = after.
+enum TapTiming: String {
+    case early = "EARLY"
+    case late = "LATE"
+}
+
 enum TimingEngine {
 
     /// Moves the indicator by `dt` seconds at `speed` (seconds per full sweep),
@@ -52,6 +58,14 @@ enum TimingEngine {
         pos = min(1.0, max(0.0, pos))
         if backwards { dir = -dir }
         return (pos, dir)
+    }
+
+    /// Whether a tap came before or after the indicator crossed the center,
+    /// given its travel direction at that moment (+1 → right, −1 → left).
+    /// Used for the EARLY / LATE hint under non-PERFECT results.
+    static func timing(position: Double, direction: Double) -> TapTiming {
+        let ahead = (0.5 - position) * (direction >= 0 ? 1 : -1)
+        return ahead > 0 ? .early : .late
     }
 
     /// Distance from the bar center as a fraction of the full bar width (0 … 0.5).

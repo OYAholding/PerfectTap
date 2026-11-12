@@ -126,4 +126,12 @@ final class TimingEngineTests: XCTestCase {
             "chaos", "mirror", "invisible_zone", "rush", "hardcore_combo", "tiny_window",
         ])
     }
+
+    // EARLY / LATE hint
+    func testTimingEarlyBeforeCenterInTravelDirection() {
+        XCTAssertEqual(TimingEngine.timing(position: 0.40, direction: 1), .early)   // moving right, not yet at center
+        XCTAssertEqual(TimingEngine.timing(position: 0.60, direction: 1), .late)
+        XCTAssertEqual(TimingEngine.timing(position: 0.60, direction: -1), .early)  // moving left
+        XCTAssertEqual(TimingEngine.timing(position: 0.40, direction: -1), .late)
+    }
 }
