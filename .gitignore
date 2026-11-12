@@ -40,3 +40,15 @@ supabase/.temp/
 supabase/.branches/
 # Firestore exports contain player data
 scripts/migration/*.csv
+# Fastlane / Bundler (local only)
+vendor/bundle/
+.bundle/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+fastlane/README.md
+fastlane/.env*
+build/fastlane/
+*.dSYM.zip
+# App Review contact details pulled by `fastlane metadata_pull` (personal data)
+fastlane/metadata/review_information/
