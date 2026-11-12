@@ -58,6 +58,9 @@
 בגרסה החיה 1.0 ‏Apple חוסמת עריכה (409 — "can not be modified in the current state").
 שם זה יתוקן רק כשהגרסה הבאה תשוחרר, או אם הכתובת הישנה תפנה שוב (redirect ב-`oyaholding.github.io/perfecttap-pages/`).
 
+**עדכון (באישור):** נוצר ריפו ציבורי `OYAholding/perfecttap-pages` עם דפי הפניה בלבד (GitHub Pages).
+הכתובות הישנות של הגרסה החיה מחזירות 200 ומפנות לדפים החדשים. אפשר לארכב את הריפו אחרי שגרסה עם הכתובות החדשות תשוחרר.
+
 ### ב. פרסום ומעקב (הסיבה הסבירה ל-5.1.2)
 - האפליקציה כוללת **Google Mobile Ads (AdMob)** ו-**Firebase Analytics**.
 - **אין** `AppTrackingTransparency`, **אין** `NSUserTrackingUsageDescription` ב-Info.plist, ו**אין** מסך הסכמה (Google UMP).
