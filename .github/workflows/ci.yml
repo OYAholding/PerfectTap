@@ -1,0 +1,39 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (history + tree, repo config)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks git . --config .gitleaks.toml --redact --no-banner
+          ./gitleaks dir . --config .gitleaks.toml --redact --no-banner
+
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.119.0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Start local Supabase (no cloud access)
+        run: supabase start -x studio,imgproxy,vector,logflare,storage-api,supavisor
+      - name: pgTAP
+        run: supabase test db --local
+      - name: End-to-end (local stack)
+        run: ./supabase/tests/integration/run.sh

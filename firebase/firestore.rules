@@ -1,0 +1,286 @@
+rules_version = '2';
+
+// PerfectTap Firestore Security Rules — hardened Nov 2026.
+//
+// Compatibility contract: these rules accept every write the CURRENT iOS client
+// (PerfectTap/Services/FirebaseService.swift) makes legitimately. Players run
+// that client today, so a stricter rule = silently failing saves in the wild.
+// Tests: firestore-tests/ (run against the emulator before deploying).
+//
+// What rules alone CANNOT stop (needs Cloud Functions — roadmap B2):
+//   a modified client writing plausible-but-fake coins / best scores / purchase
+//   flags to its OWN player doc. Rules here bound types and ranges only.
+//
+// Deploy (only after tests pass and with owner approval):
+//   firebase deploy --only firestore:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ───
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function isOwner(userId) { return signedIn() && me() == userId; }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource == null ? {} : resource.data; }
+    function changedKeys() { return incoming().diff(existing()).affectedKeys(); }
+    function changed(k) { return k in changedKeys(); }
+    function onlyChanges(keys) { return changedKeys().hasOnly(keys); }
+
+    function isIntIn(v, lo, hi) { return v is int && v >= lo && v <= hi; }
+    function isStr(v, maxLen) { return v is string && v.size() <= maxLen; }
+
+    // Firestore IDs are "<smaller uid>_<larger uid>" (Friendship.pairId in Swift).
+    function pairIdOf(a, b) { return a < b ? a + '_' + b : b + '_' + a; }
+    function isPair(ids, pairId) {
+      return ids is list && ids.size() == 2 && ids[0] is string && ids[1] is string
+             && ids[0] != ids[1] && pairIdOf(ids[0], ids[1]) == pairId;
+    }
+
+    // ─── Player profiles ───
+    // Generous plausibility caps — the client does not clamp scores, so a cap
+    // a real player can hit would permanently break their cloud saves.
+    function maxScore() { return 10000000; }
+    function maxCoins() { return 100000000; }
+
+    // `ch` = the changed-key set, computed ONCE per request and passed in.
+    // (Recomputing diff() per field blew Firestore's 1000-expression limit.)
+    function okInt(ch, d, k, lo, hi) { return !(k in ch) || isIntIn(d[k], lo, hi); }
+    function okBool(ch, d, k) { return !(k in ch) || d[k] is bool; }
+    function okMap(ch, d, k) { return !(k in ch) || d[k] is map; }
+
+    function playerKeys() {
+      return ['uid', 'username', 'username_lower', 'avatar', 'coins', 'level', 'xp',
+              'best_classic', 'best_endless', 'best_timed', 'best_sudden', 'best_combofrenzy',
+              'best_precision', 'best_chaos', 'best_mirror', 'best_invisiblezone', 'best_rush',
+              'best_hardcorecombo', 'best_tinywindow', 'best_focus', 'best_scores_extra',
+              'friend_code', 'friends', 'owned_items',
+              'equipped_theme', 'equipped_avatar', 'equipped_tapfx', 'equipped_trail', 'equipped_badge',
+              'daily_reward_streak', 'daily_reward_last_claim', 'active_challenge',
+              'season_xp', 'season_tier', 'season_premium', 'season_ad_progress', 'season_claimed_tiers',
+              'quests_json', 'achievements', 'completed_challenges', 'no_ads',
+              'revives_used_today', 'last_revive_date', 'score_history', 'stats', 'boost',
+              'server_day_probe_ts'];
+    }
+
+    function validUsername(ch, d) {
+      return !('username' in ch) || (
+        d.username is string
+        && (d.username == '' || d.username.matches('^[A-Za-z0-9_]{2,20}$'))
+      );
+    }
+    // Username is permanent once chosen (the app says so; sign-in merge keeps it).
+    function usernameImmutable(d) {
+      return resource == null
+             || resource.data.get('username', '') == ''
+             || d.get('username', '') == resource.data.get('username', '');
+    }
+    function usernameLowerConsistent(ch, d) {
+      return !('username' in ch || 'username_lower' in ch)
+             || d.get('username_lower', '') == d.get('username', '').lower();
+    }
+
+    function validPlayer(userId) {
+      let d = request.resource.data;
+      let ch = d.diff(resource == null ? {} : resource.data).affectedKeys();
+      return ch.hasOnly(playerKeys())
+        && d.get('uid', userId) == userId
+        && validUsername(ch, d) && usernameImmutable(d) && usernameLowerConsistent(ch, d)
+        // Server-day anti-cheat probe must be a real server timestamp.
+        && (!('server_day_probe_ts' in ch) || d.server_day_probe_ts == request.time)
+        && okInt(ch, d, 'coins', 0, maxCoins())
+        && okInt(ch, d, 'level', 1, 10000) && okInt(ch, d, 'xp', 0, 100000000)
+        && okInt(ch, d, 'best_classic', 0, maxScore()) && okInt(ch, d, 'best_endless', 0, maxScore())
+        && okInt(ch, d, 'best_timed', 0, maxScore()) && okInt(ch, d, 'best_sudden', 0, maxScore())
+        && okInt(ch, d, 'best_combofrenzy', 0, maxScore()) && okInt(ch, d, 'best_precision', 0, maxScore())
+        && okInt(ch, d, 'best_chaos', 0, maxScore()) && okInt(ch, d, 'best_mirror', 0, maxScore())
+        && okInt(ch, d, 'best_invisiblezone', 0, maxScore()) && okInt(ch, d, 'best_rush', 0, maxScore())
+        && okInt(ch, d, 'best_hardcorecombo', 0, maxScore()) && okInt(ch, d, 'best_tinywindow', 0, maxScore())
+        && okInt(ch, d, 'best_focus', 0, maxScore())
+        && okInt(ch, d, 'season_xp', 0, 100000000) && okInt(ch, d, 'season_tier', 0, 1000)
+        && okBool(ch, d, 'no_ads') && okBool(ch, d, 'season_premium')
+        && okMap(ch, d, 'stats');
+      // Cosmetic strings/lists (equipped_*, owned_items, quests_json, …) are only
+      // key-allowlisted: full per-field checks on a first save exceed Firestore's
+      // 1000-expression budget, and they carry no economic value.
+    }
+
+    match /players/{userId} {
+      // Readable by signed-in users: leaderboard, friend-code lookup and
+      // username-uniqueness checks query this collection.
+      allow read:   if signedIn();
+      allow create, update: if isOwner(userId) && validPlayer(userId);
+      allow delete: if isOwner(userId);
+    }
+
+    // ─── Unused legacy collections (kept locked) ───
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+    match /leaderboard/{mode}/scores/{userId} {
+      allow read: if signedIn();
+      allow write: if false;   // never written by the app; was a free score-injection path
+    }
+
+    // ─── Duels ───
+    function duelScoreOk(v) { return isIntIn(v, 0, maxScore()); }
+    function unset(k) { return existing().get(k, null) == null; }
+
+    match /duels/{duelId} {
+      allow read: if signedIn();   // join-by-code queries need it
+
+      // Host creates a fresh, unjoined, unscored duel.
+      allow create: if signedIn()
+        && incoming().host_id == me()
+        && incoming().status == 'waiting'
+        && isStr(incoming().code, 12) && isStr(incoming().mode, 40)
+        && isStr(incoming().host_name, 40)
+        && incoming().keys().hasOnly(['code', 'host_id', 'host_name', 'host_avatar', 'mode',
+                                      'status', 'created_at']);
+
+      allow update: if signedIn()
+        && incoming().host_id == existing().host_id
+        && incoming().code == existing().code
+        && incoming().mode == existing().mode
+        && (
+          // 1) A different player joins an open duel (exactly once).
+          ( existing().status == 'waiting'
+            && unset('guest_id')
+            && existing().host_id != me()
+            && incoming().guest_id == me()
+            && incoming().status == 'in_progress'
+            && isStr(incoming().guest_name, 40)
+            && onlyChanges(['guest_id', 'guest_name', 'guest_avatar', 'status']) )
+          ||
+          // 2) Host submits their own score, once. May complete the duel only
+          //    if the guest has already scored.
+          ( existing().host_id == me()
+            && unset('host_score')
+            && duelScoreOk(incoming().host_score)
+            && isIntIn(incoming().get('host_combo', 0), 0, 100000)
+            && onlyChanges(['host_score', 'host_combo', 'status'])
+            && (!changed('status') || (incoming().status == 'completed' && !unset('guest_score'))) )
+          ||
+          // 3) Guest submits their own score, once.
+          ( existing().get('guest_id', null) == me()
+            && unset('guest_score')
+            && duelScoreOk(incoming().guest_score)
+            && isIntIn(incoming().get('guest_combo', 0), 0, 100000)
+            && onlyChanges(['guest_score', 'guest_combo', 'status'])
+            && (!changed('status') || (incoming().status == 'completed' && !unset('host_score'))) )
+        );
+      // No client deletes.
+    }
+
+    // ─── Friend requests ───
+    match /friend_requests/{requestId} {
+      allow read: if signedIn()
+        && (resource.data.from_uid == me() || resource.data.to_uid == me());
+
+      allow create: if signedIn()
+        && incoming().from_uid == me()
+        && incoming().to_uid is string
+        && incoming().to_uid != me()
+        && incoming().status == 'pending';
+
+      // Receiver accepts/rejects, sender cancels. Only `status` may change.
+      allow update: if signedIn()
+        && resource.data.status == 'pending'
+        && onlyChanges(['status'])
+        && (
+          (resource.data.to_uid == me() && incoming().status in ['accepted', 'rejected'])
+          || (resource.data.from_uid == me() && incoming().status == 'cancelled')
+        );
+    }
+
+    // ─── Friendships (canonical, id = pairId) ───
+    match /friendships/{pairId} {
+      allow read: if signedIn() && me() in resource.data.user_ids;
+
+      // Only the RECEIVER of a pending request may create the friendship, in
+      // the same transaction that marks that request accepted. The request is
+      // found through the pair's friend_request_state guard doc.
+      allow create: if signedIn()
+        && isPair(incoming().user_ids, pairId)
+        && me() in incoming().user_ids
+        && exists(/databases/$(database)/documents/friend_request_state/$(pairId))
+        && acceptedByMe(get(/databases/$(database)/documents/friend_request_state/$(pairId))
+                          .data.pending_request_id, incoming().user_ids);
+
+      allow update: if signedIn()
+        && me() in resource.data.user_ids
+        && incoming().user_ids == resource.data.user_ids;
+    }
+
+    function acceptedByMe(requestId, ids) {
+      let req = getAfter(/databases/$(database)/documents/friend_requests/$(requestId)).data;
+      return req.status == 'accepted' && req.to_uid == me()
+             && req.from_uid in ids && req.to_uid in ids;
+    }
+
+    // ─── Duel invitations ───
+    match /duel_invitations/{invitationId} {
+      allow read: if signedIn()
+        && (resource.data.from_uid == me() || resource.data.to_uid == me());
+
+      // Sender must host the referenced duel.
+      allow create: if signedIn()
+        && incoming().from_uid == me()
+        && incoming().to_uid is string
+        && incoming().to_uid != me()
+        && incoming().status == 'pending'
+        && incoming().duel_id is string
+        && get(/databases/$(database)/documents/duels/$(incoming().duel_id)).data.host_id == me();
+
+      allow update: if signedIn()
+        && onlyChanges(['status'])
+        && (
+          ( resource.data.status == 'pending'
+            && (
+              (resource.data.to_uid == me() && incoming().status in ['accepted', 'rejected'])
+              || (resource.data.from_uid == me() && incoming().status == 'cancelled')
+              || (me() in [resource.data.from_uid, resource.data.to_uid]
+                  && incoming().status == 'expired'
+                  && resource.data.expires_at <= request.time)
+            ) )
+          ||
+          ( resource.data.status == 'accepted'
+            && resource.data.from_uid == me()
+            && incoming().status == 'in_progress' )
+        );
+    }
+
+    // ─── Guard docs (one pending request / invite per pair) ───
+    // `get` must succeed on a missing doc: the client reads it inside the send
+    // transaction before it exists (the old rule errored on null resource).
+    // Writes must point at a real request/invite created by the caller, so a
+    // third party can't pre-create a guard to block two players.
+    match /friend_request_state/{pairId} {
+      allow get: if signedIn() && (resource == null || me() in resource.data.user_ids);
+      allow create, update: if signedIn()
+        && isPair(incoming().user_ids, pairId)
+        && me() in incoming().user_ids
+        && incoming().pending_request_id is string
+        && getAfter(/databases/$(database)/documents/friend_requests/$(incoming().pending_request_id))
+             .data.from_uid == me();
+      allow delete: if signedIn() && me() in resource.data.user_ids;
+    }
+
+    match /duel_invite_state/{pairId} {
+      allow get: if signedIn() && (resource == null || me() in resource.data.user_ids);
+      allow create, update: if signedIn()
+        && isPair(incoming().user_ids, pairId)
+        && me() in incoming().user_ids
+        && incoming().pending_invitation_id is string
+        && getAfter(/databases/$(database)/documents/duel_invitations/$(incoming().pending_invitation_id))
+             .data.from_uid == me();
+      allow delete: if signedIn() && me() in resource.data.user_ids;
+    }
+
+    // ─── Deny everything else ───
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
