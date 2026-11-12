@@ -82,9 +82,35 @@ final class ConsentManager: ObservableObject {
     private var isRunning = false
     private var hasCompleted = false
 
-    init(environment: ConsentEnvironment) {
+    private let umpTimeout: TimeInterval
+
+    init(environment: ConsentEnvironment, umpTimeout: TimeInterval = 8) {
         self.environment = environment
+        self.umpTimeout = umpTimeout
         self.trackingStatus = environment.trackingStatus
+    }
+
+    /// Runs `operation`, returning true if it finished without error before `seconds`.
+    /// On timeout the operation keeps running in the background but is no longer awaited.
+    static func withTimeout(_ seconds: TimeInterval, _ operation: @escaping @MainActor () async throws -> Void) async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            let gate = OnceGate(cont)
+            Task { @MainActor in
+                do { try await operation(); gate.finish(true) } catch {
+                    #if DEBUG
+                    print("[Consent] UMP error: \(error.localizedDescription)")
+                    #endif
+                    gate.finish(false)
+                }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                #if DEBUG
+                if !gate.isFinished { print("[Consent] UMP timed out after \(seconds)s — continuing to ATT") }
+                #endif
+                gate.finish(false)
+            }
+        }
     }
 
     /// UI tests launch with `-PTUITestNoAds` (DEBUG only): no system prompts, no ads —
@@ -110,14 +136,19 @@ final class ConsentManager: ObservableObject {
         defer { isRunning = false }
 
         // 1. Google UMP. A network error is not fatal: UMP keeps the last known consent,
-        //    and `canRequestAds` stays false until consent is known.
-        do {
-            try await environment.updateConsentInfo()
-            try await environment.presentConsentFormIfRequired()
-        } catch {
-            #if DEBUG
-            print("[Consent] UMP error: \(error.localizedDescription)")
-            #endif
+        //    and `canRequestAds` stays false until consent is known. The info update is
+        //    bounded by a timeout so a slow network can never block the ATT prompt.
+        let env = environment
+        let updated = await Self.withTimeout(umpTimeout) {
+            try await env.updateConsentInfo()
+        }
+        if updated {
+            // Presenting a form waits for the user, so it is not time-boxed.
+            do { try await env.presentConsentFormIfRequired() } catch {
+                #if DEBUG
+                print("[Consent] UMP form error: \(error.localizedDescription)")
+                #endif
+            }
         }
 
         // 2. Apple ATT (only if never asked). If the system did not show the prompt because
@@ -168,6 +199,18 @@ final class ConsentManager: ObservableObject {
         )
         environment.apply(result)
         decision = result
+    }
+}
+
+/// Resumes a continuation exactly once (main actor only).
+@MainActor
+private final class OnceGate {
+    private var continuation: CheckedContinuation<Bool, Never>?
+    init(_ continuation: CheckedContinuation<Bool, Never>) { self.continuation = continuation }
+    var isFinished: Bool { continuation == nil }
+    func finish(_ value: Bool) {
+        continuation?.resume(returning: value)
+        continuation = nil
     }
 }
 

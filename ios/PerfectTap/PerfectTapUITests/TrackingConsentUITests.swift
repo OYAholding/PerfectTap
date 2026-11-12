@@ -34,20 +34,27 @@ final class TrackingConsentUITests: XCTestCase {
         answerTrackingPrompt(allow: false)
         app.terminate()
         app.launch()
-        let again = springboard.buttons["Ask App Not to Track"].waitForExistence(timeout: 5)
+        let again = trackingAlert.waitForExistence(timeout: 6)
         XCTAssertFalse(again, "ATT must be asked only once")
     }
 
     // MARK: - Helpers
 
+    /// The ATT alert is owned by Springboard and localized to the device language,
+    /// so buttons are matched by position: [0] "Ask App Not to Track", [1] "Allow".
+    private var trackingAlert: XCUIElement { springboard.alerts.firstMatch }
+
     private func answerTrackingPrompt(allow: Bool) {
-        let button = springboard.buttons[allow ? "Allow" : "Ask App Not to Track"]
-        XCTAssertTrue(button.waitForExistence(timeout: 15), "ATT prompt did not appear")
-        button.tap()
+        XCTAssertTrue(trackingAlert.waitForExistence(timeout: 40), "ATT prompt did not appear")
+        XCTAssertTrue(trackingAlert.label.contains("Perfect Tap") || trackingAlert.staticTexts.count > 0)
+        let buttons = trackingAlert.buttons
+        XCTAssertEqual(buttons.count, 2, "unexpected alert: \(trackingAlert.debugDescription)")
+        buttons.element(boundBy: allow ? 1 : 0).tap()
+        XCTAssertTrue(trackingAlert.waitForNonExistence(timeout: 5))
     }
 
     private func reachHome() {
-        if app.staticTexts["Choose Your Name"].waitForExistence(timeout: 6) {
+        if app.staticTexts["Choose Your Name"].waitForExistence(timeout: 20) {
             let field = app.textFields.element(boundBy: 0)
             XCTAssertTrue(field.waitForExistence(timeout: 3))
             field.tap()

@@ -274,8 +274,12 @@ final class ModeRuntimeQATests: XCTestCase {
     }
 
     private func completeOnboardingIfNeeded() {
+        // First launch on a fresh simulator (notably iPad) can take >20 s to settle.
         let chooseName = app.staticTexts["Choose Your Name"]
-        guard chooseName.waitForExistence(timeout: 4) else { return }
+        let play = app.buttons["PLAY"]
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline && !chooseName.exists && !play.exists { _ = chooseName.waitForExistence(timeout: 1) }
+        guard chooseName.exists else { return }
 
         let usernameField = app.textFields.element(boundBy: 0)
         if usernameField.waitForExistence(timeout: 3) {
