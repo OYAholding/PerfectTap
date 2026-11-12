@@ -1,0 +1,234 @@
+# PerfectTap — Fastlane lanes (App Store Connect API key auth).
+#
+# Credentials never live in this repo. They are read from a local env file
+# (default ~/.config/perfecttap/apple/asc.env, override with PT_ASC_ENV):
+#   ASC_KEY_ID=...        ASC_ISSUER_ID=...
+#   ASC_KEY_PATH=$HOME/.config/perfecttap/apple/AuthKey_<KEY_ID>.p8
+#
+# Safety rules enforced here:
+#   * Every lane is pinned to the PerfectTap app (App ID / bundle ID below) and
+#     refuses to run if App Store Connect returns anything else.
+#   * `asc_check`, `metadata_pull` and `build` never write to App Store Connect.
+#   * `beta` and `metadata_push` write to App Store Connect and require
+#     PT_CONFIRM=yes. Neither one submits for App Review, distributes to
+#     external testers, or releases anything.
+
+require "json"
+require "net/http"
+
+PT_APP_ID      = "6760975737"
+PT_BUNDLE_ID   = "com.perfecttap.app"
+PT_TEAM_ID     = "K88C7DPG4C"
+PT_PROJECT     = File.expand_path("../ios/PerfectTap/PerfectTap.xcodeproj", __dir__)
+PT_PROJECT_DIR = File.expand_path("../ios/PerfectTap", __dir__)
+PT_SCHEME      = "PerfectTap"
+PT_OUTPUT_DIR  = File.expand_path("../build/fastlane", __dir__)
+PT_METADATA    = File.expand_path("metadata", __dir__)
+
+default_platform(:ios)
+
+# Loads KEY=VALUE pairs from the local, git-ignored env file. Values are kept
+# in ENV only and never echoed.
+def pt_load_asc_env!
+  path = File.expand_path(ENV["PT_ASC_ENV"] || "~/.config/perfecttap/apple/asc.env")
+  UI.user_error!("Missing #{path} (see fastlane/README.he.md)") unless File.exist?(path)
+  File.readlines(path).each do |line|
+    next if line.strip.empty? || line.strip.start_with?("#")
+    key, value = line.strip.split("=", 2)
+    ENV[key] ||= value.to_s.gsub("$HOME", Dir.home).gsub(/\A["']|["']\z/, "")
+  end
+  %w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_PATH].each do |k|
+    UI.user_error!("#{k} is not set in #{path}") if ENV[k].to_s.empty?
+  end
+  key_path = File.expand_path(ENV["ASC_KEY_PATH"])
+  UI.user_error!("Private key not found at the configured ASC_KEY_PATH") unless File.exist?(key_path)
+  repo_root = File.expand_path("..", __dir__)
+  UI.user_error!("Refusing to use a .p8 key stored inside the repository") if key_path.start_with?(repo_root + "/")
+  key_path
+end
+
+def pt_api_key
+  key_path = pt_load_asc_env!
+  app_store_connect_api_key(
+    key_id: ENV["ASC_KEY_ID"],
+    issuer_id: ENV["ASC_ISSUER_ID"],
+    key_filepath: key_path,
+    duration: 1200,
+    in_house: false
+  )
+end
+
+# Authenticated read-only GET against the App Store Connect API.
+def pt_get(path)
+  uri = URI("https://api.appstoreconnect.apple.com#{path}")
+  req = Net::HTTP::Get.new(uri)
+  req["Authorization"] = "Bearer #{Spaceship::ConnectAPI.token.text}"
+  res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+  body = JSON.parse(res.body) rescue {}
+  unless res.code.to_i == 200
+    detail = (body["errors"] || []).map { |e| e["detail"] || e["title"] }.join("; ")
+    UI.user_error!("GET #{uri.path} -> HTTP #{res.code} #{detail}")
+  end
+  body
+end
+
+def pt_assert_app!
+  attrs = pt_get("/v1/apps/#{PT_APP_ID}")["data"]["attributes"]
+  UI.user_error!("App #{PT_APP_ID} is #{attrs['bundleId']}, expected #{PT_BUNDLE_ID}") unless attrs["bundleId"] == PT_BUNDLE_ID
+  attrs
+end
+
+def pt_require_confirmation!(what)
+  return if ENV["PT_CONFIRM"] == "yes"
+  UI.user_error!("#{what} writes to App Store Connect. Re-run with PT_CONFIRM=yes after explicit approval.")
+end
+
+def pt_url_status(url)
+  return "not set" if url.to_s.empty?
+  uri = URI(url)
+  res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 10, read_timeout: 10) do |http|
+    http.request(Net::HTTP::Head.new(uri))
+  end
+  res.code
+rescue StandardError => e
+  "error (#{e.class})"
+end
+
+platform :ios do
+  desc "Read-only: verify API access and print versions, builds, TestFlight and review status"
+  lane :asc_check do
+    pt_api_key
+    app = pt_assert_app!
+    UI.success("API OK — #{app['name']} (#{app['bundleId']}, App ID #{PT_APP_ID})")
+
+    versions = pt_get("/v1/apps/#{PT_APP_ID}/appStoreVersions?limit=20&include=build")
+    builds_by_id = (versions["included"] || []).select { |i| i["type"] == "builds" }.to_h { |b| [b["id"], b] }
+    rows = versions["data"].map do |v|
+      a = v["attributes"]
+      build = builds_by_id[v.dig("relationships", "build", "data", "id")]
+      [a["versionString"], a["appStoreState"], a["releaseType"], build ? build.dig("attributes", "version") : "-"]
+    end
+    puts Terminal::Table.new(title: "App Store versions", headings: %w[Version State Release Build], rows: rows)
+
+    builds = pt_get("/v1/builds?filter[app]=#{PT_APP_ID}&sort=-uploadedDate&limit=20&include=preReleaseVersion,buildBetaDetail")
+    inc = (builds["included"] || []).to_h { |i| ["#{i['type']}/#{i['id']}", i] }
+    rows = builds["data"].map do |b|
+      pre = inc["preReleaseVersions/#{b.dig('relationships', 'preReleaseVersion', 'data', 'id')}"]
+      beta = inc["buildBetaDetails/#{b.dig('relationships', 'buildBetaDetail', 'data', 'id')}"]
+      [pre&.dig("attributes", "version"), b.dig("attributes", "version"), b.dig("attributes", "processingState"),
+       b.dig("attributes", "uploadedDate").to_s[0, 10], b.dig("attributes", "expired"),
+       beta&.dig("attributes", "internalBuildState"), beta&.dig("attributes", "externalBuildState")]
+    end
+    puts Terminal::Table.new(title: "Builds / TestFlight", headings: %w[Version Build Processing Uploaded Expired Internal External], rows: rows)
+
+    groups = pt_get("/v1/apps/#{PT_APP_ID}/betaGroups?limit=50")["data"]
+    UI.message("TestFlight groups: #{groups.empty? ? 'none' : groups.map { |g| g.dig('attributes', 'name') }.join(', ')}")
+
+    subs = pt_get("/v1/reviewSubmissions?filter[app]=#{PT_APP_ID}&limit=20&include=items")
+    items = (subs["included"] || []).to_h { |i| [i["id"], i.dig("attributes", "state")] }
+    rows = subs["data"].map do |s|
+      item_states = s.dig("relationships", "items", "data").to_a.map { |i| items[i["id"]] }.compact.join(",")
+      [s.dig("attributes", "submittedDate").to_s[0, 16], s.dig("attributes", "state"), item_states]
+    end
+    puts Terminal::Table.new(title: "Review submissions", headings: %w[Submitted State Items], rows: rows)
+    UI.important("Rejection text is not exposed by the API — read it in App Store Connect → App Review.")
+
+    info = pt_get("/v1/apps/#{PT_APP_ID}/appInfos?include=appInfoLocalizations")
+    (info["included"] || []).select { |i| i["type"] == "appInfoLocalizations" }.uniq { |l| l.dig("attributes", "privacyPolicyUrl") }.each do |l|
+      url = l.dig("attributes", "privacyPolicyUrl")
+      UI.message("Privacy Policy URL (#{l.dig('attributes', 'locale')}): #{url} -> #{pt_url_status(url)}")
+    end
+    latest = versions["data"].first
+    if latest
+      pt_get("/v1/appStoreVersions/#{latest['id']}/appStoreVersionLocalizations")["data"].each do |l|
+        url = l.dig("attributes", "supportUrl")
+        UI.message("Support URL (#{latest.dig('attributes', 'versionString')}, #{l.dig('attributes', 'locale')}): #{url} -> #{pt_url_status(url)}")
+      end
+    end
+  end
+
+  desc "Read-only: download App Store metadata into fastlane/metadata (local files only)"
+  lane :metadata_pull do |options|
+    api_key = pt_api_key
+    pt_assert_app!
+    require "deliver"
+    require "deliver/setup"
+    path = options[:metadata_path] || PT_METADATA
+    deliver_options = FastlaneCore::Configuration.create(Deliver::Options.available_options, {
+      api_key: api_key, app_identifier: PT_BUNDLE_ID, metadata_path: path,
+      skip_binary_upload: true, skip_screenshots: true, skip_app_version_update: true, force: true
+    })
+    Deliver::Runner.new(deliver_options) # authenticates and resolves the app (read-only)
+    app = Deliver.cache[:app]
+    UI.user_error!("Resolved app #{app.id}, expected #{PT_APP_ID}") unless app.id == PT_APP_ID
+    version = app.get_latest_app_store_version(platform: Spaceship::ConnectAPI::Platform::IOS)
+    Deliver::Setup.new.generate_metadata_files(app, version, path, deliver_options)
+    UI.success("Metadata for #{version.version_string} written to #{path}")
+  end
+
+  desc "Local build only: XcodeGen + signed App Store .ipa in build/fastlane (no upload)"
+  lane :build do |options|
+    pt_api_key
+    pt_assert_app!
+    sh("cd #{PT_PROJECT_DIR.shellescape} && xcodegen generate")
+    build_number = options[:build_number] || pt_next_build_number
+    UI.message("Building build number #{build_number}")
+    build_app(
+      project: PT_PROJECT,
+      scheme: PT_SCHEME,
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: PT_OUTPUT_DIR,
+      output_name: "PerfectTap.ipa",
+      clean: true,
+      xcargs: [
+        "CURRENT_PROJECT_VERSION=#{build_number}",
+        "DEVELOPMENT_TEAM=#{PT_TEAM_ID}",
+        "-allowProvisioningUpdates",
+        "-authenticationKeyPath #{File.expand_path(ENV['ASC_KEY_PATH']).shellescape}",
+        "-authenticationKeyID #{ENV['ASC_KEY_ID']}",
+        "-authenticationKeyIssuerID #{ENV['ASC_ISSUER_ID']}"
+      ].join(" ")
+    )
+  end
+
+  desc "WRITE (PT_CONFIRM=yes): build and upload to TestFlight — internal only, no review, no external testers"
+  lane :beta do |options|
+    pt_require_confirmation!("Uploading a TestFlight build")
+    build(options)
+    upload_to_testflight(
+      api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
+      app_identifier: PT_BUNDLE_ID,
+      ipa: File.join(PT_OUTPUT_DIR, "PerfectTap.ipa"),
+      skip_submission: true,            # no Beta App Review, no external distribution
+      distribute_external: false,
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "WRITE (PT_CONFIRM=yes): upload fastlane/metadata text only — no binary, no screenshots, no submission"
+  lane :metadata_push do
+    pt_require_confirmation!("Uploading metadata")
+    pt_api_key
+    pt_assert_app!
+    UI.user_error!("No #{PT_METADATA} — run metadata_pull first") unless Dir.exist?(PT_METADATA)
+    upload_to_app_store(
+      api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
+      app_identifier: PT_BUNDLE_ID,
+      metadata_path: PT_METADATA,
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      submit_for_review: false,
+      automatic_release: false,
+      force: true,                      # skip the HTML preview; nothing is submitted
+      precheck_include_in_app_purchases: false
+    )
+  end
+end
+
+# Next build number: one above the highest build uploaded for this app.
+def pt_next_build_number
+  builds = pt_get("/v1/builds?filter[app]=#{PT_APP_ID}&sort=-uploadedDate&limit=200&fields[builds]=version")["data"]
+  highest = builds.map { |b| b.dig("attributes", "version").to_i }.max || 0
+  highest + 1
+end
