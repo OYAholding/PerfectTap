@@ -698,17 +698,17 @@ final class FirebaseService: GameBackend {
     }
 
     func submitDuelScore(duelId: String, role: String, score: Int, maxCombo: Int,
-                         taps: Int, perfects: Int, sessionId: String?) async {
+                         taps: Int, perfects: Int, sessionId: String?) async -> Bool {
         #if canImport(FirebaseFirestore)
-        guard !duelId.isEmpty else { return }
-        guard role == DuelContext.Role.host.rawValue || role == DuelContext.Role.guest.rawValue else { return }
+        guard !duelId.isEmpty else { return false }
+        guard role == DuelContext.Role.host.rawValue || role == DuelContext.Role.guest.rawValue else { return false }
 
         let db = Firestore.firestore()
         let duelRef = db.collection("duels").document(duelId)
         let submittedScore = max(score, 0)
         let submittedCombo = max(maxCombo, 0)
 
-        _ = try? await db.runTransaction { transaction, errorPointer -> Any? in
+        let outcome = try? await db.runTransaction { transaction, errorPointer -> Any? in
             do {
                 let snap = try transaction.getDocument(duelRef)
                 guard snap.exists, let data = snap.data() else { return nil }
@@ -720,14 +720,14 @@ final class FirebaseService: GameBackend {
                 var updates: [String: Any] = [:]
 
                 if role == DuelContext.Role.host.rawValue {
-                    if hostFinished { return nil } // already submitted; no overwrite
+                    if hostFinished { return true } // already submitted; no overwrite
                     updates["host_score"] = submittedScore
                     updates["host_combo"] = submittedCombo
                     if guestFinished {
                         updates["status"] = Duel.DuelStatus.completed.rawValue
                     }
                 } else {
-                    if guestFinished { return nil } // already submitted; no overwrite
+                    if guestFinished { return true } // already submitted; no overwrite
                     updates["guest_score"] = submittedScore
                     updates["guest_combo"] = submittedCombo
                     if hostFinished {
@@ -735,14 +735,17 @@ final class FirebaseService: GameBackend {
                     }
                 }
 
-                guard !updates.isEmpty else { return nil }
+                guard !updates.isEmpty else { return true }
                 transaction.updateData(updates, forDocument: duelRef)
-                return nil
+                return true
             } catch let error as NSError {
                 errorPointer?.pointee = error
                 return nil
             }
         }
+        return outcome != nil
+        #else
+        return false
         #endif
     }
 

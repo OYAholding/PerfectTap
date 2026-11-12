@@ -190,6 +190,10 @@ struct GameSettingsView: View {
                 }
             }
         }
+        .onAppear {
+            // Re-read: purchases/restores may have changed the profile meanwhile.
+            profile = PlayerProfile.load() ?? profile
+        }
         .navigationBarHidden(true)
         .sheet(isPresented: $showLinkAccount) {
             LinkAccountView()
@@ -264,9 +268,9 @@ struct GameSettingsView: View {
         let isSelected = themeManager.current.name == theme.name
         return Button {
             themeManager.apply(theme)
-            profile.equippedTheme = theme.name
-            profile.save()
-            Task { await Backend.shared.saveProfile(profile) }
+            // Mutate the CURRENT stored profile: the @State copy may predate a
+            // purchase or restore made while Settings was open (would revert it).
+            profile = EconomyManager.shared.updateProfile { $0.equippedTheme = theme.name }
         } label: {
             VStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 10)

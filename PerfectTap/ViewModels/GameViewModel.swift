@@ -745,10 +745,11 @@ final class GameViewModel: ObservableObject {
                                                      sessionId: sessionId)
             if hasValidDuelContext, let ctx = duelContext {
                 let duelSessionId = await duelSessionTask?.value
-                await Backend.shared.submitDuelScore(duelId: ctx.duelId, role: ctx.role.rawValue,
-                                                     score: scoreRef, maxCombo: maxComboRef,
-                                                     taps: totalTapsRef, perfects: perfectCountRef,
-                                                     sessionId: duelSessionId)
+                // Durable: if this fails (offline / app killed) Home retries it later.
+                await DuelSettlement.submit(PendingDuel(
+                    duelId: ctx.duelId, role: ctx.role.rawValue, score: scoreRef, maxCombo: maxComboRef,
+                    taps: totalTapsRef, perfects: perfectCountRef, sessionId: duelSessionId,
+                    submitted: false, playedAt: Date().timeIntervalSince1970))
                 // NOTE: Do NOT clear DuelContext here — DuelResultsView reads it on appear.
                 // Context is overwritten on the next duel and cleaned up on account deletion.
             }

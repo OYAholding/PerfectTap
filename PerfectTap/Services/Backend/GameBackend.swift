@@ -104,8 +104,10 @@ protocol GameBackend: AnyObject {
     func loadDuels(duelIds: [String]) async -> [String: Duel]
     func listenDuel(duelId: String, onChange: @escaping (Duel?) -> Void) -> Any?
     func removeDuelListener(_ listener: Any?)
+    /// Returns true once the server has the score (including "already submitted").
+    @discardableResult
     func submitDuelScore(duelId: String, role: String, score: Int, maxCombo: Int,
-                         taps: Int, perfects: Int, sessionId: String?) async
+                         taps: Int, perfects: Int, sessionId: String?) async -> Bool
 
     // Friends
     func loadFriendUIDs() async -> [String]
@@ -242,7 +244,14 @@ enum BackendKind: String {
 enum Backend {
     static let kind: BackendKind = BackendKind.configured
 
+    /// True when the app is the host process of a unit-test run.
+    static var isRunningUnitTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     static let shared: GameBackend = {
+        // Unit tests must never create users or write data in real projects.
+        if isRunningUnitTests { return OfflineBackend.shared }
         switch kind {
         case .supabase:
             if let service = SupabaseService.makeShared() { return service }

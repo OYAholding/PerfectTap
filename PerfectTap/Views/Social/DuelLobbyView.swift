@@ -11,6 +11,7 @@ struct DuelLobbyView: View {
     @State private var duelId: String? = nil
     @State private var duel: Duel? = nil
     @State private var duelListener: Any? = nil
+    @State private var isLaunching = false
 
     private let profile = PlayerProfile.load() ?? PlayerProfile()
 
@@ -43,8 +44,10 @@ struct DuelLobbyView: View {
         .onDisappear {
             if let listener = duelListener {
                 Backend.shared.removeDuelListener(listener)
+                duelListener = nil
             }
         }
+        .onAppear { isLaunching = false }
     }
 
     // MARK: - Create tab
@@ -78,6 +81,8 @@ struct DuelLobbyView: View {
                             }
                         }
                         Button {
+                            guard !isLaunching else { return }   // double tap pushed two games
+                            isLaunching = true
                             // Save DuelContext so GameViewModel can submit score
                             DuelContext.save(duelId: d.id, role: .host, mode: d.mode)
                             router.push(.game(d.mode))
@@ -193,9 +198,10 @@ struct DuelLobbyView: View {
         isLoading = true; errorMsg = nil
         do {
             let result = try await Backend.shared.joinDuel(code: joinCode, guestName: profile.username, guestAvatar: profile.equippedAvatar)
-            // Save DuelContext for GameViewModel — lobby duels default to .duel mode
-            DuelContext.save(duelId: result.duelId, role: .guest, mode: .duel)
-            router.push(.game(.duel))
+            // Play the duel's real mode (invite duels can be Rush, Classic, …).
+            let mode = await Backend.shared.loadDuel(duelId: result.duelId)?.mode ?? .duel
+            DuelContext.save(duelId: result.duelId, role: .guest, mode: mode)
+            router.push(.game(mode))
         } catch { errorMsg = "Duel not found. Check the code and try again." }
         isLoading = false
     }

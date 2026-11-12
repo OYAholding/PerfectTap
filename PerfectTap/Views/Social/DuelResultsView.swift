@@ -8,7 +8,11 @@ struct DuelResultsView: View {
 
     @State private var profile: PlayerProfile = PlayerProfile.load() ?? PlayerProfile()
     @State private var statsRecorded = false
-    private var duelId: String { DuelContext.load()?.duelId ?? "" }
+    @State private var submitFailed = false
+    @State private var isRetrying = false
+    /// DuelContext may already be cleared (Home button, app restart); fall back
+    /// to the last duel played on this device.
+    private var duelId: String { DuelContext.load()?.duelId ?? PendingDuelStore.mostRecentDuelId ?? "" }
 
     var body: some View {
         ZStack {
@@ -22,9 +26,12 @@ struct DuelResultsView: View {
                 } else {
                     // Waiting for opponent to finish
                     VStack(spacing: 16) {
+                        if submitFailed { submitFailedBanner }
                         ProgressView().tint(Color(red: 0.95, green: 0.24, blue: 0.37)).scaleEffect(1.5)
                         Text("Waiting for opponent to finish…")
                             .font(.system(size: 14)).foregroundColor(.white.opacity(0.5))
+                        Text("You can leave — the result is counted when they finish.")
+                            .font(.system(size: 12)).foregroundColor(.white.opacity(0.3))
                     }
                     .padding(.top, 60)
                 }
@@ -34,6 +41,7 @@ struct DuelResultsView: View {
         .navigationBarHidden(true)
         .onAppear {
             guard !duelId.isEmpty else { return }
+            refreshSubmitState()
             listener = Backend.shared.listenDuel(duelId: duelId) { d in
                 duel = d
                 recordDuelStatsIfNeeded(d)
@@ -45,20 +53,38 @@ struct DuelResultsView: View {
         }
     }
 
-    /// Records win/loss/tie stats exactly once when duel completes.
+    /// Records win/loss/tie exactly once per duel (shared receipt with Home's settlement).
     private func recordDuelStatsIfNeeded(_ duel: Duel?) {
         guard let duel = duel, duel.isComplete, !statsRecorded else { return }
         statsRecorded = true
-
-        let result = duel.result(forUID: profile.uid)
-        switch result {
-        case .win:  profile.stats.duelWins += 1
-        case .loss: profile.stats.duelLosses += 1
-        case .tie:  profile.stats.duelTies += 1
-        case .unknown: break
+        if DuelSettlement.recordStatsIfNeeded(duel, uid: profile.uid) {
+            profile = PlayerProfile.load() ?? profile
         }
-        profile.save()
-        Task { await Backend.shared.saveProfile(profile) }
+    }
+
+    private func refreshSubmitState() {
+        submitFailed = PendingDuelStore.all().contains { $0.duelId == duelId && !$0.submitted }
+    }
+
+    private var submitFailedBanner: some View {
+        VStack(spacing: 10) {
+            Text("Your score hasn't reached the server yet.")
+                .font(.system(size: 13)).foregroundColor(.orange.opacity(0.9))
+            Button {
+                isRetrying = true
+                Task {
+                    await DuelSettlement.settle()
+                    refreshSubmitState()
+                    isRetrying = false
+                }
+            } label: {
+                Text(isRetrying ? "RETRYING…" : "RETRY")
+                    .font(.system(size: 13, weight: .black)).foregroundColor(.white)
+                    .padding(.horizontal, 24).padding(.vertical, 10)
+                    .background(Color.white.opacity(0.12)).cornerRadius(10)
+            }
+            .disabled(isRetrying)
+        }
     }
 
     private func resultContent(_ duel: Duel) -> some View {

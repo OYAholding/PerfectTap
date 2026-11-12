@@ -390,7 +390,7 @@ final class SupabaseService: GameBackend {
         let id = duelId.lowercased()
         guard UUID(uuidString: id) != nil else { return nil }
         return RealtimeQueryListener(
-            client: client, topic: "duel-\(id)", table: "duels", filter: .eq("id", value: id),
+            client: client, topic: "duel-\(id)-\(UUID().uuidString.prefix(6))", table: "duels", filter: .eq("id", value: id),
             reload: { [weak self] in await self?.loadDuel(duelId: id) },
             deliver: onChange)
     }
@@ -398,15 +398,15 @@ final class SupabaseService: GameBackend {
     func removeDuelListener(_ listener: Any?) { removeListener(listener) }
 
     func submitDuelScore(duelId: String, role: String, score: Int, maxCombo: Int,
-                         taps: Int, perfects: Int, sessionId: String?) async {
-        guard UUID(uuidString: duelId) != nil else { return }
+                         taps: Int, perfects: Int, sessionId: String?) async -> Bool {
+        guard UUID(uuidString: duelId) != nil else { return false }
         struct Params: Encodable {
             let p_duel_id: String, p_session_id: String?, p_score: Int, p_max_combo: Int, p_taps: Int, p_perfects: Int
         }
         let params = Params(p_duel_id: duelId.lowercased(), p_session_id: sessionId, p_score: max(score, 0),
                             p_max_combo: max(maxCombo, 0), p_taps: max(taps, 0), p_perfects: max(perfects, 0))
         // Idempotent server-side (second call returns duplicate:true), so retries are safe.
-        await withRetry("submit_duel_score", attempts: 5) {
+        return await withRetry("submit_duel_score", attempts: 5) {
             try await self.client.rpc("submit_duel_score", params: params).execute()
         }
     }
@@ -480,14 +480,14 @@ final class SupabaseService: GameBackend {
     func listenIncomingFriendRequests(onChange: @escaping ([FriendRequest]) -> Void) -> Any? {
         guard let uid = currentUID else { return nil }
         return RealtimeQueryListener(
-            client: client, topic: "fr-in-\(uid)", table: "friend_requests", filter: .eq("to_uid", value: uid),
+            client: client, topic: "fr-in-\(uid)-\(UUID().uuidString.prefix(6))", table: "friend_requests", filter: .eq("to_uid", value: uid),
             reload: { [weak self] in await self?.loadIncomingFriendRequests() ?? [] }, deliver: onChange)
     }
 
     func listenOutgoingFriendRequests(onChange: @escaping ([FriendRequest]) -> Void) -> Any? {
         guard let uid = currentUID else { return nil }
         return RealtimeQueryListener(
-            client: client, topic: "fr-out-\(uid)", table: "friend_requests", filter: .eq("from_uid", value: uid),
+            client: client, topic: "fr-out-\(uid)-\(UUID().uuidString.prefix(6))", table: "friend_requests", filter: .eq("from_uid", value: uid),
             reload: { [weak self] in await self?.loadOutgoingFriendRequests() ?? [] }, deliver: onChange)
     }
 
@@ -558,7 +558,7 @@ final class SupabaseService: GameBackend {
     func listenIncomingDuelInvitations(onChange: @escaping ([DuelInvitation]) -> Void) -> Any? {
         guard let uid = currentUID else { return nil }
         return RealtimeQueryListener(
-            client: client, topic: "inv-in-\(uid)", table: "duel_invitations", filter: .eq("to_uid", value: uid),
+            client: client, topic: "inv-in-\(uid)-\(UUID().uuidString.prefix(6))", table: "duel_invitations", filter: .eq("to_uid", value: uid),
             reload: { [weak self] in await self?.loadIncomingDuelInvitations() ?? [] }, deliver: onChange)
     }
 
@@ -624,15 +624,17 @@ final class SupabaseService: GameBackend {
 
     /// Retries transient (network / 5xx) failures with backoff. Business-rule
     /// errors are final and only logged.
-    private func withRetry(_ label: String, attempts: Int = 3, _ op: @escaping () async throws -> Void) async {
+    @discardableResult
+    private func withRetry(_ label: String, attempts: Int = 3, _ op: @escaping () async throws -> Void) async -> Bool {
         for attempt in 0..<attempts {
-            do { try await op(); return } catch {
+            do { try await op(); return true } catch {
                 let transient = isNetworkError(error)
                 log("\(label) failed (attempt \(attempt + 1), transient=\(transient)): \(error.localizedDescription)")
-                guard transient, attempt < attempts - 1 else { return }
+                guard transient, attempt < attempts - 1 else { return false }
                 try? await Task.sleep(nanoseconds: UInt64(1 << attempt) * 1_000_000_000)
             }
         }
+        return false
     }
 
     private func isNetworkError(_ error: Error) -> Bool {

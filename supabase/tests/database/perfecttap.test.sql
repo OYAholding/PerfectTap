@@ -8,7 +8,7 @@ begin
   select n.nspname into s from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pgtap';
   perform set_config('search_path', 'public, ' || quote_ident(coalesce(s, 'extensions')), false);
 end $$;
-select plan(67);
+select plan(70);
 
 -- ---------- fixtures ----------
 insert into auth.users (id, email, aud, role) values
@@ -204,6 +204,18 @@ select throws_ok($$ select accept_duel_invitation((select id from t_inv)) $$, 'P
 
 select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
 select ok(mark_duel_invitation_in_progress((select id from t_inv)), 'host marks invite in progress');
+
+-- retry after the 2h session TTL: accepted as unverified, not zeroed
+create temp table t_exp as select start_game_session('rush', (select duel_id from t_inv)) as id;
+grant select on t_exp to authenticated;
+select pg_temp.as_admin();
+update private.game_sessions set started_at = now() - interval '3 hours', expires_at = now() - interval '1 hour'
+ where id = (select id from t_exp);
+select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
+select is((submit_duel_score((select duel_id from t_inv), (select id from t_exp), 700, 5, 20, 10))->>'accepted', 'true',
+  'late retry with expired session accepted');
+select is((select host_score from duels where id = (select duel_id from t_inv)), 700, 'late retry keeps the real score');
+select is((select host_verified from duels where id = (select duel_id from t_inv)), false, 'late retry marked unverified');
 
 select * from finish();
 rollback;

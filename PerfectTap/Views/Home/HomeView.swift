@@ -105,8 +105,10 @@ struct HomeView: View {
             profile = PlayerProfile.load() ?? PlayerProfile()
             themeManager.current = AppTheme.named(profile.equippedTheme)
             startBadgeListeners()
-            // Firebase refresh in background
+            // Cloud refresh in background; also retry unsent duel scores and
+            // count results of duels the opponent finished meanwhile.
             Task {
+                await DuelSettlement.settle()
                 if let updated = await Backend.shared.loadProfile() {
                     profile = updated
                     themeManager.current = AppTheme.named(profile.equippedTheme)

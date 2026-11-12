@@ -31,10 +31,12 @@
 		3FD452A6C3C6A9150F122CC5 /* Quest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15438D58AB3BA7798AD8F377 /* Quest.swift */; };
 		418C76F945E7FB31B1D6DC9D /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A4A1CF1221F95BF5131884 /* AuthViewModel.swift */; };
 		45D61EB1F2B31C5AFD585119 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7AFC096252F7B539008E384C /* FirebaseCore */; };
+		48210D823E71668287C03E89 /* OfflineBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568451359E13C8AA70311BDF /* OfflineBackend.swift */; };
 		4D3A6E7BD9360736AFB90AE1 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = 55CD7B0979810E853BB0A6C0 /* GoogleMobileAds */; };
 		534E45AF29DACF2799581852 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 22EC89932937EE1C8B3B1342 /* FirebaseAnalytics */; };
 		57575E81714AE3FFA7368594 /* GameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDA347BF7085D0C57524AEF4 /* GameView.swift */; };
 		59BC951A874D1BDC70F446FD /* GameOverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7873DC6E5FAE59984C052C2 /* GameOverView.swift */; };
+		5B3A342B5932E135471116EE /* PendingDuelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17CACB3D1A1FEDE367E8CED0 /* PendingDuelStore.swift */; };
 		5EBE797C1CCCEBE2817D2B7A /* ShopItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC88E58BD5DF643239BF3C13 /* ShopItem.swift */; };
 		62021B5EB2283FEECE31FD1E /* GamePhaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C21B66226905092B4B80C1B /* GamePhaseTests.swift */; };
 		62D91F2CD073BA31F4949B7D /* LegalTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09DE701071D3DBAE85A7BA9A /* LegalTextView.swift */; };
@@ -52,6 +54,7 @@
 		91F1F87F741F32E7EEE588D9 /* Achievement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0699019BFFE748789531F6AD /* Achievement.swift */; };
 		92FF4B3C87CB10436B806A39 /* DailyQuestsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4B2816CAD0C998342B1B70 /* DailyQuestsView.swift */; };
 		98474E9BD96979397AF7A733 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D8F0EBB76E8A3A4254DC7793 /* Assets.xcassets */; };
+		9E49A3DC43AFFC7EB2C389B0 /* DuelSettlementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */; };
 		A6675798514E682E4730DD91 /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 450B7CCEF9A019A7C1E97F0B /* SupabaseService.swift */; };
 		A7B86CE07ACB635EA7604F65 /* TapBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5107C9A9EC80AF9ACB751CF /* TapBarView.swift */; };
 		AABA53FC4DE8D8F935FDA1CF /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A8FC689866162402B344D47 /* LoginView.swift */; };
@@ -107,6 +110,7 @@
 		0D6F40C24156BD0E3AB89584 /* TimingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingEngine.swift; sourceTree = "<group>"; };
 		0E791510610BEA4F3B739915 /* DuelResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelResultsView.swift; sourceTree = "<group>"; };
 		15438D58AB3BA7798AD8F377 /* Quest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Quest.swift; sourceTree = "<group>"; };
+		17CACB3D1A1FEDE367E8CED0 /* PendingDuelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingDuelStore.swift; sourceTree = "<group>"; };
 		1A8FC689866162402B344D47 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		1F19064322EEC58A61CCBCE2 /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 		271370FE4E4C5B3A2AFE4210 /* Duel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Duel.swift; sourceTree = "<group>"; };
@@ -118,12 +122,14 @@
 		488E5B36207209905F8D101A /* ShopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopView.swift; sourceTree = "<group>"; };
 		4B7EA7D37E17D5DDA68AE21F /* FirebaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseService.swift; sourceTree = "<group>"; };
 		4C75868A125000157351554F /* TimingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingEngineTests.swift; sourceTree = "<group>"; };
+		568451359E13C8AA70311BDF /* OfflineBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineBackend.swift; sourceTree = "<group>"; };
 		5743C0587E2AA0DE2A228632 /* SetUsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetUsernameView.swift; sourceTree = "<group>"; };
 		6329CE3AEC170E6896B415D9 /* LuckyWheelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuckyWheelView.swift; sourceTree = "<group>"; };
 		651BB85DC7EADE374D1F5C74 /* ModeSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectView.swift; sourceTree = "<group>"; };
 		67EEC02093E6A68BB1D8D0C9 /* ReviveModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviveModalView.swift; sourceTree = "<group>"; };
 		6BAC5A30E439191D71C2BB9B /* AchievementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AchievementsView.swift; sourceTree = "<group>"; };
 		6DF9866D162166E062901CE4 /* TouchDownTapArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchDownTapArea.swift; sourceTree = "<group>"; };
+		71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelSettlementTests.swift; sourceTree = "<group>"; };
 		7A8E72E9E3F5EF07C92F8288 /* BackendCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendCodec.swift; sourceTree = "<group>"; };
 		854CD79F2CC57FC0F1622D1A /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
 		8AB144655DBE70DAD84BC758 /* DuelLobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelLobbyView.swift; sourceTree = "<group>"; };
@@ -185,6 +191,7 @@
 			children = (
 				7A8E72E9E3F5EF07C92F8288 /* BackendCodec.swift */,
 				E350779B14464EB647F28558 /* GameBackend.swift */,
+				568451359E13C8AA70311BDF /* OfflineBackend.swift */,
 				450B7CCEF9A019A7C1E97F0B /* SupabaseService.swift */,
 			);
 			path = Backend;
@@ -203,6 +210,7 @@
 			isa = PBXGroup;
 			children = (
 				F2754EC3C8C3DAFD69C770B5 /* BackendCodecTests.swift */,
+				71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */,
 				8C21B66226905092B4B80C1B /* GamePhaseTests.swift */,
 				4C75868A125000157351554F /* TimingEngineTests.swift */,
 			);
@@ -277,6 +285,7 @@
 				271370FE4E4C5B3A2AFE4210 /* Duel.swift */,
 				35746FABF7F6F46DE0EA641E /* DuelContext.swift */,
 				95FCC2B3451E85F76D66CC41 /* GameMode.swift */,
+				17CACB3D1A1FEDE367E8CED0 /* PendingDuelStore.swift */,
 				281CC4A6F29CD6D4ED8467DB /* PlayerProfile.swift */,
 				15438D58AB3BA7798AD8F377 /* Quest.swift */,
 				E9F9EA6B3A63A91A7E177720 /* SeasonPass.swift */,
@@ -591,7 +600,9 @@
 				AABA53FC4DE8D8F935FDA1CF /* LoginView.swift in Sources */,
 				638B1DEBCFFFC9102E1E2465 /* LuckyWheelView.swift in Sources */,
 				35D36523512D0140D0B61B8E /* ModeSelectView.swift in Sources */,
+				48210D823E71668287C03E89 /* OfflineBackend.swift in Sources */,
 				9173E644DF38392B606F71E3 /* ParticleEffectView.swift in Sources */,
+				5B3A342B5932E135471116EE /* PendingDuelStore.swift in Sources */,
 				34DE705050A908AF4BB383FC /* PerfectTapApp.swift in Sources */,
 				05FB4A51A459C8FD85C04C73 /* PlayerProfile.swift in Sources */,
 				F458884FC00AEEBD71F77555 /* ProfileView.swift in Sources */,
@@ -620,6 +631,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EE17B897592BE4BBDCEB18D7 /* BackendCodecTests.swift in Sources */,
+				9E49A3DC43AFFC7EB2C389B0 /* DuelSettlementTests.swift in Sources */,
 				62021B5EB2283FEECE31FD1E /* GamePhaseTests.swift in Sources */,
 				D3EEEB8D79675DCE566FEDBD /* TimingEngineTests.swift in Sources */,
 			);

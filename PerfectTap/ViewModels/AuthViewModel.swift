@@ -284,6 +284,12 @@ final class AuthViewModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "perfecttap_haptics")
         DuelContext.clear()
         DuelInviteLaunchReceiptStore.clear()
+        PendingDuelStore.clear()
+        // A fresh account must not inherit today's wheel/quest claims.
+        for key in UserDefaults.standard.dictionaryRepresentation().keys
+        where key.hasPrefix("perfecttap_quests_") || key.hasPrefix("perfecttap_wheel_") || key == "perfecttap_last_spin" {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
 
         // Reset in-memory state
         currentUID = nil

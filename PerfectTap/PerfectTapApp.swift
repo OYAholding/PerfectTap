@@ -101,6 +101,10 @@ private struct DuelAutoLaunchBootstrapView: View {
             .onAppear {
                 duelAutoLaunchCoordinator.start(router: router)
             }
+            // Signed in later (e.g. launched offline): start listening then.
+            .onReceive(AuthViewModel.shared.$currentUID) { uid in
+                if uid != nil { duelAutoLaunchCoordinator.start(router: router) }
+            }
             .onDisappear {
                 duelAutoLaunchCoordinator.stop()
             }
@@ -116,13 +120,13 @@ final class DuelAutoLaunchCoordinator: ObservableObject {
     func start(router: AppRouter) {
         self.router = router
         guard !isListening else { return }
-        isListening = true
-
         outgoingInviteListener = Backend.shared.listenOutgoingDuelInvitations { [weak self] invites in
             Task { @MainActor in
                 self?.handleOutgoingInvites(invites)
             }
         }
+        // nil = no signed-in user yet (e.g. launched offline): stay retryable.
+        isListening = outgoingInviteListener != nil
     }
 
     func stop() {
