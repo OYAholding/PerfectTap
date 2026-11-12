@@ -17,6 +17,14 @@ struct GameSettingsView: View {
     @State private var showPrivacyPolicy = false
     @State private var showTermsOfUse = false
 
+    /// Real build version (was hard-coded "1.0.0" while the app ships 1.0.2).
+    static var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
+    }
+
     var body: some View {
         ZStack {
             Color(red: 0.039, green: 0.039, blue: 0.059).ignoresSafeArea()
@@ -180,7 +188,7 @@ struct GameSettingsView: View {
                         }
 
                         // App version
-                        Text("PerfectTap v1.0.0")
+                        Text("PerfectTap v\(Self.appVersion)")
                             .font(.system(size: 11))
                             .foregroundColor(.white.opacity(0.2))
                             .padding(.top, 8)

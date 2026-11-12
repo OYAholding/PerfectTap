@@ -37,9 +37,20 @@ final class SupabaseService: GameBackend {
             supabaseURL: config.url,
             supabaseKey: config.publishableKey,
             options: SupabaseClientOptions(
-                auth: .init(emitLocalSessionAsInitialSession: true)
+                // Per-project Keychain key: the SDK default is shared by every
+                // project, so a session from another project (e.g. the local
+                // stack, or a previous backend) would be restored here.
+                auth: .init(storageKey: Self.storageKey(for: config.url),
+                            emitLocalSessionAsInitialSession: true)
             )
         )
+    }
+
+    static func storageKey(for url: URL) -> String {
+        let host = url.host ?? "supabase"
+        let ref = host.hasSuffix(".supabase.co") ? String(host.dropLast(".supabase.co".count)) : host
+        let port = url.port.map { "-\($0)" } ?? ""
+        return "sb-\(ref)\(port)-auth-token"
     }
 
     // MARK: - Identity
@@ -60,6 +71,11 @@ final class SupabaseService: GameBackend {
     /// moves this device's Firebase-era progress onto it.
     func signInAnonymously() async -> String? {
         var uid = currentUID
+        if uid != nil, await restoredSessionIsGone() {
+            log("restored session no longer valid on the server; starting a fresh anonymous account")
+            try? await client.auth.signOut(scope: .local)
+            uid = nil
+        }
         if uid == nil {
             do {
                 let session = try await client.auth.signInAnonymously()
@@ -76,6 +92,25 @@ final class SupabaseService: GameBackend {
     /// Step 1 of "Cloud Backup": Supabase emails a one-time code to the address.
     /// The email is attached only after the player proves they can read it
     /// (`confirmEmailLink`). Needs working SMTP on the project.
+    /// True only when the server positively says the cached user/session is
+    /// invalid (deleted account, reset project). Offline keeps the session.
+    private func restoredSessionIsGone() async -> Bool {
+        do {
+            _ = try await client.auth.user()
+            return false
+        } catch {
+            if isNetworkError(error) { return false }
+            if let authError = error as? AuthError {
+                switch authError.errorCode {
+                case .userNotFound, .badJWT, .sessionNotFound, .sessionExpired, .refreshTokenNotFound: return true
+                default: break
+                }
+                if case .sessionMissing = authError { return true }
+            }
+            return false
+        }
+    }
+
     func linkAnonymousAccount(email: String, password: String) async throws -> String {
         guard let user = client.auth.currentUser else { throw BackendError.notSignedIn }
         if let existing = user.email, !existing.isEmpty, user.emailConfirmedAt != nil {
@@ -119,7 +154,11 @@ final class SupabaseService: GameBackend {
         case .emailAddressNotAuthorized:
             return BackendError.server("Email backup is temporarily unavailable. Please try again later.")
         case .weakPassword: return BackendError.server("Choose a stronger password (at least 6 characters).")
-        default: return BackendError.server("Something went wrong. Please try again.")
+        default:
+            if authError.errorCode.rawValue == "email_address_invalid" {
+                return BackendError.server("Enter a valid email address you can receive mail at.")
+            }
+            return BackendError.server("Something went wrong. Please try again.")
         }
     }
 
@@ -200,6 +239,9 @@ final class SupabaseService: GameBackend {
             return try await client.functions.invoke(
                 "claim-legacy-account",
                 options: FunctionInvokeOptions(body: Body(firebaseIdToken: firebaseToken, password: password)))
+        } catch FunctionsError.httpError(let code, let data) where code != 409 {
+            log("claim-legacy-account HTTP \(code): \(String(data: data, encoding: .utf8) ?? "")")
+            throw FunctionsError.httpError(code: code, data: data)
         } catch FunctionsError.httpError(let code, let data) where code == 409 {
             // Conflicts are terminal answers, not failures.
             return (try? JSONDecoder().decode(ClaimReply.self, from: data)) ?? ClaimReply(status: "conflict", email: nil, usernameConflict: nil)
