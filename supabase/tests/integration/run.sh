@@ -15,10 +15,16 @@ done
 sleep 5
 psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f supabase/tests/integration/fixtures/legacy.psql
 
+# Edge runtime (in Docker) must reach the fake Firebase server on the host:
+# host.docker.internal on macOS/Windows, the Supabase network gateway on Linux CI.
+HOST_ALIAS=host.docker.internal
+if [ "$(uname)" = "Linux" ]; then
+  HOST_ALIAS=$(docker network inspect supabase_network_perfecttap -f '{{(index .IPAM.Config 0).Gateway}}')
+fi
 cat > /tmp/perfecttap-functions.env <<ENV
 FIREBASE_PROJECT_ID=perfecttap-48a08
-FIREBASE_JWKS_URL=http://host.docker.internal:55699/jwks
-FIREBASE_IDENTITY_URL=http://host.docker.internal:55699
+FIREBASE_JWKS_URL=http://$HOST_ALIAS:55699/jwks
+FIREBASE_IDENTITY_URL=http://$HOST_ALIAS:55699
 FIREBASE_WEB_API_KEY=test-key
 ENV
 supabase functions serve --env-file /tmp/perfecttap-functions.env >/tmp/perfecttap-functions.log 2>&1 &

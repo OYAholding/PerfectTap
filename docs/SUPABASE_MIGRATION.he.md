@@ -234,7 +234,7 @@ SwiftUI ──► Backend.shared (GameBackend protocol)
 ```bash
 supabase start && supabase test db --local      # pgTAP
 ./supabase/tests/integration/run.sh             # end-to-end (מקומי בלבד)
-cd PerfectTap && xcodebuild test -scheme PerfectTap -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+cd ios/PerfectTap && xcodebuild test -scheme PerfectTap -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 - **לא הורצו:** בדיקת ה-UI ‏(`ModeRuntimeQATests`) ובדיקות ה-emulator הישנות של Firestore.
 

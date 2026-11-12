@@ -21,7 +21,7 @@ print(pub[0])')"
 python3 - "$REF" "$KEY" <<'PY'
 import re, sys
 ref, key = sys.argv[1], sys.argv[2]
-p = "PerfectTap/project.yml"
+p = "ios/PerfectTap/project.yml"
 s = open(p).read()
 s, n1 = re.subn(r'SUPABASE_URL: "[^"]*"', f'SUPABASE_URL: "https://{ref}.supabase.co"', s)
 s, n2 = re.subn(r'SUPABASE_PUBLISHABLE_KEY: "[^"]*"', f'SUPABASE_PUBLISHABLE_KEY: "{key}"', s)
@@ -29,5 +29,5 @@ if n1 != 1 or n2 != 1: sys.exit(f"project.yml: expected 1 URL + 1 key line, foun
 open(p, "w").write(s)
 PY
 echo "$REF" > supabase/.perfecttap-ref
-(cd PerfectTap && xcodegen generate >/dev/null)
+(cd ios/PerfectTap && xcodegen generate >/dev/null)
 echo "App now points at https://$REF.supabase.co (publishable key only). Next: ./scripts/deploy-supabase.sh"

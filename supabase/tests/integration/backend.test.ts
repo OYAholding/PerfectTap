@@ -89,6 +89,26 @@ async function waitFor(pred: () => boolean, ms = 8000) {
 
 const opts = { sanitizeOps: false, sanitizeResources: false };
 
+// A fresh stack attaches the Realtime WAL listener lazily: SUBSCRIBED can arrive
+// before change events flow. Warm it up once so timing-sensitive tests are stable.
+Deno.test({ name: "realtime warm-up (first change event delivered)", ...opts, fn: async () => {
+  const u = await anonUser("W" + rid());
+  const { data: s } = await u.c.auth.getSession();
+  u.c.realtime.setAuth(s.session!.access_token);
+  let got = false;
+  const ch = await new Promise<any>((resolve) => {
+    const c = u.c.channel("warmup:" + rid())
+      .on("postgres_changes", { event: "*", schema: "public", table: "duels", filter: `host_id=eq.${u.id}` }, () => { got = true; })
+      .subscribe((st) => { if (st === "SUBSCRIBED") resolve(c); });
+  });
+  for (let i = 0; i < 6 && !got; i++) {
+    await u.c.rpc("create_duel", { p_mode: "duel" });
+    await waitFor(() => got, 5000);
+  }
+  await u.c.removeChannel(ch);
+  assert(got, "Realtime delivered a change event within 30s");
+}});
+
 Deno.test({ name: "anonymous auth + profile privacy", ...opts, fn: async () => {
   const a = await anonUser("Alice" + rid());
   const b = await anonUser("Bob" + rid());

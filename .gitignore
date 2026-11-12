@@ -33,3 +33,10 @@ build/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+
+# Local tooling (machine-specific paths)
+.claude/
+supabase/.temp/
+supabase/.branches/
+# Firestore exports contain player data
+scripts/migration/*.csv

@@ -16,11 +16,11 @@ PERFECTTAP_REF="$(resolve_perfecttap_ref "${PERFECTTAP_REF:-}")"
 FIREBASE_PROJECT_ID="perfecttap-48a08"
 # Public Firebase Web API key (already shipped in GoogleService-Info.plist); used
 # server-side only to verify legacy email/password logins during migration.
-FIREBASE_WEB_API_KEY="$(/usr/libexec/PlistBuddy -c 'Print :API_KEY' PerfectTap/GoogleService-Info.plist)"
+FIREBASE_WEB_API_KEY="$(/usr/libexec/PlistBuddy -c 'Print :API_KEY' ios/PerfectTap/GoogleService-Info.plist)"
 
 echo "Supabase CLI: $(supabase --version 2>/dev/null | head -1)"
 verify_perfecttap_target "$PERFECTTAP_REF"
-grep -q "https://$PERFECTTAP_REF.supabase.co" PerfectTap/project.yml \
+grep -q "https://$PERFECTTAP_REF.supabase.co" ios/PerfectTap/project.yml \
   || { echo "REFUSING: app (project.yml) does not point at $PERFECTTAP_REF — run scripts/use-supabase-project.sh $PERFECTTAP_REF" >&2; exit 2; }
 
 cat <<PLAN
