@@ -273,11 +273,13 @@ final class AdManager: ObservableObject {
             var hasResumed = false
 
             // Set delegate to detect ad dismissal (catches early-close / no reward)
+            var earnedReward = false
+            // Resume only when the ad is gone, so gameplay never restarts behind it.
             let delegate = AdDismissDelegate(label: "rewarded:\(placement.rawValue)") {
                 if !hasResumed {
                     hasResumed = true
-                    adLog("Ad dismissed without reward for placement: \(placement.rawValue)")
-                    continuation.resume(returning: false)
+                    adLog("Ad dismissed for placement: \(placement.rawValue) earned=\(earnedReward)")
+                    continuation.resume(returning: earnedReward)
                 }
             } onFail: { error in
                 if !hasResumed {
@@ -291,13 +293,12 @@ final class AdManager: ObservableObject {
             self._adDismissDelegate = delegate
 
             rewardedAd.present(from: rootVC) {
-                // This closure fires ONLY when the user earns the reward
-                if !hasResumed {
-                    hasResumed = true
-                    self.recordRewardedCompletion()
-                    adLog("User earned reward for placement: \(placement.rawValue)")
-                    continuation.resume(returning: true)
-                }
+                // Fires when the reward is earned; the ad may still be on screen.
+                // Remember it and resume on dismissal (delegate above).
+                guard !earnedReward else { return }
+                earnedReward = true
+                self.recordRewardedCompletion()
+                adLog("User earned reward for placement: \(placement.rawValue)")
             }
         }
 

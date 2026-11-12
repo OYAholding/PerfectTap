@@ -39,7 +39,8 @@ private struct TouchDownCatcher: UIViewRepresentable {
     func makeUIView(context: Context) -> TouchDownView {
         let view = TouchDownView()
         view.backgroundColor = .clear
-        view.isMultipleTouchEnabled = true
+        // One finger = one tap: a second simultaneous finger used to score twice.
+        view.isMultipleTouchEnabled = false
         view.isAccessibilityElement = true
         view.accessibilityTraits = .button
         update(view)

@@ -95,6 +95,13 @@ final class GameViewModel: ObservableObject {
     /// Server-issued session (Cloud Function `startGame`), requested at GO.
     private var scoreSessionTask: Task<String?, Never>? = nil
     private var duelSessionTask: Task<String?, Never>? = nil
+    /// True while the 3-2-1 shown after a revive or app resume runs: GO then
+    /// returns to play without starting new server sessions.
+    private var isResumeCountdown = false
+    /// Last accepted tap (touch timestamp). Rejects a second finger landing in
+    /// the same instant, which used to score twice.
+    private var lastAcceptedTapAt: CFTimeInterval = 0
+    static let minTapInterval: CFTimeInterval = 0.04
 
     // Timing — use a proxy object to break retain cycle
     private var displayLink: CADisplayLink?
@@ -222,6 +229,12 @@ final class GameViewModel: ObservableObject {
     private func enterPlaying() {
         guard case .countdown = phase else { return }
         soundEngine?.play(.countdownGo)
+        if isResumeCountdown {
+            isResumeCountdown = false
+            lastTimestamp = 0
+            phase = .playing
+            return
+        }
         let launchedMode = mode
         scoreSessionTask = Task {
             await Backend.shared.startGameSession(mode: launchedMode, duelId: nil)
@@ -243,7 +256,8 @@ final class GameViewModel: ObservableObject {
     /// playing → revive | finished.
     private func handleOutOfLives() {
         guard phase == .playing else { return }
-        if !hasUsedRevive && mode.supportsRevive {
+        // No revives in duels: both players get exactly one run.
+        if !hasUsedRevive && mode.supportsRevive && duelContext == nil {
             phase = .revive
         } else {
             finish()
@@ -262,7 +276,17 @@ final class GameViewModel: ObservableObject {
             timeLeft += GameConfig.reviveBonusSeconds
         }
         lastTimestamp = 0   // don't count the time spent on the modal
-        phase = .playing
+        startResumeCountdown()
+    }
+
+    /// Short 3-2-1 before play continues (after revive / returning to the app),
+    /// so the player isn't dropped straight into a moving indicator.
+    private func startResumeCountdown() {
+        isResumeCountdown = true
+        countdownElapsed = 0
+        lastTimestamp = 0
+        phase = .countdown(Self.countdownStart)
+        soundEngine?.play(.countdown)
     }
 
     /// revive → finished.
@@ -424,6 +448,9 @@ final class GameViewModel: ObservableObject {
         #endif
 
         guard phase == .playing, !isSuspended else { return }
+        let tapAt = touchTimestamp ?? CACurrentMediaTime()
+        if lastAcceptedTapAt > 0, tapAt - lastAcceptedTapAt < Self.minTapInterval { return }
+        lastAcceptedTapAt = tapAt
 
         var pos = positionRef
         if let touchTimestamp, lastTimestamp > 0 {
@@ -751,6 +778,7 @@ final class GameViewModel: ObservableObject {
         guard isSuspended else { return }
         isSuspended = false
         lastTimestamp = 0   // first frame after resume has delta 0
+        if phase == .playing { startResumeCountdown() }
     }
 
     deinit {

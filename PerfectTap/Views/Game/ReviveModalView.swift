@@ -1,9 +1,11 @@
 import SwiftUI
 
 // MARK: - ReviveModal (shown when player runs out of lives)
-// Wired to AdManager with fail-open behavior:
+// Wired to AdManager:
 // - no-ads users continue instantly
-// - if ad inventory is unavailable, continue without blocking gameplay
+// - if ad inventory is unavailable, continue without blocking gameplay (fail-open)
+// - an ad closed before the reward does NOT revive (it used to)
+// Duels never show this modal (GameViewModel disables revive for duel runs).
 // Limit: 1 revive per game session (handled by GameViewModel.hasUsedReviveRef).
 // No daily limit — players can revive once per game, every game.
 struct ReviveModalView: View {
@@ -12,6 +14,7 @@ struct ReviveModalView: View {
     let onDecline: () -> Void
 
     @State private var isLoadingAd = false
+    @State private var adUnavailableMessage: String? = nil
     /// Whether the user has purchased no-ads (gets free revives)
     private var hasNoAds: Bool {
         (PlayerProfile.load() ?? PlayerProfile()).noAds
@@ -67,6 +70,13 @@ struct ReviveModalView: View {
                     }
                     .disabled(isLoadingAd)
 
+                    if let message = adUnavailableMessage {
+                        Text(message)
+                            .font(.system(size: 12))
+                            .foregroundColor(.orange.opacity(0.85))
+                            .multilineTextAlignment(.center)
+                    }
+
                     Button(action: onDecline) {
                         Text("Give Up")
                             .font(.system(size: 14, weight: .semibold))
@@ -96,6 +106,7 @@ struct ReviveModalView: View {
             return
         }
         isLoadingAd = true
+        adUnavailableMessage = nil
 
         Task {
             let watched = await AdManager.shared.showRewardedAd(placement: .reviveReward)
@@ -104,8 +115,9 @@ struct ReviveModalView: View {
             if watched {
                 onRevive()
             } else {
-                // Ad failed mid-flow (dismissed/failed to present). Continue anyway.
-                onRevive()
+                // Closed early or failed mid-flow: no reward. The modal stays so
+                // the player can try again or give up.
+                adUnavailableMessage = "The ad didn't finish, so no revive this time."
             }
         }
     }

@@ -76,9 +76,13 @@ final class GamePhaseTests: XCTestCase {
 
         vm.appDidMoveToBackground()
         vm.appDidBecomeActive()
+        // Resuming shows a 3-2-1 first; the mode timer stays frozen during it.
+        XCTAssertEqual(vm.phase, .countdown(3))
         vm.step(now: 1_000)                   // long gap, delta 0
         XCTAssertEqual(vm.timeLeft, before, accuracy: 0.001)
+        for i in 1...3 { vm.step(now: 1_000 + Double(i)) }
         XCTAssertEqual(vm.phase, .playing)
+        XCTAssertEqual(vm.timeLeft, before, accuracy: 0.001)
     }
 
     func testTimerExpiryFinishesExactlyOnce() {
@@ -134,6 +138,21 @@ final class GamePhaseTests: XCTestCase {
         XCTAssertEqual(vm.tapSequence, 0)
         vm.appDidBecomeActive()
         vm.handleTap()
+        XCTAssertEqual(vm.tapSequence, 0, "taps ignored during the resume countdown")
+        for i in 1...4 { vm.step(now: 500 + Double(i)) }
+        XCTAssertEqual(vm.phase, .playing)
+        vm.handleTap()
         XCTAssertEqual(vm.tapSequence, 1)
+    }
+
+    /// Regression: two fingers landing together scored twice.
+    func testSimultaneousTapsCountOnce() {
+        start(.classic)
+        runCountdown()
+        vm.handleTap(touchTimestamp: 200.000)
+        vm.handleTap(touchTimestamp: 200.005)          // second finger, same instant
+        XCTAssertEqual(vm.tapSequence, 1)
+        vm.handleTap(touchTimestamp: 200.000 + GameViewModel.minTapInterval + 0.01)
+        XCTAssertEqual(vm.tapSequence, 2)
     }
 }
