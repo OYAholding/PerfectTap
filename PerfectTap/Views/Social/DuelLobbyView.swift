@@ -42,7 +42,7 @@ struct DuelLobbyView: View {
         .navigationBarHidden(true)
         .onDisappear {
             if let listener = duelListener {
-                FirebaseService.shared.removeDuelListener(listener)
+                Backend.shared.removeDuelListener(listener)
             }
         }
     }
@@ -178,11 +178,11 @@ struct DuelLobbyView: View {
     private func createDuel() async {
         isLoading = true; errorMsg = nil
         do {
-            let result = try await FirebaseService.shared.createDuel(hostName: profile.username, hostAvatar: profile.equippedAvatar)
+            let result = try await Backend.shared.createDuel(hostName: profile.username, hostAvatar: profile.equippedAvatar)
             duelId = result.duelId
             createdCode = result.code
             // Start listening for opponent to join
-            duelListener = FirebaseService.shared.listenDuel(duelId: result.duelId) { d in
+            duelListener = Backend.shared.listenDuel(duelId: result.duelId) { d in
                 duel = d
             }
         } catch { errorMsg = error.localizedDescription }
@@ -192,7 +192,7 @@ struct DuelLobbyView: View {
     private func joinDuel() async {
         isLoading = true; errorMsg = nil
         do {
-            let result = try await FirebaseService.shared.joinDuel(code: joinCode, guestName: profile.username, guestAvatar: profile.equippedAvatar)
+            let result = try await Backend.shared.joinDuel(code: joinCode, guestName: profile.username, guestAvatar: profile.equippedAvatar)
             // Save DuelContext for GameViewModel — lobby duels default to .duel mode
             DuelContext.save(duelId: result.duelId, role: .guest, mode: .duel)
             router.push(.game(.duel))

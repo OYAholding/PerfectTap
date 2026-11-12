@@ -62,7 +62,7 @@ struct FriendDetailView: View {
             startInviteListener()
         }
         .onDisappear {
-            FirebaseService.shared.removeListener(inviteListener)
+            Backend.shared.removeListener(inviteListener)
             inviteListener = nil
         }
     }
@@ -306,12 +306,12 @@ struct FriendDetailView: View {
 
     private func loadData() async {
         isLoading = true
-        friendProfile = await FirebaseService.shared.loadPlayerProfile(uid: friendUID)
+        friendProfile = await Backend.shared.loadPlayerProfile(uid: friendUID)
         isLoading = false
     }
 
     private func startInviteListener() {
-        inviteListener = FirebaseService.shared.listenOutgoingDuelInvitation(toUID: friendUID) { invite in
+        inviteListener = Backend.shared.listenOutgoingDuelInvitation(toUID: friendUID) { invite in
             Task { @MainActor in
                 pendingInvite = invite
                 await refreshPendingInviteState()
@@ -328,22 +328,22 @@ struct FriendDetailView: View {
         }
 
         if invite.status == .accepted || invite.status == .inProgress {
-            pendingInviteDuel = await FirebaseService.shared.loadDuel(duelId: invite.duelId)
+            pendingInviteDuel = await Backend.shared.loadDuel(duelId: invite.duelId)
         } else {
             pendingInviteDuel = nil
         }
 
         pendingInviteState = invite.presentationState(
-            currentUID: FirebaseService.shared.currentUID,
+            currentUID: Backend.shared.currentUID,
             duel: pendingInviteDuel,
             isHandled: DuelInviteLaunchReceiptStore.isHandled(inviteId: invite.id, duelId: invite.duelId)
         )
     }
 
     private func launchPendingInviteIfActionable(_ invite: DuelInvitation) async {
-        let duel = await FirebaseService.shared.loadDuel(duelId: invite.duelId)
+        let duel = await Backend.shared.loadDuel(duelId: invite.duelId)
         let state = invite.presentationState(
-            currentUID: FirebaseService.shared.currentUID,
+            currentUID: Backend.shared.currentUID,
             duel: duel,
             isHandled: DuelInviteLaunchReceiptStore.isHandled(inviteId: invite.id, duelId: invite.duelId)
         )
@@ -355,7 +355,7 @@ struct FriendDetailView: View {
 
         DuelInviteLaunchReceiptStore.markHandled(inviteId: invite.id, duelId: invite.duelId)
         DuelContext.save(duelId: invite.duelId, role: .host, mode: invite.mode)
-        _ = await FirebaseService.shared.markDuelInvitationInProgress(invite.id)
+        _ = await Backend.shared.markDuelInvitationInProgress(invite.id)
         await refreshPendingInviteState()
         router.push(.game(invite.mode))
     }
@@ -363,7 +363,7 @@ struct FriendDetailView: View {
     private func sendInvite(_ fp: PlayerProfile) async {
         isInviting = true; errorMsg = nil
         do {
-            let invite = try await FirebaseService.shared.sendDuelInvitation(
+            let invite = try await Backend.shared.sendDuelInvitation(
                 toUID: fp.uid, toUsername: fp.username, toAvatar: fp.avatar, mode: selectedDuelMode
             )
             pendingInvite = invite

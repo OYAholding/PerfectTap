@@ -4,11 +4,25 @@ import Combine
 
 // TapAccuracy lives in Utils/TimingEngine.swift (pure, unit-tested).
 
-// MARK: - Game phase
-enum GamePhase {
+// MARK: - Game phase (single source of truth for the session lifecycle)
+//
+//   countdown(3→2→1) ──GO──▶ playing ──out of lives, revive available──▶ revive
+//          │                  │  ▲                                        │   │
+//          │ quit             │  └──────────── acceptRevive ──────────────┘   │
+//          ▼                  ▼ quit / timer ends / out of lives (no revive)  │ declineRevive
+//       finished ◀────────────┴───────────────────────────────────────────────┘
+//
+// `finished` is terminal and is entered ONLY through `finish()`, which reports
+// the result exactly once.
+//
+// App lifecycle (background / inactive) is an orthogonal region tracked by
+// `isSuspended`: it freezes the clock in countdown and playing without changing
+// the phase, so the countdown overlay / revive modal stay on screen while
+// e.g. Control Center is pulled down.
+enum GamePhase: Equatable {
     case countdown(Int)   // 3, 2, 1
     case playing
-    case paused           // revive modal showing
+    case revive           // out of lives, revive modal showing, clock frozen
     case finished
 }
 
@@ -38,7 +52,7 @@ final class IndicatorRelay: ObservableObject {
 final class GameViewModel: ObservableObject {
 
     // MARK: Published state (drives SwiftUI views — updated sparingly)
-    @Published var phase: GamePhase = .countdown(3)
+    @Published private(set) var phase: GamePhase = .countdown(3)
     @Published var score: Int = 0
     @Published var combo: Int = 0
     @Published var lives: Int = 3
@@ -48,7 +62,8 @@ final class GameViewModel: ObservableObject {
     /// Increments on every scored tap — drives feedback even when the
     /// accuracy repeats (onChange(of: lastTapAccuracy) misses PERFECT→PERFECT).
     @Published private(set) var tapSequence: Int = 0
-    @Published var showReviveModal: Bool = false
+    /// Derived from `phase` — never stored separately.
+    var showReviveModal: Bool { phase == .revive }
     @Published var zenPerfects: Int = 0
     @Published var zenGreats: Int = 0
     @Published var zenTotal: Int = 0
@@ -74,23 +89,30 @@ final class GameViewModel: ObservableObject {
     private var missCountRef: Int = 0
     private var totalTapsRef: Int = 0
     private var perfectCountRef: Int = 0
-    private var gameOverRef: Bool = false
-    private var pausedRef: Bool = false
-    private var hasUsedReviveRef: Bool = false
+    /// Game fact (not lifecycle state): at most one revive per session.
+    private var hasUsedRevive: Bool = false
     private var perfectsInFirst20Ref: Int = 0
-    private var didFinalizeRef: Bool = false  // guard against double finalize
     /// Server-issued session (Cloud Function `startGame`), requested at GO.
     private var scoreSessionTask: Task<String?, Never>? = nil
+    private var duelSessionTask: Task<String?, Never>? = nil
 
     // Timing — use a proxy object to break retain cycle
     private var displayLink: CADisplayLink?
     private var displayLinkProxy: DisplayLinkProxy?
     private var lastTimestamp: CFTimeInterval = 0
     private var lastFrameDuration: CFTimeInterval = 1.0 / 60.0
-    private var gameStartTime: CFTimeInterval = 0
-    private var timedStartTime: CFTimeInterval = 0
-    private var lifecyclePauseStart: CFTimeInterval? = nil
-    private var lifecyclePausedRef: Bool = false
+
+    // Clocks are accumulated from display-link deltas while the clock is
+    // running (countdown/playing, not suspended), so every pause — background,
+    // inactive, revive modal — is excluded automatically. No start-time shifting.
+    private var countdownElapsed: CFTimeInterval = 0
+    private var playElapsed: CFTimeInterval = 0
+    /// Extra seconds granted to the mode timer (revive bonus).
+    private var timerBonus: CFTimeInterval = 0
+    /// Orthogonal lifecycle region: app is background/inactive.
+    private var isSuspended: Bool = false
+
+    private static let countdownStart = 3
 
     // Mode
     private(set) var mode: GameMode = .classic
@@ -135,10 +157,11 @@ final class GameViewModel: ObservableObject {
         self.timeLeft = mode.hasTimer ? mode.timerDuration : GameConfig.timedDuration
         self.positionRef = 0.0
         self.directionRef = 1.0
-        self.gameOverRef = false
-        self.pausedRef = false
-        self.hasUsedReviveRef = false
-        self.didFinalizeRef = false
+        self.hasUsedRevive = false
+        self.countdownElapsed = 0
+        self.playElapsed = 0
+        self.timerBonus = 0
+        self.isSuspended = false
         self.chaosNextSpeedChange = Int.random(in: 3...6)
         self.precisionZoneScale = 1.0
         self.tinyWindowZoneScale = 0.5
@@ -146,8 +169,6 @@ final class GameViewModel: ObservableObject {
         self.hardcoreBreakShock = 0.0
         self.hardcorePenaltyTapsRemaining = 0
         self.focusBaseSpeed = mode.initialSpeed
-        self.lifecyclePauseStart = nil
-        self.lifecyclePausedRef = false
         syncTapBarPerfectZoneScale()
 
         // Duel context hardening: only keep context if it matches this launched mode.
@@ -174,41 +195,94 @@ final class GameViewModel: ObservableObject {
             scoreMultiplier = 1.0
         }
 
-        phase = .countdown(3)
-        startCountdown()
+        phase = .countdown(Self.countdownStart)
+        soundEngine?.play(.countdown)
+        // The display link drives the countdown too, so it honours suspension
+        // (previously an asyncAfter chain kept running in the background).
+        startGameLoop()
     }
 
-    // MARK: - Countdown (3 → 2 → 1 → GO)
-    private func startCountdown() {
-        var count = 3
-        soundEngine?.play(.countdown)
+    // MARK: - Transitions
+    // Every phase change goes through one of these. Each guards its source phase.
 
-        func tick() {
-            guard !gameOverRef else { return }
-            if count > 0 {
-                phase = .countdown(count)
-                count -= 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                    guard let self, !self.gameOverRef else { return }
-                    if count == 0 {
-                        self.soundEngine?.play(.countdownGo)
-                        let launchedMode = self.mode
-                        self.scoreSessionTask = Task {
-                            await FirebaseService.shared.startGameSession(mode: launchedMode)
-                        }
-                        self.phase = .playing
-                        self.startGameLoop()
-                        self.gameStartTime = CACurrentMediaTime()
-                        self.timedStartTime = self.gameStartTime
-                        AnalyticsService.logGameStart(mode: self.mode.rawValue)
-                    } else {
-                        self.soundEngine?.play(.countdown)
-                        tick()
-                    }
-                }
-            }
+    /// countdown → countdown(n-1) | playing. Called from the display-link tick.
+    private func advanceCountdown(by delta: CFTimeInterval) {
+        guard case .countdown(let shown) = phase else { return }
+        countdownElapsed += delta
+        let remaining = Self.countdownStart - Int(countdownElapsed)
+        if remaining <= 0 {
+            enterPlaying()
+        } else if remaining != shown {
+            phase = .countdown(remaining)
+            soundEngine?.play(.countdown)
         }
-        tick()
+    }
+
+    /// countdown → playing (GO).
+    private func enterPlaying() {
+        guard case .countdown = phase else { return }
+        soundEngine?.play(.countdownGo)
+        let launchedMode = mode
+        scoreSessionTask = Task {
+            await Backend.shared.startGameSession(mode: launchedMode, duelId: nil)
+        }
+        // Duel runs get their own server-timed session bound to the duel, so the
+        // backend can bound the duel score by real elapsed time (Supabase only).
+        if let ctx = duelContext, ctx.mode == launchedMode, !ctx.duelId.isEmpty {
+            let duelId = ctx.duelId
+            duelSessionTask = Task {
+                await Backend.shared.startGameSession(mode: launchedMode, duelId: duelId)
+            }
+        } else {
+            duelSessionTask = nil
+        }
+        phase = .playing
+        AnalyticsService.logGameStart(mode: mode.rawValue)
+    }
+
+    /// playing → revive | finished.
+    private func handleOutOfLives() {
+        guard phase == .playing else { return }
+        if !hasUsedRevive && mode.supportsRevive {
+            phase = .revive
+        } else {
+            finish()
+        }
+    }
+
+    /// revive → playing.
+    func acceptRevive() {
+        guard phase == .revive else { return }
+        hasUsedRevive = true
+        AnalyticsService.logReviveUsed(mode: mode.rawValue)
+        livesRef = mode.initialLives ?? livesRef
+        lives = livesRef
+        if mode == .timed {
+            timerBonus += GameConfig.reviveBonusSeconds
+            timeLeft += GameConfig.reviveBonusSeconds
+        }
+        lastTimestamp = 0   // don't count the time spent on the modal
+        phase = .playing
+    }
+
+    /// revive → finished.
+    func declineRevive() {
+        guard phase == .revive else { return }
+        hasUsedRevive = true
+        finish()
+    }
+
+    /// any (countdown | playing | revive) → finished. Quit button.
+    func quit() {
+        finish()
+    }
+
+    /// The ONLY way into `.finished`. Idempotent: reports exactly once.
+    private func finish() {
+        guard phase != .finished else { return }
+        phase = .finished
+        displayLink?.invalidate()
+        finalizeAndReport()
     }
 
     // MARK: - CADisplayLink game loop (60fps)
@@ -242,14 +316,31 @@ final class GameViewModel: ObservableObject {
         }
         #endif
 
-        guard !gameOverRef, !pausedRef else { return }
+        step(now: link.timestamp, frameDuration: link.targetTimestamp - link.timestamp)
+    }
 
-        let now = link.timestamp
-        let frame = link.targetTimestamp - link.timestamp
+    /// One simulation frame. Internal (not private) so tests can drive the
+    /// state machine with synthetic timestamps instead of a real display link.
+    func step(now: CFTimeInterval, frameDuration frame: CFTimeInterval = 1.0 / 60.0) {
+        // Clock runs only in countdown/playing and only while not suspended.
+        guard !isSuspended else { return }
+        switch phase {
+        case .countdown, .playing: break
+        case .revive, .finished: return
+        }
+
         if frame > 0, frame < 0.1 { lastFrameDuration = frame }
         if lastTimestamp == 0 { lastTimestamp = now }
         let delta = now - lastTimestamp
         lastTimestamp = now
+
+        if case .countdown = phase {
+            advanceCountdown(by: delta)
+            return
+        }
+
+        playElapsed += delta
+        let elapsed = playElapsed
 
         // Move indicator (reflects off edges, carrying overshoot)
         let moved = TimingEngine.advance(position: positionRef, direction: directionRef,
@@ -263,13 +354,11 @@ final class GameViewModel: ObservableObject {
 
         // Endless: speed ramps over time
         if mode == .endless {
-            let elapsed = now - gameStartTime
             speedRef = max(GameConfig.endlessMinSpeed, 1.2 - elapsed * 0.005)
         }
 
         // Mirror: direction flips increase over time + speed ramp
         if mode == .mirror {
-            let elapsed = now - gameStartTime
             let flipChance = min(GameConfig.mirrorFlipCap,
                                  GameConfig.mirrorBaseFlipChance + elapsed * GameConfig.mirrorFlipGrowth)
             if Double.random(in: 0...1) < flipChance {
@@ -281,7 +370,6 @@ final class GameViewModel: ObservableObject {
 
         // Focus: oscillating speed (wave pattern)
         if mode == .focus {
-            let elapsed = now - gameStartTime
             focusBaseSpeed = max(GameConfig.focusBaseFloor,
                                  mode.initialSpeed - elapsed * GameConfig.focusBaseDecay)
             speedRef = focusBaseSpeed + sin(elapsed * GameConfig.focusOscillationFreq) * GameConfig.focusOscillationAmp
@@ -290,7 +378,7 @@ final class GameViewModel: ObservableObject {
 
         // Timed / Rush: count down
         if mode.hasTimer {
-            let elapsed = now - timedStartTime
+            let elapsed = playElapsed - timerBonus
             let duration = mode.timerDuration
             let remaining = max(0, duration - elapsed)
             // Only publish when it changes visually (every ~0.1s) to reduce re-renders
@@ -312,7 +400,7 @@ final class GameViewModel: ObservableObject {
             }
 
             if remaining <= 0 {
-                handleTimedEnd()
+                finish()   // playing → finished (timer ended)
             }
         }
     }
@@ -335,7 +423,7 @@ final class GameViewModel: ObservableObject {
         }
         #endif
 
-        guard case .playing = phase, !gameOverRef, !pausedRef else { return }
+        guard phase == .playing, !isSuspended else { return }
 
         var pos = positionRef
         if let touchTimestamp, lastTimestamp > 0 {
@@ -521,67 +609,8 @@ final class GameViewModel: ObservableObject {
         tapSequence &+= 1
     }
 
-    // MARK: - Out of lives
-    private func handleOutOfLives() {
-        if !hasUsedReviveRef && mode.supportsRevive {
-            pausedRef = true
-            showReviveModal = true
-        } else {
-            finalizeGameOver()
-        }
-    }
-
-    func acceptRevive() {
-        hasUsedReviveRef = true
-        showReviveModal = false
-        AnalyticsService.logReviveUsed(mode: mode.rawValue)
-        livesRef = mode.initialLives ?? livesRef
-        lives = livesRef
-        if mode == .timed {
-            timedStartTime += GameConfig.reviveBonusSeconds
-            timeLeft += GameConfig.reviveBonusSeconds
-        }
-        pausedRef = false
-        lastTimestamp = 0
-    }
-
-    func declineRevive() {
-        showReviveModal = false
-        hasUsedReviveRef = true
-        pausedRef = false
-        finalizeGameOver()
-    }
-
-    // MARK: - Timed end
-    private func handleTimedEnd() {
-        guard !didFinalizeRef else { return }
-        gameOverRef = true
-        displayLink?.invalidate()
-        finalizeAndReport()
-    }
-
-    // MARK: - Quit
-    func quit() {
-        guard !didFinalizeRef else { return }
-        gameOverRef = true
-        displayLink?.invalidate()
-        finalizeAndReport()
-    }
-
-    // MARK: - Final game over
-    private func finalizeGameOver() {
-        guard !didFinalizeRef else { return }
-        gameOverRef = true
-        displayLink?.invalidate()
-        phase = .finished
-        finalizeAndReport()
-    }
-
+    // MARK: - Report (called only from finish())
     private func finalizeAndReport() {
-        guard !didFinalizeRef else { return }
-        didFinalizeRef = true
-        phase = .finished
-
         var profile = PlayerProfile.load() ?? PlayerProfile()
 
         let isNewBest = scoreRef > profile.bestScore(for: mode) && scoreRef > 0
@@ -638,7 +667,7 @@ final class GameViewModel: ObservableObject {
         if !profile.activeChallenge.isEmpty,
            let challenge = Challenge.all.first(where: { $0.id == profile.activeChallenge }),
            !profile.completedChallenges.contains(challenge.id) {
-            let elapsed = CACurrentMediaTime() - gameStartTime
+            let elapsed = playElapsed
             let currentSpeedLevel = min(20, (tapsRef / GameConfig.classicSpeedEvery) + 1)
             if Challenge.checkCompletion(
                 challenge: challenge, score: scoreRef, maxCombo: maxComboRef,
@@ -682,13 +711,17 @@ final class GameViewModel: ObservableObject {
         )
 
         Task {
-            await FirebaseService.shared.saveProfile(profile)
+            await Backend.shared.saveProfile(profile)
             let sessionId = await scoreSessionTask?.value
-            await FirebaseService.shared.submitScore(mode: mode, score: scoreRef, maxCombo: maxComboRef,
+            await Backend.shared.submitScore(mode: mode, score: scoreRef, maxCombo: maxComboRef,
                                                      taps: totalTapsRef, perfects: perfectCountRef,
                                                      sessionId: sessionId)
             if hasValidDuelContext, let ctx = duelContext {
-                await FirebaseService.shared.submitDuelScore(duelId: ctx.duelId, role: ctx.role.rawValue, score: scoreRef, maxCombo: maxComboRef)
+                let duelSessionId = await duelSessionTask?.value
+                await Backend.shared.submitDuelScore(duelId: ctx.duelId, role: ctx.role.rawValue,
+                                                     score: scoreRef, maxCombo: maxComboRef,
+                                                     taps: totalTapsRef, perfects: perfectCountRef,
+                                                     sessionId: duelSessionId)
                 // NOTE: Do NOT clear DuelContext here — DuelResultsView reads it on appear.
                 // Context is overwritten on the next duel and cleaned up on account deletion.
             }
@@ -698,39 +731,26 @@ final class GameViewModel: ObservableObject {
     }
 
     // MARK: - Cleanup
+    /// View teardown. Stops the clock; the display link was the only driver of
+    /// countdown and gameplay, so nothing can advance the phase afterwards.
     func cleanup() {
-        gameOverRef = true
         displayLink?.invalidate()
         displayLink = nil
         displayLinkProxy = nil
-        lifecyclePauseStart = nil
-        lifecyclePausedRef = false
     }
 
-    // MARK: - App lifecycle
+    // MARK: - App lifecycle (orthogonal region: suspended / running)
+    /// Applies in every non-terminal phase — including countdown, which
+    /// previously kept ticking in the background and started the timer there.
     func appDidMoveToBackground() {
-        guard !gameOverRef else { return }
-        guard case .playing = phase else { return }
-        guard !lifecyclePausedRef else { return }
-        lifecyclePausedRef = true
-        lifecyclePauseStart = CACurrentMediaTime()
-        pausedRef = true
+        guard phase != .finished, !isSuspended else { return }
+        isSuspended = true
     }
 
     func appDidBecomeActive() {
-        guard lifecyclePausedRef else { return }
-        lifecyclePausedRef = false
-
-        if let pausedAt = lifecyclePauseStart {
-            let delta = max(0, CACurrentMediaTime() - pausedAt)
-            gameStartTime += delta
-            if mode.hasTimer { timedStartTime += delta }
-        }
-        lifecyclePauseStart = nil
-
-        // Keep gameplay paused only if revive modal is currently open.
-        pausedRef = showReviveModal
-        lastTimestamp = 0
+        guard isSuspended else { return }
+        isSuspended = false
+        lastTimestamp = 0   // first frame after resume has delta 0
     }
 
     deinit {

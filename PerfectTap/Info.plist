@@ -20,6 +20,8 @@
 	<string>1</string>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-5350899688701342~1011431660</string>
+	<key>PT_BACKEND</key>
+	<string>$(PT_BACKEND)</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>
@@ -207,5 +209,9 @@
 			<string>3qcr597p9d.skadnetwork</string>
 		</dict>
 	</array>
+	<key>SUPABASE_PUBLISHABLE_KEY</key>
+	<string>$(SUPABASE_PUBLISHABLE_KEY)</string>
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
 </dict>
 </plist>

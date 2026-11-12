@@ -34,13 +34,13 @@ struct DuelResultsView: View {
         .navigationBarHidden(true)
         .onAppear {
             guard !duelId.isEmpty else { return }
-            listener = FirebaseService.shared.listenDuel(duelId: duelId) { d in
+            listener = Backend.shared.listenDuel(duelId: duelId) { d in
                 duel = d
                 recordDuelStatsIfNeeded(d)
             }
         }
         .onDisappear {
-            FirebaseService.shared.removeDuelListener(listener)
+            Backend.shared.removeDuelListener(listener)
             DuelContext.clear()
         }
     }
@@ -58,7 +58,7 @@ struct DuelResultsView: View {
         case .unknown: break
         }
         profile.save()
-        Task { await FirebaseService.shared.saveProfile(profile) }
+        Task { await Backend.shared.saveProfile(profile) }
     }
 
     private func resultContent(_ duel: Duel) -> some View {

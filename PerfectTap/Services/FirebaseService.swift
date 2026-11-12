@@ -15,7 +15,7 @@ import FirebaseFunctions
 #endif
 
 @MainActor
-final class FirebaseService {
+final class FirebaseService: GameBackend {
 
     static let shared = FirebaseService()
     private init() {}
@@ -32,27 +32,11 @@ final class FirebaseService {
         return formatter
     }()
 
-    enum AuthoritativeDaySource: String {
-        case liveServer
-        case inMemoryCache
-        case persistedCache
-    }
-
-    enum AuthoritativeDayFailureReason: Equatable {
-        case noInternet
-        case firebaseNotConfigured
-        case authUnavailable
-        case permissionDenied
-        case serverTimestampMissing
-        case unknown
-    }
-
-    struct AuthoritativeDayVerificationResult {
-        let dayKey: String?
-        let source: AuthoritativeDaySource?
-        let failureReason: AuthoritativeDayFailureReason?
-        let usedFallback: Bool
-    }
+    // Shared types now live in Backend/GameBackend.swift.
+    typealias AuthoritativeDaySource = PerfectTap.AuthoritativeDaySource
+    typealias AuthoritativeDayFailureReason = PerfectTap.AuthoritativeDayFailureReason
+    typealias AuthoritativeDayVerificationResult = PerfectTap.AuthoritativeDayVerificationResult
+    typealias DeleteResult = BackendDeleteResult
 
     // MARK: - Auth
 
@@ -124,17 +108,10 @@ final class FirebaseService {
         #endif
     }
 
-    func signOut() {
+    func signOut() async {
         #if canImport(FirebaseAuth)
         try? Auth.auth().signOut()
         #endif
-    }
-
-    /// Result of a delete-account attempt.
-    enum DeleteResult {
-        case success                 // Auth user + Firestore doc both deleted
-        case requiresReauth          // Firestore doc deleted, but Auth user needs re-authentication
-        case noUser                  // No Auth user was signed in
     }
 
     /// Deletes the current user's Firestore player document and Firebase Auth account.
@@ -532,7 +509,8 @@ final class FirebaseService {
     /// Asks the server for a single-use, server-timed game session.
     /// Returns nil when offline / not signed in / mode unranked — the run is then
     /// simply not ranked on the verified leaderboard.
-    func startGameSession(mode: GameMode) async -> String? {
+    func startGameSession(mode: GameMode, duelId: String?) async -> String? {
+        // Firebase has no duel-bound sessions; duel scores stay client-reported here.
         guard mode.isRanked else { return nil }
         #if canImport(FirebaseFunctions)
         let functions = Functions.functions(region: Self.functionsRegion)
@@ -654,40 +632,8 @@ final class FirebaseService {
         return String((0..<6).map { _ in chars.randomElement() ?? "A" })
     }
 
-    private func normalizedDuelScore(_ raw: Any?) -> Int? {
-        guard let score = intValue(raw), Duel.scoreCountsAsFinished(score) else { return nil }
-        return score
-    }
-
-    private func decodeDuel(id: String, data: [String: Any]) -> Duel {
-        var duel = Duel()
-        duel.id = id
-        duel.code = data["code"] as? String ?? ""
-        duel.hostId = data["host_id"] as? String ?? ""
-        duel.hostName = data["host_name"] as? String ?? ""
-        duel.hostAvatar = data["host_avatar"] as? String
-        duel.hostScore = normalizedDuelScore(data["host_score"])
-        duel.hostCombo = intValue(data["host_combo"])
-        duel.guestId = data["guest_id"] as? String
-        duel.guestName = data["guest_name"] as? String
-        duel.guestAvatar = data["guest_avatar"] as? String
-        duel.guestScore = normalizedDuelScore(data["guest_score"])
-        duel.guestCombo = intValue(data["guest_combo"])
-        duel.mode = GameMode(rawValue: data["mode"] as? String ?? "") ?? .duel
-        duel.status = Duel.DuelStatus(rawValue: data["status"] as? String ?? "waiting") ?? .waiting
-        if let createdAt = dateValue(data["created_at"]) {
-            duel.createdAt = createdAt
-        }
-        return duel
-    }
-
-    private func dateValue(_ raw: Any?) -> Date? {
-        if let d = raw as? Date { return d }
-        #if canImport(FirebaseFirestore)
-        if let ts = raw as? Timestamp { return ts.dateValue() }
-        #endif
-        return nil
-    }
+    private func normalizedDuelScore(_ raw: Any?) -> Int? { BackendCodec.normalizedDuelScore(raw) }
+    private func decodeDuel(id: String, data: [String: Any]) -> Duel { BackendCodec.decodeDuel(id: id, data: data) }
 
     func loadDuel(duelId: String) async -> Duel? {
         guard !duelId.isEmpty else { return nil }
@@ -745,7 +691,8 @@ final class FirebaseService {
         #endif
     }
 
-    func submitDuelScore(duelId: String, role: String, score: Int, maxCombo: Int) async {
+    func submitDuelScore(duelId: String, role: String, score: Int, maxCombo: Int,
+                         taps: Int, perfects: Int, sessionId: String?) async {
         #if canImport(FirebaseFirestore)
         guard !duelId.isEmpty else { return }
         guard role == DuelContext.Role.host.rawValue || role == DuelContext.Role.guest.rawValue else { return }
@@ -833,17 +780,6 @@ final class FirebaseService {
         #else
         return []
         #endif
-    }
-
-    func loadFriendsLeaderboard(friendUIDs: [String], mode: GameMode) async -> [(username: String, score: Int)] {
-        guard !friendUIDs.isEmpty else { return [] }
-        guard !Task.isCancelled else { return [] }
-        let profiles = await loadFriendProfiles(uids: friendUIDs)
-        guard !Task.isCancelled else { return [] }
-        return profiles
-            .map { (username: $0.username, score: $0.bestScore(for: mode)) }
-            .filter { $0.score > 0 }
-            .sorted { $0.score > $1.score }
     }
 
     // MARK: - Friends (canonical: friendships collection)
@@ -1428,66 +1364,6 @@ final class FirebaseService {
         #endif
     }
 
-    // MARK: - Pending Counts (for Home badge)
-
-    /// Shared classification for outgoing duel invites, using the same presentation logic
-    /// as Friends/FriendDetail (DuelInvitation.presentationState + handled receipts).
-    func loadOutgoingDuelInvitePresentationStates(
-        outgoingInvitations: [DuelInvitation]
-    ) async -> [String: DuelInvitePresentationState] {
-        let duelIDs = outgoingInvitations
-            .filter { $0.status == .accepted || $0.status == .inProgress }
-            .map(\.duelId)
-        let duelsById = await loadDuels(duelIds: duelIDs)
-        let uid = currentUID
-
-        var states: [String: DuelInvitePresentationState] = [:]
-        states.reserveCapacity(outgoingInvitations.count)
-
-        for invite in outgoingInvitations {
-            let state = invite.presentationState(
-                currentUID: uid,
-                duel: duelsById[invite.duelId],
-                isHandled: DuelInviteLaunchReceiptStore.isHandled(inviteId: invite.id, duelId: invite.duelId)
-            )
-            states[invite.id] = state
-        }
-        return states
-    }
-
-    /// Returns actionable counts for Home/Friends badges using unified duel actionability rules.
-    func loadActionablePendingCounts(
-        incomingFriendRequests: [FriendRequest],
-        incomingDuelInvitations: [DuelInvitation],
-        outgoingDuelInvitations: [DuelInvitation]
-    ) async -> (friendRequests: Int, duelInvitations: Int) {
-        let friendRequestsCount = incomingFriendRequests.count
-
-        let incomingActionableCount = incomingDuelInvitations.filter { invite in
-            invite.presentationState(currentUID: nil, duel: nil, isHandled: false) != .history
-        }.count
-
-        let outgoingStates = await loadOutgoingDuelInvitePresentationStates(
-            outgoingInvitations: outgoingDuelInvitations
-        )
-        let outgoingReadyToPlayCount = outgoingStates.values.filter { $0 == .readyToPlay }.count
-
-        return (friendRequestsCount, incomingActionableCount + outgoingReadyToPlayCount)
-    }
-
-    /// Returns (incomingFriendRequests, actionableDuelInvitations) counts.
-    /// Kept for compatibility; now uses unified actionability rules.
-    func loadPendingCounts() async -> (friendRequests: Int, duelInvitations: Int) {
-        let incomingRequests = await loadIncomingFriendRequests()
-        let incomingInvites = await loadIncomingDuelInvitations()
-        let outgoingInvites = await loadOutgoingDuelInvitations()
-        return await loadActionablePendingCounts(
-            incomingFriendRequests: incomingRequests,
-            incomingDuelInvitations: incomingInvites,
-            outgoingDuelInvitations: outgoingInvites
-        )
-    }
-
     /// Remove a Firestore listener
     func removeListener(_ listener: Any?) {
         #if canImport(FirebaseFirestore)
@@ -1495,160 +1371,8 @@ final class FirebaseService {
         #endif
     }
 
-    // MARK: - Codable helpers (manual Firestore ↔ PlayerProfile mapping)
-    private func decode(_ data: [String: Any]) -> PlayerProfile? {
-        var p = PlayerProfile()
-        p.uid              = data["uid"] as? String ?? ""
-        p.username         = data["username"] as? String ?? ""
-        p.avatar           = data["avatar"] as? String ?? "default"
-        p.coins            = data["coins"] as? Int ?? 0
-        p.level            = data["level"] as? Int ?? 1
-        p.xp               = data["xp"] as? Int ?? 0
-        p.bestClassic      = data["best_classic"] as? Int ?? 0
-        p.bestEndless      = data["best_endless"] as? Int ?? 0
-        p.bestTimed        = data["best_timed"] as? Int ?? 0
-        p.bestSudden       = data["best_sudden"] as? Int ?? 0
-        p.bestComboFrenzy  = data["best_combofrenzy"] as? Int ?? 0
-        p.friendCode       = data["friend_code"] as? String ?? ""
-        p.friends          = data["friends"] as? [String] ?? []
-        p.ownedItems       = data["owned_items"] as? [String] ?? []
-        p.equippedTheme    = data["equipped_theme"] as? String ?? "default"
-        p.equippedAvatar   = data["equipped_avatar"] as? String ?? "default"
-        p.equippedTapFX    = data["equipped_tapfx"] as? String ?? "fx_default"
-        p.equippedTrail    = data["equipped_trail"] as? String ?? "trail_none"
-        p.equippedBadge    = data["equipped_badge"] as? String ?? ""
-        p.dailyRewardStreak    = data["daily_reward_streak"] as? Int ?? 0
-        p.dailyRewardLastClaim = data["daily_reward_last_claim"] as? String ?? ""
-        p.activeChallenge  = data["active_challenge"] as? String ?? ""
-        p.seasonXP         = data["season_xp"] as? Int ?? 0
-        p.seasonTier       = data["season_tier"] as? Int ?? 0
-        p.seasonPremium    = data["season_premium"] as? Bool ?? false
-        p.seasonAdProgress = data["season_ad_progress"] as? Int ?? 0
-        p.seasonClaimedTiers = data["season_claimed_tiers"] as? [Int] ?? []
-        p.questsJSON       = data["quests_json"] as? String ?? "{}"
-        p.achievements     = data["achievements"] as? [String] ?? []
-        p.completedChallenges = data["completed_challenges"] as? [String] ?? []
-        p.noAds            = data["no_ads"] as? Bool ?? false
-        p.revivesUsedToday = data["revives_used_today"] as? Int ?? 0
-        p.lastReviveDate   = data["last_revive_date"] as? String ?? ""
-        if let extra = data["best_scores_extra"] as? [String: Any] {
-            p.bestScoresExtra = extra.reduce(into: [:]) { partialResult, entry in
-                if let value = intValue(entry.value) {
-                    partialResult[entry.key] = value
-                }
-            }
-        }
-        for mode in GameMode.selectableModes {
-            let key = mode.bestScoreKey
-            guard !key.isEmpty else { continue }
-            if let value = intValue(data[key]) {
-                p.bestScoresExtra[key] = max(p.bestScoresExtra[key] ?? 0, value)
-            }
-        }
-        if let boostData = data["boost"] as? [String: Any],
-           let value = doubleValue(boostData["value"]) {
-            p.boost = ScoreBoost(
-                value: value,
-                used: boostData["used"] as? Bool ?? false,
-                games: intValue(boostData["games"]) ?? 0
-            )
-        }
-        if let history = data["score_history"] as? [[String: Any]] {
-            p.scoreHistory = history.compactMap { row in
-                guard let score = intValue(row["score"]), let date = row["date"] as? String else { return nil }
-                let id = (row["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString
-                return ScoreEntry(id: id, score: score, date: date)
-            }
-        }
-        if let statsData = data["stats"] as? [String: Any] {
-            p.stats.totalGames        = statsData["totalGames"] as? Int ?? 0
-            p.stats.duelWins          = statsData["duelWins"] as? Int ?? 0
-            p.stats.duelLosses        = statsData["duelLosses"] as? Int ?? 0
-            p.stats.duelTies          = statsData["duelTies"] as? Int ?? 0
-            p.stats.totalCoinsEarned  = statsData["totalCoinsEarned"] as? Int ?? 0
-            p.stats.perfectTaps       = statsData["perfectTaps"] as? Int ?? 0
-            p.stats.highestCombo      = statsData["highestCombo"] as? Int ?? 0
-        }
-        p.normalizeAndMigrate()
-        return p
-    }
-
-    private func encode(_ profile: PlayerProfile) -> [String: Any] {
-        var p = profile
-        p.normalizeAndMigrate()
-        var data: [String: Any] = [
-            "uid": p.uid,
-            "username": p.username,
-            "username_lower": p.username.lowercased(),
-            "avatar": p.socialAvatarID,
-            "coins": p.coins,
-            "level": p.level,
-            "xp": p.xp,
-            "best_classic": p.bestClassic,
-            "best_endless": p.bestEndless,
-            "best_timed": p.bestTimed,
-            "best_sudden": p.bestSudden,
-            "best_combofrenzy": p.bestComboFrenzy,
-            "friend_code": p.friendCode,
-            "friends": p.friends,
-            "owned_items": p.ownedItems,
-            "equipped_theme": p.equippedTheme,
-            "equipped_avatar": p.equippedAvatar,
-            "equipped_tapfx": p.equippedTapFX,
-            "equipped_trail": p.equippedTrail,
-            "equipped_badge": p.equippedBadge,
-            "daily_reward_streak": p.dailyRewardStreak,
-            "daily_reward_last_claim": p.dailyRewardLastClaim,
-            "active_challenge": p.activeChallenge,
-            "season_xp": p.seasonXP,
-            "season_tier": p.seasonTier,
-            "season_premium": p.seasonPremium,
-            "season_ad_progress": p.seasonAdProgress,
-            "season_claimed_tiers": p.seasonClaimedTiers,
-            "quests_json": p.questsJSON,
-            "achievements": p.achievements,
-            "completed_challenges": p.completedChallenges,
-            "no_ads": p.noAds,
-            "revives_used_today": p.revivesUsedToday,
-            "last_revive_date": p.lastReviveDate,
-            "best_scores_extra": p.bestScoresExtra,
-            "score_history": p.scoreHistory.map { ["id": $0.id, "score": $0.score, "date": $0.date] },
-            "stats": [
-                "totalGames": p.stats.totalGames,
-                "duelWins": p.stats.duelWins,
-                "duelLosses": p.stats.duelLosses,
-                "duelTies": p.stats.duelTies,
-                "totalCoinsEarned": p.stats.totalCoinsEarned,
-                "perfectTaps": p.stats.perfectTaps,
-                "highestCombo": p.stats.highestCombo,
-            ]
-        ]
-        if let boost = p.boost {
-            data["boost"] = [
-                "value": boost.value,
-                "used": boost.used,
-                "games": boost.games
-            ]
-        } else {
-            data["boost"] = NSNull()
-        }
-        for (key, value) in p.bestScoresExtra {
-            data[key] = value
-        }
-        return data
-    }
-
-    private func intValue(_ raw: Any?) -> Int? {
-        if let value = raw as? Int { return value }
-        if let value = raw as? NSNumber { return value.intValue }
-        if let value = raw as? String { return Int(value) }
-        return nil
-    }
-
-    private func doubleValue(_ raw: Any?) -> Double? {
-        if let value = raw as? Double { return value }
-        if let value = raw as? NSNumber { return value.doubleValue }
-        if let value = raw as? String { return Double(value) }
-        return nil
-    }
+    // MARK: - Codable helpers (shared with SupabaseService: Backend/BackendCodec.swift)
+    private func decode(_ data: [String: Any]) -> PlayerProfile? { BackendCodec.decodeProfile(data) }
+    private func encode(_ profile: PlayerProfile) -> [String: Any] { BackendCodec.encodeProfile(profile) }
+    private func intValue(_ raw: Any?) -> Int? { BackendCodec.intValue(raw) }
 }

@@ -24,6 +24,9 @@ packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     from: "11.15.0"
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    exactVersion: "2.55.6"
 
 targets:
   PerfectTap:
@@ -52,6 +55,8 @@ targets:
         product: FirebaseMessaging
       - package: Firebase
         product: FirebaseFunctions
+      - package: Supabase
+        product: Supabase
     settings:
       base:
         INFOPLIST_GENERATION_MODE: GeneratedFile
@@ -72,10 +77,24 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SWIFT_EMIT_LOC_STRINGS: YES
         CODE_SIGN_STYLE: Automatic
+        # Public client config only (publishable key is safe to ship).
+        # NEVER put a secret / service_role key in the app.
+        SUPABASE_URL: ""   # set by scripts/use-supabase-project.sh <ref>
+        SUPABASE_PUBLISHABLE_KEY: ""
+      configs:
+        # Backend switch (Backend.swift). Release stays on Firebase until cutover
+        # (docs/SUPABASE_MIGRATION.he.md §cutover); flip to "supabase" to ship.
+        Debug:
+          PT_BACKEND: supabase
+        Release:
+          PT_BACKEND: firebase
     info:
       path: Info.plist
       properties:
         GADApplicationIdentifier: ca-app-pub-5350899688701342~1011431660
+        PT_BACKEND: $(PT_BACKEND)
+        SUPABASE_URL: $(SUPABASE_URL)
+        SUPABASE_PUBLISHABLE_KEY: $(SUPABASE_PUBLISHABLE_KEY)
         SKAdNetworkItems:
           - SKAdNetworkIdentifier: cstr6suwn9.skadnetwork
           - SKAdNetworkIdentifier: 4fzdc2evr5.skadnetwork

@@ -118,7 +118,7 @@ final class DuelAutoLaunchCoordinator: ObservableObject {
         guard !isListening else { return }
         isListening = true
 
-        outgoingInviteListener = FirebaseService.shared.listenOutgoingDuelInvitations { [weak self] invites in
+        outgoingInviteListener = Backend.shared.listenOutgoingDuelInvitations { [weak self] invites in
             Task { @MainActor in
                 self?.handleOutgoingInvites(invites)
             }
@@ -126,7 +126,7 @@ final class DuelAutoLaunchCoordinator: ObservableObject {
     }
 
     func stop() {
-        FirebaseService.shared.removeListener(outgoingInviteListener)
+        Backend.shared.removeListener(outgoingInviteListener)
         outgoingInviteListener = nil
         router = nil
         isListening = false
@@ -158,9 +158,9 @@ final class DuelAutoLaunchCoordinator: ObservableObject {
 
         Task {
             for candidate in candidates {
-                let duel = await FirebaseService.shared.loadDuel(duelId: candidate.duelId)
+                let duel = await Backend.shared.loadDuel(duelId: candidate.duelId)
                 let state = candidate.presentationState(
-                    currentUID: FirebaseService.shared.currentUID,
+                    currentUID: Backend.shared.currentUID,
                     duel: duel,
                     isHandled: DuelInviteLaunchReceiptStore.isHandled(inviteId: candidate.id, duelId: candidate.duelId)
                 )
@@ -171,7 +171,7 @@ final class DuelAutoLaunchCoordinator: ObservableObject {
                 DuelInviteLaunchReceiptStore.markHandled(inviteId: candidate.id, duelId: candidate.duelId)
                 DuelContext.save(duelId: candidate.duelId, role: .host, mode: candidate.mode)
                 router.push(.game(candidate.mode))
-                _ = await FirebaseService.shared.markDuelInvitationInProgress(candidate.id)
+                _ = await Backend.shared.markDuelInvitationInProgress(candidate.id)
                 return
             }
         }

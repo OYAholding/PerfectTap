@@ -107,7 +107,7 @@ struct HomeView: View {
             startBadgeListeners()
             // Firebase refresh in background
             Task {
-                if let updated = await FirebaseService.shared.loadProfile() {
+                if let updated = await Backend.shared.loadProfile() {
                     profile = updated
                     themeManager.current = AppTheme.named(profile.equippedTheme)
                 }
@@ -333,15 +333,15 @@ struct HomeView: View {
         stopBadgeListeners()
         recomputeActionableBadgeCount()
 
-        incomingReqListener = FirebaseService.shared.listenIncomingFriendRequests { requests in
+        incomingReqListener = Backend.shared.listenIncomingFriendRequests { requests in
             incomingRequestsRaw = requests
             recomputeActionableBadgeCount()
         }
-        incomingInviteListener = FirebaseService.shared.listenIncomingDuelInvitations { invites in
+        incomingInviteListener = Backend.shared.listenIncomingDuelInvitations { invites in
             incomingDuelInvitesRaw = invites
             recomputeActionableBadgeCount()
         }
-        outgoingInviteListener = FirebaseService.shared.listenOutgoingDuelInvitations { invites in
+        outgoingInviteListener = Backend.shared.listenOutgoingDuelInvitations { invites in
             outgoingDuelInvitesRaw = invites
             recomputeActionableBadgeCount()
         }
@@ -351,9 +351,9 @@ struct HomeView: View {
         badgeRefreshTask?.cancel()
         badgeRefreshTask = nil
 
-        FirebaseService.shared.removeListener(incomingReqListener)
-        FirebaseService.shared.removeListener(incomingInviteListener)
-        FirebaseService.shared.removeListener(outgoingInviteListener)
+        Backend.shared.removeListener(incomingReqListener)
+        Backend.shared.removeListener(incomingInviteListener)
+        Backend.shared.removeListener(outgoingInviteListener)
         incomingReqListener = nil
         incomingInviteListener = nil
         outgoingInviteListener = nil
@@ -372,7 +372,7 @@ struct HomeView: View {
         let outgoingDuels = outgoingDuelInvitesRaw
 
         badgeRefreshTask = Task {
-            let counts = await FirebaseService.shared.loadActionablePendingCounts(
+            let counts = await Backend.shared.loadActionablePendingCounts(
                 incomingFriendRequests: incomingRequests,
                 incomingDuelInvitations: incomingDuels,
                 outgoingDuelInvitations: outgoingDuels

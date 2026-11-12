@@ -101,10 +101,13 @@ struct LeaderboardView: View {
 
             let loadedEntries: [(username: String, score: Int)]
             if tab == 0 {
-                loadedEntries = await FirebaseService.shared.loadLeaderboard(mode: mode)
+                loadedEntries = await Backend.shared.loadLeaderboard(mode: mode)
             } else {
                 let profile = PlayerProfile.load() ?? PlayerProfile()
-                loadedEntries = await FirebaseService.shared.loadFriendsLeaderboard(friendUIDs: profile.friends, mode: mode)
+                // Canonical friendships from the backend, plus the local mirror.
+                let canonical = await Backend.shared.loadFriendUIDs()
+                let friendUIDs = Array(Set(canonical + profile.friends))
+                loadedEntries = await Backend.shared.loadFriendsLeaderboard(friendUIDs: friendUIDs, mode: mode)
             }
 
             guard !Task.isCancelled else { return }

@@ -219,10 +219,12 @@ struct GameSettingsView: View {
             SecureField("Password", text: $reauthPassword)
             Button("Cancel", role: .cancel) {
                 reauthPassword = ""
-                // User cancelled — Firestore doc already deleted, sign out and clean up
-                FirebaseService.shared.signOut()
+                // User cancelled — cloud data already deleted, sign out and clean up
                 authVM.needsReauthForDelete = false
-                authVM.finishDeleteCleanup()
+                Task {
+                    await Backend.shared.signOut()
+                    authVM.finishDeleteCleanup()
+                }
             }
             Button("Delete", role: .destructive) {
                 let pw = reauthPassword
@@ -264,7 +266,7 @@ struct GameSettingsView: View {
             themeManager.apply(theme)
             profile.equippedTheme = theme.name
             profile.save()
-            Task { await FirebaseService.shared.saveProfile(profile) }
+            Task { await Backend.shared.saveProfile(profile) }
         } label: {
             VStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 10)

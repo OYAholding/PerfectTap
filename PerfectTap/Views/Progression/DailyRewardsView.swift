@@ -141,7 +141,7 @@ struct DailyRewardsView: View {
 
     private func refreshEligibility(forceRefresh: Bool) async {
         profile = PlayerProfile.load() ?? PlayerProfile()
-        let verification = await FirebaseService.shared.authoritativeDayVerification(forceRefresh: forceRefresh)
+        let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: forceRefresh)
         if let day = verification.dayKey {
             authoritativeDay = day
             eligibilityMessage = verification.usedFallback
@@ -164,7 +164,7 @@ struct DailyRewardsView: View {
         isClaiming = true
         defer { isClaiming = false }
 
-        let verification = await FirebaseService.shared.authoritativeDayVerification(forceRefresh: true)
+        let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: true)
         guard let currentDay = verification.dayKey else {
             authoritativeDay = nil
             eligibilityMessage = messageForEligibilityFailure(verification.failureReason)
@@ -204,7 +204,7 @@ struct DailyRewardsView: View {
     }
 
     private func messageForEligibilityFailure(
-        _ reason: FirebaseService.AuthoritativeDayFailureReason?
+        _ reason: AuthoritativeDayFailureReason?
     ) -> String {
         switch reason {
         case .noInternet:

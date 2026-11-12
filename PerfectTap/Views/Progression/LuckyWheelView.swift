@@ -125,7 +125,7 @@ struct LuckyWheelView: View {
     }
 
     private func refreshSpinAvailability(forceRefresh: Bool) async {
-        let verification = await FirebaseService.shared.authoritativeDayVerification(forceRefresh: forceRefresh)
+        let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: forceRefresh)
         if let day = verification.dayKey {
             authoritativeDay = day
             availabilityMessage = verification.usedFallback
@@ -148,7 +148,7 @@ struct LuckyWheelView: View {
             }
         }
 
-        let verification = await FirebaseService.shared.authoritativeDayVerification(forceRefresh: true)
+        let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: true)
         guard let day = verification.dayKey else {
             authoritativeDay = nil
             canSpin = false
@@ -267,7 +267,7 @@ struct LuckyWheelView: View {
     }
 
     private func messageForAvailabilityFailure(
-        _ reason: FirebaseService.AuthoritativeDayFailureReason?
+        _ reason: AuthoritativeDayFailureReason?
     ) -> String {
         switch reason {
         case .noInternet:

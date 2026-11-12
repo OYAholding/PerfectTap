@@ -24,7 +24,7 @@ final class EconomyManager {
     func persistProfile(_ profile: PlayerProfile, syncCloud: Bool = true) {
         profile.save()
         guard syncCloud else { return }
-        Task { await FirebaseService.shared.saveProfile(profile) }
+        Task { await Backend.shared.saveProfile(profile) }
     }
 
     func currentProfile() -> PlayerProfile {

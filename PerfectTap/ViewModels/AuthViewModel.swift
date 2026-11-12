@@ -9,7 +9,7 @@ enum AuthState {
 }
 
 // MARK: - AuthViewModel
-// Uses Firebase Anonymous Auth so every user gets a valid auth token at startup.
+// Uses anonymous auth (Firebase or Supabase via Backend.shared) so every user gets a valid token at startup.
 // No login wall. Username is chosen once and is permanent.
 // Optional email linking (Cloud Backup) upgrades the anonymous account.
 @MainActor
@@ -37,7 +37,7 @@ final class AuthViewModel: ObservableObject {
 
     /// Whether the current user has linked an email account
     var isLinkedToEmail: Bool {
-        FirebaseService.shared.isLinkedToEmail
+        Backend.shared.isLinkedToEmail
     }
 
     private init() {
@@ -52,7 +52,7 @@ final class AuthViewModel: ObservableObject {
         // Start async bootstrap
         Task {
             // Sign in anonymously (or reuse existing session)
-            let firebaseUID = await FirebaseService.shared.signInAnonymously()
+            let firebaseUID = await Backend.shared.signInAnonymously()
 
             if let profile = PlayerProfile.load(), !profile.uid.isEmpty {
                 // Existing profile found
@@ -62,13 +62,13 @@ final class AuthViewModel: ObservableObject {
                     updated.uid = fbUID
                     updated.save()
                     currentUID = fbUID
-                    await FirebaseService.shared.saveProfile(updated)
+                    await Backend.shared.saveProfile(updated)
                 } else {
                     currentUID = firebaseUID ?? profile.uid
                 }
                 authState = profile.username.isEmpty ? .needsUsername : .authenticated
             } else if firebaseUID != nil,
-                      let cloudProfile = await FirebaseService.shared.loadProfile(),
+                      let cloudProfile = await Backend.shared.loadProfile(),
                       !cloudProfile.username.isEmpty {
                 // No local profile, but Firebase restored a session (Keychain
                 // survives reinstall) and the cloud has this player's progress.
@@ -108,7 +108,7 @@ final class AuthViewModel: ObservableObject {
         }
 
         // Check uniqueness via Firebase (if available)
-        let isUnique = await FirebaseService.shared.isUsernameAvailable(trimmed)
+        let isUnique = await Backend.shared.isUsernameAvailable(trimmed)
         guard isUnique else {
             errorMessage = "That username is already taken. Try another."
             return
@@ -119,7 +119,7 @@ final class AuthViewModel: ObservableObject {
         profile.username = trimmed
         if profile.friendCode.isEmpty { profile.friendCode = generateFriendCode() }
         profile.save()
-        await FirebaseService.shared.saveProfile(profile)
+        await Backend.shared.saveProfile(profile)
         authState = .authenticated
     }
 
@@ -138,17 +138,18 @@ final class AuthViewModel: ObservableObject {
     func linkAccount(email: String, password: String) async {
         errorMessage = nil
         do {
-            let uid = try await FirebaseService.shared.linkAnonymousAccount(email: email, password: password)
+            let uid = try await Backend.shared.linkAnonymousAccount(email: email, password: password)
             // UID should be the same, but update just in case
             var profile = PlayerProfile.load() ?? PlayerProfile()
             profile.uid = uid
             profile.save()
             currentUID = uid
-            await FirebaseService.shared.saveProfile(profile)
+            await Backend.shared.saveProfile(profile)
         } catch {
             let nsError = error as NSError
             // Firebase error 17025 = "credential already in use" (account exists)
-            if nsError.domain == "FIRAuthErrorDomain" && nsError.code == 17025 {
+            if (error as? BackendError) == .emailInUse
+                || (nsError.domain == "FIRAuthErrorDomain" && nsError.code == 17025) {
                 errorMessage = "This email is already linked to another account. Use Sign In instead."
             } else {
                 errorMessage = error.localizedDescription
@@ -161,22 +162,22 @@ final class AuthViewModel: ObservableObject {
     func signInAndLink(email: String, password: String) async {
         errorMessage = nil
         do {
-            let firebaseUID = try await FirebaseService.shared.signInWithEmail(email: email, password: password)
+            let firebaseUID = try await Backend.shared.signInWithEmail(email: email, password: password)
             let localProfile = PlayerProfile.load() ?? PlayerProfile()
 
             // Load cloud profile and apply explicit field-by-field deterministic merge.
-            if let cloudProfile = await FirebaseService.shared.loadProfile() {
+            if let cloudProfile = await Backend.shared.loadProfile() {
                 let merged = mergeProfiles(local: localProfile, cloud: cloudProfile, firebaseUID: firebaseUID)
                 merged.save()
                 currentUID = firebaseUID
-                await FirebaseService.shared.saveProfile(merged)
+                await Backend.shared.saveProfile(merged)
             } else {
                 // No cloud profile — just update UID
                 var local = localProfile
                 local.uid = firebaseUID
                 local.save()
                 currentUID = firebaseUID
-                await FirebaseService.shared.saveProfile(local)
+                await Backend.shared.saveProfile(local)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -185,10 +186,10 @@ final class AuthViewModel: ObservableObject {
 
     // MARK: - Sign out (goes back to anonymous — keeps local data)
     func signOut() {
-        FirebaseService.shared.signOut()
-        // Sign back in anonymously so Firestore writes still work
+        // Sign back in anonymously so cloud writes still work (after sign-out completes).
         Task {
-            let anonUID = await FirebaseService.shared.signInAnonymously()
+            await Backend.shared.signOut()
+            let anonUID = await Backend.shared.signInAnonymously()
             let uid = anonUID ?? getOrCreateDeviceUID()
             currentUID = uid
             var profile = PlayerProfile.load() ?? PlayerProfile()
@@ -210,18 +211,18 @@ final class AuthViewModel: ObservableObject {
         // 1. Delete Firestore player document + Firebase Auth account.
         //    Must happen BEFORE clearing local state, while we still have
         //    the Auth token needed for Firestore writes.
-        let result = await FirebaseService.shared.deleteCurrentAccount()
+        let result = await Backend.shared.deleteCurrentAccount()
 
         if result == .requiresReauth {
             // Firestore doc is already deleted, but Auth user needs re-auth.
-            if FirebaseService.shared.isLinkedToEmail {
+            if Backend.shared.isLinkedToEmail {
                 // Email-linked user — prompt for password via UI alert
                 needsReauthForDelete = true
                 return
             } else {
                 // Anonymous user — can't re-auth with password, just sign out.
                 // The orphaned anonymous Auth user will expire on its own.
-                FirebaseService.shared.signOut()
+                await Backend.shared.signOut()
             }
         }
 
@@ -233,14 +234,14 @@ final class AuthViewModel: ObservableObject {
     /// Completes the Auth user deletion that was blocked by Firebase's
     /// recent-login requirement.
     func deleteAccountAfterReauth(password: String) async {
-        guard let email = FirebaseService.shared.currentUserEmail else {
+        guard let email = Backend.shared.currentUserEmail else {
             // No email found — force sign out and clean up
-            FirebaseService.shared.signOut()
+            await Backend.shared.signOut()
             finishDeleteCleanup()
             return
         }
 
-        let success = await FirebaseService.shared.reauthenticateAndDelete(email: email, password: password)
+        let success = await Backend.shared.reauthenticateAndDelete(email: email, password: password)
         if !success {
             errorMessage = "Incorrect password. Your data has been deleted but the login may remain. Contact support if needed."
         }

@@ -279,7 +279,7 @@ struct FriendsView: View {
     private func sendRequest() async {
         isLoading = true; errorMsg = nil; successMsg = nil
         do {
-            try await FirebaseService.shared.sendFriendRequest(friendCode: addCode)
+            try await Backend.shared.sendFriendRequest(friendCode: addCode)
             successMsg = "Friend request sent!"
             addCode = ""
         } catch {
@@ -291,7 +291,7 @@ struct FriendsView: View {
     private func acceptRequest(_ req: FriendRequest) async {
         processingRequestId = req.id
         do {
-            try await FirebaseService.shared.acceptFriendRequest(req)
+            try await Backend.shared.acceptFriendRequest(req)
             await loadFriends()
         } catch {
             errorMsg = error.localizedDescription
@@ -301,20 +301,20 @@ struct FriendsView: View {
 
     private func rejectRequest(_ req: FriendRequest) async {
         processingRequestId = req.id
-        try? await FirebaseService.shared.rejectFriendRequest(req)
+        try? await Backend.shared.rejectFriendRequest(req)
         processingRequestId = nil
     }
 
     private func cancelRequest(_ req: FriendRequest) async {
         processingRequestId = req.id
-        try? await FirebaseService.shared.cancelFriendRequest(req)
+        try? await Backend.shared.cancelFriendRequest(req)
         processingRequestId = nil
     }
 
     private func acceptDuelInvite(_ invite: DuelInvitation) async {
         processingInviteId = invite.id
         do {
-            try await FirebaseService.shared.acceptDuelInvitation(invite)
+            try await Backend.shared.acceptDuelInvitation(invite)
             // Save DuelContext and route directly to game — skip lobby
             DuelContext.save(duelId: invite.duelId, role: .guest, mode: invite.mode)
             router.push(.game(invite.mode))
@@ -326,13 +326,13 @@ struct FriendsView: View {
 
     private func rejectDuelInvite(_ invite: DuelInvitation) async {
         processingInviteId = invite.id
-        try? await FirebaseService.shared.rejectDuelInvitation(invite)
+        try? await Backend.shared.rejectDuelInvitation(invite)
         processingInviteId = nil
     }
 
     private func cancelDuelInvite(_ invite: DuelInvitation) async {
         processingInviteId = invite.id
-        try? await FirebaseService.shared.cancelDuelInvitation(invite)
+        try? await Backend.shared.cancelDuelInvitation(invite)
         await refreshDuelLists()
         processingInviteId = nil
     }
@@ -341,9 +341,9 @@ struct FriendsView: View {
         processingInviteId = invite.id
         defer { processingInviteId = nil }
 
-        let duel = await FirebaseService.shared.loadDuel(duelId: invite.duelId)
+        let duel = await Backend.shared.loadDuel(duelId: invite.duelId)
         let state = invite.presentationState(
-            currentUID: FirebaseService.shared.currentUID,
+            currentUID: Backend.shared.currentUID,
             duel: duel,
             isHandled: DuelInviteLaunchReceiptStore.isHandled(inviteId: invite.id, duelId: invite.duelId)
         )
@@ -355,7 +355,7 @@ struct FriendsView: View {
 
         DuelInviteLaunchReceiptStore.markHandled(inviteId: invite.id, duelId: invite.duelId)
         DuelContext.save(duelId: invite.duelId, role: .host, mode: invite.mode)
-        _ = await FirebaseService.shared.markDuelInvitationInProgress(invite.id)
+        _ = await Backend.shared.markDuelInvitationInProgress(invite.id)
         await refreshDuelLists()
         router.push(.game(invite.mode))
     }
@@ -385,8 +385,8 @@ struct FriendsView: View {
         let outgoingDuelIds = outgoingInvites
             .filter { $0.status == .accepted || $0.status == .inProgress }
             .map(\.duelId)
-        let duelsById = await FirebaseService.shared.loadDuels(duelIds: outgoingDuelIds)
-        let currentUID = FirebaseService.shared.currentUID
+        let duelsById = await Backend.shared.loadDuels(duelIds: outgoingDuelIds)
+        let currentUID = Backend.shared.currentUID
 
         var nextIncoming: [DuelInvitation] = []
         var nextOutgoing: [OutgoingDuelInviteItem] = []
@@ -435,34 +435,34 @@ struct FriendsView: View {
 
     private func loadFriends() async {
         profile = PlayerProfile.load() ?? PlayerProfile()
-        let friendUIDs = await FirebaseService.shared.loadFriendUIDs()
-        friendProfiles = await FirebaseService.shared.loadFriendProfiles(uids: friendUIDs)
+        let friendUIDs = await Backend.shared.loadFriendUIDs()
+        friendProfiles = await Backend.shared.loadFriendProfiles(uids: friendUIDs)
     }
 
     // MARK: - Listeners (scoped to view visibility)
 
     private func startListeners() {
-        incomingReqListener = FirebaseService.shared.listenIncomingFriendRequests { requests in
+        incomingReqListener = Backend.shared.listenIncomingFriendRequests { requests in
             incomingRequests = requests
         }
-        outgoingReqListener = FirebaseService.shared.listenOutgoingFriendRequests { requests in
+        outgoingReqListener = Backend.shared.listenOutgoingFriendRequests { requests in
             outgoingRequests = requests
         }
-        incomingInviteListener = FirebaseService.shared.listenIncomingDuelInvitations { invites in
+        incomingInviteListener = Backend.shared.listenIncomingDuelInvitations { invites in
             incomingDuelInvitesRaw = invites
             Task { await refreshDuelLists() }
         }
-        outgoingInviteListener = FirebaseService.shared.listenOutgoingDuelInvitations { invites in
+        outgoingInviteListener = Backend.shared.listenOutgoingDuelInvitations { invites in
             outgoingDuelInvitesRaw = invites
             Task { await refreshDuelLists() }
         }
     }
 
     private func stopListeners() {
-        FirebaseService.shared.removeListener(incomingReqListener)
-        FirebaseService.shared.removeListener(outgoingReqListener)
-        FirebaseService.shared.removeListener(incomingInviteListener)
-        FirebaseService.shared.removeListener(outgoingInviteListener)
+        Backend.shared.removeListener(incomingReqListener)
+        Backend.shared.removeListener(outgoingReqListener)
+        Backend.shared.removeListener(incomingInviteListener)
+        Backend.shared.removeListener(outgoingInviteListener)
         incomingReqListener = nil
         outgoingReqListener = nil
         incomingInviteListener = nil
