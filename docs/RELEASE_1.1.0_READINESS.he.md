@@ -74,10 +74,12 @@
 בדיקות ה-UI יצרו שחקני בדיקה אנונימיים ב-Supabase cloud ‏(`qa_runtime_*`, ‏`qa_att_*`). צריך למחוק אותם (👤, דורש service key / Dashboard).
 
 ## 5. חסמים להגשה
-1. 🔒 **חתימה להפצה:** אין מפתח פרטי של iOS Distribution במחשב הזה. אפשרויות:
-   (א) Xcode → Organizer → Distribute App עם Apple ID של Account Holder/Admin (כך הועלו 1.0.x);
-   (ב) Team API Key בתפקיד **Admin** (מאפשר cloud-managed signing ל-`fastlane beta`);
-   (ג) ייבוא `.p12` של תעודת Distribution קיימת ל-Keychain.
+1. 👤 **חתימה להפצה:** אין מפתח פרטי של iOS Distribution במחשב הזה.
+   **עדכון 12.11:** הותקן Team API Key בתפקיד **Admin** (`asc.env`), ונבדק בקריאה בלבד.
+   הוא מאפשר cloud-managed signing ‏(`-allowProvisioningUpdates`), אבל export חתום עלול
+   ליצור profile מנוהל של Xcode ותעודת Cloud Managed Distribution, אם עוד אין כזו.
+   לכן מריצים אותו **רק באישור מפורש**.
+   חלופות: Xcode Organizer עם ה-Apple ID שלך, או ייבוא `.p12`.
 2. 👤 **שאלון App Privacy:** לפי `docs/APP_PRIVACY_DECLARATION.he.md`, ואז Publish.
 3. 👤 **הודעת GDPR ב-AdMob:** ‏AdMob → Privacy & messaging → European regulations → יצירה ופרסום (חינם). בלעדיה UMP לא מציג טופס ב-EEA.
 4. 👤 **העלאת build 2 ל-TestFlight** (`PT_CONFIRM=yes fastlane beta` או Organizer), ובדיקת ATT ומודעות במכשיר.
