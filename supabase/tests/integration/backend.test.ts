@@ -31,9 +31,10 @@ const fakeFirebase = Deno.serve({ port: FAKE_FIREBASE_PORT, hostname: "0.0.0.0",
   return new Response("nf", { status: 404 });
 });
 
-async function firebaseToken(uid: string, opts: { email?: string; issuer?: string } = {}) {
+async function firebaseToken(uid: string, opts: { email?: string; issuer?: string; emailVerified?: boolean } = {}) {
   const now = Math.floor(Date.now() / 1000);
-  return await new SignJWT({ auth_time: now - 10, email: opts.email, firebase: { sign_in_provider: opts.email ? "password" : "anonymous" } })
+  return await new SignJWT({ auth_time: now - 10, email: opts.email, email_verified: opts.emailVerified ?? false,
+                             firebase: { sign_in_provider: opts.email ? "password" : "anonymous" } })
     .setProtectedHeader({ alg: "RS256", kid: "test-key" })
     .setIssuer(opts.issuer ?? `https://securetoken.google.com/${PROJECT}`)
     .setAudience(PROJECT).setSubject(uid).setIssuedAt(now).setExpirationTime(now + 3600)
@@ -63,6 +64,21 @@ async function fn(c: SupabaseClient, name: string, body: unknown) {
     body: JSON.stringify(body),
   });
   return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+// Local Mailpit (supabase start) — reads the OTP Supabase Auth emailed.
+const MAILPIT = Deno.env.get("SB_MAILPIT_URL") ?? "http://127.0.0.1:55624";
+async function latestCode(to: string): Promise<string | null> {
+  for (let i = 0; i < 40; i++) {
+    const list = await (await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent("to:" + to)}`)).json();
+    const id = list.messages?.[0]?.ID;
+    if (id) {
+      const msg = await (await fetch(`${MAILPIT}/api/v1/message/${id}`)).json();
+      const m = String(msg.Text ?? msg.HTML ?? "").match(/\b(\d{6})\b/);
+      if (m) return m[1];
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(pred: () => boolean, ms = 8000) {
@@ -224,7 +240,7 @@ Deno.test({ name: "legacy Firebase claim, email link, deletion", ...opts, fn: as
 
   // email player: claim with password → can later sign in on a new device
   const emailUser = await anonUser();
-  const tok = await firebaseToken("fb_legacy_email", { email: "legacy@test.local" });
+  const tok = await firebaseToken("fb_legacy_email", { email: "legacy@test.local", emailVerified: true });
   const wrongPw = await fn(emailUser.c, "claim-legacy-account", { firebaseIdToken: tok, password: "nope-nope" });
   assertEquals(wrongPw.status, 401);
   const claimed = await fn(emailUser.c, "claim-legacy-account", { firebaseIdToken: tok, password: "secret123" });
@@ -236,13 +252,36 @@ Deno.test({ name: "legacy Firebase claim, email link, deletion", ...opts, fn: as
   assert(!si.error, si.error?.message);
   assertEquals(si.data.user!.id, emailUser.id, "same Supabase account on a new device");
 
-  // link-email for a brand-new anonymous player
+  // Firebase email that was never verified: progress moves, the email login does NOT.
+  FIREBASE_PASSWORDS["unverified@test.local"] = { uid: "fb_unverified", password: "secret123" };
+  const unv = await anonUser();
+  const unvRes = await fn(unv.c, "claim-legacy-account", {
+    firebaseIdToken: await firebaseToken("fb_unverified", { email: "unverified@test.local" }), password: "secret123" });
+  assertEquals(unvRes.status, 200, JSON.stringify(unvRes.body));
+  assertEquals(unvRes.body.emailLinked, false, "unverified email is not attached");
+  assert((await client().auth.signInWithPassword({ email: "unverified@test.local", password: "secret123" })).error,
+    "no login exists for an unverified email");
+
+  // Cloud Backup: email is attached only after the emailed OTP is entered.
   const linker = await anonUser("Link" + rid());
   const em = `p${rid()}@test.local`;
-  assertEquals((await fn(linker.c, "link-email", { email: em, password: "hunter22" })).body.status, "linked");
+  const upd = await linker.c.auth.updateUser({ email: em });
+  assert(!upd.error, upd.error?.message);
+  assert((await client().auth.signInWithPassword({ email: em, password: "hunter22" })).error, "no login before verification");
+  const code = await latestCode(em);
+  assert(code, "verification code emailed");
+  const wrong = await linker.c.auth.verifyOtp({ email: em, token: code === "000000" ? "111111" : "000000", type: "email_change" });
+  assert(wrong.error, "wrong code rejected");
+  const ver = await linker.c.auth.verifyOtp({ email: em, token: code!, type: "email_change" });
+  assert(!ver.error, ver.error?.message);
+  assert(!(await linker.c.auth.updateUser({ password: "hunter22" })).error);
+  const relogin = await client().auth.signInWithPassword({ email: em, password: "hunter22" });
+  assert(!relogin.error, relogin.error?.message);
+  assertEquals(relogin.data.user!.id, linker.id, "same account after verified link");
+  // Someone else can't take a verified address.
   const other = await anonUser();
-  assertEquals((await fn(other.c, "link-email", { email: em, password: "hunter22" })).status, 409, "email can't be reused");
-  assert(!(await client().auth.signInWithPassword({ email: em, password: "hunter22" })).error);
+  const steal2 = await other.c.auth.updateUser({ email: em });
+  assert(steal2.error, "email already in use");
 
   // deletion purges migrated data and blocks re-claim
   assertEquals((await fn(anonFb.c, "delete-account", {})).body.status, "deleted");

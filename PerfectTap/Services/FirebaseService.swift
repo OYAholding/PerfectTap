@@ -84,6 +84,12 @@ final class FirebaseService: GameBackend {
         #endif
     }
 
+    func confirmEmailLink(email: String, code: String, password: String) async throws -> String {
+        // Firebase links immediately in linkAnonymousAccount; there is no code step.
+        guard let uid = currentUID else { throw BackendError.notSignedIn }
+        return uid
+    }
+
     /// Signs in with email/password. Used when user already has an account
     /// on another device and wants to restore their data.
     func signInWithEmail(email: String, password: String) async throws -> String {

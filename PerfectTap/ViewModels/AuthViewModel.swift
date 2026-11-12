@@ -25,6 +25,10 @@ final class AuthViewModel: ObservableObject {
     /// (Firebase requires recent authentication for linked email users).
     @Published var needsReauthForDelete: Bool = false
 
+    /// Set when Cloud Backup emailed a verification code (Supabase); the UI then
+    /// asks for the code and calls `confirmEmailLink(code:password:)`.
+    @Published var pendingVerificationEmail: String? = nil
+
     /// Temporary nickname for friend/local play sessions (not persisted across app restarts)
     @Published var tempNickname: String? = nil
 
@@ -137,6 +141,7 @@ final class AuthViewModel: ObservableObject {
     /// The UID stays the same — no data migration needed.
     func linkAccount(email: String, password: String) async {
         errorMessage = nil
+        pendingVerificationEmail = nil
         do {
             let uid = try await Backend.shared.linkAnonymousAccount(email: email, password: password)
             // UID should be the same, but update just in case
@@ -145,6 +150,8 @@ final class AuthViewModel: ObservableObject {
             profile.save()
             currentUID = uid
             await Backend.shared.saveProfile(profile)
+        } catch BackendError.verificationCodeSent(let sentTo) {
+            pendingVerificationEmail = sentTo
         } catch {
             let nsError = error as NSError
             // Firebase error 17025 = "credential already in use" (account exists)
@@ -154,6 +161,23 @@ final class AuthViewModel: ObservableObject {
             } else {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// Second step of Cloud Backup on Supabase: proves email ownership.
+    func confirmEmailLink(code: String, password: String) async {
+        guard let email = pendingVerificationEmail else { return }
+        errorMessage = nil
+        do {
+            let uid = try await Backend.shared.confirmEmailLink(email: email, code: code, password: password)
+            pendingVerificationEmail = nil
+            var profile = PlayerProfile.load() ?? PlayerProfile()
+            profile.uid = uid
+            profile.save()
+            currentUID = uid
+            await Backend.shared.saveProfile(profile)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

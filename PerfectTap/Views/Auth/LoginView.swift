@@ -12,6 +12,7 @@ struct LinkAccountView: View {
     @State private var isSignUp = true
     @State private var isLoading = false
     @State private var successMessage: String? = nil
+    @State private var verificationCode = ""
 
     var body: some View {
         ZStack {
@@ -94,7 +95,18 @@ struct LinkAccountView: View {
                         // Form
                         VStack(spacing: 14) {
                             formField(placeholder: "Email", text: $email, isSecure: false, keyboard: .emailAddress)
+                                .disabled(awaitingCode)
                             formField(placeholder: "Password (min 6 characters)", text: $password, isSecure: true, keyboard: .default)
+                                .disabled(awaitingCode)
+
+                            if awaitingCode, let sentTo = authVM.pendingVerificationEmail {
+                                Text("Enter the 6-digit code we sent to \(sentTo).")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .multilineTextAlignment(.center)
+                                formField(placeholder: "Verification code", text: $verificationCode, isSecure: false, keyboard: .numberPad)
+                                    .textContentType(.oneTimeCode)
+                            }
 
                             if let err = authVM.errorMessage {
                                 Text(err)
@@ -108,13 +120,15 @@ struct LinkAccountView: View {
                                 isLoading = true
                                 authVM.errorMessage = nil
                                 Task {
-                                    if isSignUp {
+                                    if awaitingCode {
+                                        await authVM.confirmEmailLink(code: verificationCode, password: password)
+                                    } else if isSignUp {
                                         await authVM.linkAccount(email: email, password: password)
                                     } else {
                                         await authVM.signInAndLink(email: email, password: password)
                                     }
                                     isLoading = false
-                                    if authVM.errorMessage == nil {
+                                    if authVM.errorMessage == nil && authVM.pendingVerificationEmail == nil {
                                         withAnimation(.spring(response: 0.4)) {
                                             successMessage = isSignUp
                                                 ? "Account created & linked!"
@@ -128,7 +142,7 @@ struct LinkAccountView: View {
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 18)
                                 } else {
-                                    Text(isSignUp ? "CREATE & LINK" : "SIGN IN & LINK")
+                                    Text(awaitingCode ? "VERIFY & LINK" : (isSignUp ? "CREATE & LINK" : "SIGN IN & LINK"))
                                         .font(.system(size: 16, weight: .black))
                                         .tracking(2)
                                         .foregroundColor(.white)
@@ -145,8 +159,8 @@ struct LinkAccountView: View {
                                 )
                             )
                             .cornerRadius(16)
-                            .disabled(isLoading || email.isEmpty || password.count < 6)
-                            .opacity((email.isEmpty || password.count < 6) ? 0.5 : 1)
+                            .disabled(isLoading || email.isEmpty || password.count < 6 || (awaitingCode && verificationCode.count < 6))
+                            .opacity((email.isEmpty || password.count < 6 || (awaitingCode && verificationCode.count < 6)) ? 0.5 : 1)
                         }
 
                         // Subtitle hint
@@ -165,6 +179,8 @@ struct LinkAccountView: View {
             }
         }
     }
+
+    private var awaitingCode: Bool { isSignUp && authVM.pendingVerificationEmail != nil }
 
     // MARK: - Mode Tab
     private func modeTab(title: String, active: Bool, action: @escaping () -> Void) -> some View {

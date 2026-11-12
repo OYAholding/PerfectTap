@@ -3,8 +3,9 @@
 //
 // Moves a Firebase-era player (progress, verified scores, friendships) onto the
 // calling Supabase user. The Firebase ID token proves ownership of the legacy
-// account; an optional password (checked against Firebase) additionally lets
-// email players keep signing in with the same email + password on Supabase.
+// account. The email login is carried over ONLY if Firebase had verified that
+// the player owns the address (email_verified); otherwise the player links and
+// verifies an email again in the app (Supabase email-change OTP).
 import { withSupabase } from "@supabase/server";
 import { dbErrorCode, fail, json, readJson } from "../_shared/http.ts";
 import { verifyFirebaseIdToken, verifyFirebasePassword } from "../_shared/firebase.ts";
@@ -46,7 +47,9 @@ export default {
 
     // Account with this Firebase identity already lives on another Supabase user.
     if (result.status === "claimed_elsewhere") {
-      if (!passwordVerified || !fb.email || !result.user_id) return json(409, { status: "claimed_elsewhere" });
+      if (!passwordVerified || !fb.email || !fb.emailVerified || !result.user_id) {
+        return json(409, { status: "claimed_elsewhere" });
+      }
       const upd = await admin.auth.admin.updateUserById(result.user_id, {
         email: fb.email, email_confirm: true, password: password!,
       });
@@ -59,7 +62,7 @@ export default {
 
     // claimed | no_legacy_data | already_claimed → carry the email login over.
     let emailLinked = false;
-    if (fb.email) {
+    if (fb.email && fb.emailVerified) {
       const { data: current } = await admin.auth.admin.getUserById(callerId);
       const callerEmail = current?.user?.email ?? null;
       const inUse = await admin.rpc("edge_email_in_use", { p_email: fb.email, p_except: callerId });

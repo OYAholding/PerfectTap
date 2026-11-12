@@ -9,12 +9,15 @@ const JWKS_URL = Deno.env.get("FIREBASE_JWKS_URL") ??
   "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
 const IDENTITY_URL = Deno.env.get("FIREBASE_IDENTITY_URL") ?? "https://identitytoolkit.googleapis.com";
 const WEB_API_KEY = Deno.env.get("FIREBASE_WEB_API_KEY") ?? "";
+const IOS_BUNDLE_ID = Deno.env.get("FIREBASE_IOS_BUNDLE_ID") ?? "com.perfecttap.app";
 
 const jwks = createRemoteJWKSet(new URL(JWKS_URL));
 
 export interface FirebaseIdentity {
   uid: string;
   email: string | null;
+  /** Firebase had verified ownership of `email` (email_verified claim). */
+  emailVerified: boolean;
   provider: string | null;
 }
 
@@ -34,6 +37,7 @@ export async function verifyFirebaseIdToken(token: string): Promise<FirebaseIden
     return {
       uid: payload.sub,
       email: typeof payload.email === "string" ? payload.email.toLowerCase() : null,
+      emailVerified: payload.email_verified === true,
       provider: firebase?.sign_in_provider ?? null,
     };
   } catch {
@@ -49,7 +53,9 @@ export async function verifyFirebasePassword(uid: string, email: string, passwor
       `${IDENTITY_URL}/v1/accounts:signInWithPassword?key=${encodeURIComponent(WEB_API_KEY)}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // Lets the (public) Firebase key be restricted to the iOS app in Google
+        // Cloud Console → Credentials without breaking this server-side check.
+        headers: { "Content-Type": "application/json", "X-Ios-Bundle-Identifier": IOS_BUNDLE_ID },
         body: JSON.stringify({ email, password, returnSecureToken: false }),
       },
     );

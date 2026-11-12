@@ -73,17 +73,53 @@ final class SupabaseService: GameBackend {
         return uid
     }
 
+    /// Step 1 of "Cloud Backup": Supabase emails a one-time code to the address.
+    /// The email is attached only after the player proves they can read it
+    /// (`confirmEmailLink`). Needs working SMTP on the project.
     func linkAnonymousAccount(email: String, password: String) async throws -> String {
-        guard let uid = currentUID else { throw BackendError.notSignedIn }
-        struct Body: Encodable { let email: String; let password: String }
-        struct Reply: Decodable { let status: String }
+        guard let user = client.auth.currentUser else { throw BackendError.notSignedIn }
+        if let existing = user.email, !existing.isEmpty, user.emailConfirmedAt != nil {
+            return user.id.uuidString.lowercased()   // already linked and verified
+        }
+        guard password.count >= 6 else { throw BackendError.server("Password must be at least 6 characters.") }
+        let normalized = email.trimmingCharacters(in: .whitespaces).lowercased()
         do {
-            let _: Reply = try await client.functions.invoke(
-                "link-email", options: FunctionInvokeOptions(body: Body(email: email, password: password)))
-            _ = try? await client.auth.refreshSession()
-            return uid
+            _ = try await client.auth.update(user: UserAttributes(email: normalized))
         } catch {
-            throw mapFunctionError(error)
+            throw mapAuthError(error)
+        }
+        throw BackendError.verificationCodeSent(normalized)
+    }
+
+    /// Step 2: verify the emailed code, then set the password.
+    func confirmEmailLink(email: String, code: String, password: String) async throws -> String {
+        let trimmed = code.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 6, trimmed.allSatisfy(\.isNumber) else {
+            throw BackendError.server("Enter the 6-digit code from the email.")
+        }
+        do {
+            _ = try await client.auth.verifyOTP(email: email.lowercased(), token: trimmed, type: .emailChange)
+            _ = try await client.auth.update(user: UserAttributes(password: password))
+        } catch {
+            throw mapAuthError(error)
+        }
+        guard let uid = currentUID else { throw BackendError.notSignedIn }
+        return uid
+    }
+
+    private func mapAuthError(_ error: Error) -> Error {
+        if isNetworkError(error) { return BackendError.network }
+        guard let authError = error as? AuthError else {
+            return BackendError.server("Something went wrong. Please try again.")
+        }
+        switch authError.errorCode {
+        case .emailExists, .userAlreadyExists: return BackendError.emailInUse
+        case .overEmailSendRateLimit, .overRequestRateLimit: return BackendError.rateLimited
+        case .otpExpired: return BackendError.server("That code is invalid or expired. Request a new one.")
+        case .emailAddressNotAuthorized:
+            return BackendError.server("Email backup is temporarily unavailable. Please try again later.")
+        case .weakPassword: return BackendError.server("Choose a stronger password (at least 6 characters).")
+        default: return BackendError.server("Something went wrong. Please try again.")
         }
     }
 
@@ -642,22 +678,6 @@ final class SupabaseService: GameBackend {
         case "username_taken": return .server("That username is already taken. Try another.")
         default: return .server("Something went wrong. Please try again.")
         }
-    }
-
-    private func mapFunctionError(_ error: Error) -> Error {
-        if isNetworkError(error) { return BackendError.network }
-        if case FunctionsError.httpError(let code, let data) = error {
-            let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            switch (code, body?["error"] as? String) {
-            case (409, _): return BackendError.emailInUse
-            case (429, _): return BackendError.rateLimited
-            case (_, "invalid_email"): return BackendError.server("Enter a valid email address.")
-            case (_, "weak_password"): return BackendError.server("Password must be at least 6 characters.")
-            case (401, _): return BackendError.notSignedIn
-            default: break
-            }
-        }
-        return BackendError.server("Something went wrong. Please try again.")
     }
 
     private func log(_ message: String) {

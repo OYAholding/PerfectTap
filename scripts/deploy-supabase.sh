@@ -29,7 +29,7 @@ Plan (hosted, project $PERFECTTAP_REF only):
   1. supabase link --project-ref $PERFECTTAP_REF        (asks for the DB password)
   2. supabase db push --linked                          (2 migrations: core schema, legacy import)
   3. supabase secrets set FIREBASE_PROJECT_ID / FIREBASE_WEB_API_KEY
-  4. supabase functions deploy claim-legacy-account link-email delete-account
+  4. supabase functions deploy claim-legacy-account delete-account
   5. supabase db advisors --linked
 Manual (dashboard → Authentication → Sign In / Providers): enable "Allow anonymous sign-ins".
 PLAN
@@ -43,6 +43,6 @@ LINKED="$(cat supabase/.temp/project-ref 2>/dev/null || true)"
 supabase db push --linked
 supabase secrets set --project-ref "$PERFECTTAP_REF" \
   FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
-supabase functions deploy claim-legacy-account link-email delete-account --project-ref "$PERFECTTAP_REF"
+supabase functions deploy claim-legacy-account delete-account --project-ref "$PERFECTTAP_REF"
 supabase db advisors --linked || true
 echo "Done. Remember: enable anonymous sign-ins in the dashboard (step 'Manual' above)."

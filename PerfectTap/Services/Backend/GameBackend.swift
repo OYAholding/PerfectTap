@@ -49,6 +49,8 @@ enum BackendError: LocalizedError, Equatable {
     case rateLimited
     case network
     case server(String)
+    /// Email linking step 1 succeeded: a one-time code was sent to this address.
+    case verificationCodeSent(String)
 
     var errorDescription: String? {
         switch self {
@@ -59,6 +61,7 @@ enum BackendError: LocalizedError, Equatable {
         case .rateLimited: return "Too many attempts. Please wait a minute and try again."
         case .network: return "No connection. Check your internet and try again."
         case .server(let message): return message
+        case .verificationCodeSent(let email): return "We sent a 6-digit code to \(email)."
         }
     }
 }
@@ -70,7 +73,10 @@ protocol GameBackend: AnyObject {
     var currentUserEmail: String? { get }
     var isLinkedToEmail: Bool { get }
     func signInAnonymously() async -> String?
+    /// Links email/password to the current account. May throw
+    /// `.verificationCodeSent`; then call `confirmEmailLink` with the emailed code.
     func linkAnonymousAccount(email: String, password: String) async throws -> String
+    func confirmEmailLink(email: String, code: String, password: String) async throws -> String
     func signInWithEmail(email: String, password: String) async throws -> String
     func signOut() async
     func deleteCurrentAccount() async -> BackendDeleteResult
