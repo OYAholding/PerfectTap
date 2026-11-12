@@ -21,6 +21,9 @@ packages:
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads
     from: "12.3.0"
+  GoogleUserMessagingPlatform:
+    url: https://github.com/googleads/swift-package-manager-google-user-messaging-platform
+    from: "3.1.0"
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     from: "11.15.0"
@@ -43,6 +46,7 @@ targets:
           - "*.xcworkspace"
     dependencies:
       - package: GoogleMobileAds
+      - package: GoogleUserMessagingPlatform
       - package: Firebase
         product: FirebaseCore
       - package: Firebase
@@ -97,7 +101,18 @@ targets:
     info:
       path: Info.plist
       properties:
+        # Version comes from MARKETING_VERSION / CURRENT_PROJECT_VERSION (never hard-coded).
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         GADApplicationIdentifier: ca-app-pub-5350899688701342~1011431660
+        # Apple App Tracking Transparency prompt (ConsentManager.swift).
+        NSUserTrackingUsageDescription: "PerfectTap shows ads. If you allow tracking, ads can be more relevant to you. If you don't, you'll still see ads, but they won't be personalized. The game works the same either way."
+        # Firebase Analytics consent-mode defaults: no ad signals until ATT is authorized
+        # (ConsentManager grants them afterwards). Usage analytics stays on.
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_ANALYTICS_STORAGE: true
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_STORAGE: false
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_USER_DATA: false
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS: false
         PT_BACKEND: $(PT_BACKEND)
         PT_EMAIL_OTP_ENABLED: $(PT_EMAIL_OTP_ENABLED)
         SUPABASE_URL: $(SUPABASE_URL)

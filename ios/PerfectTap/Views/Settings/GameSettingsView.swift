@@ -5,6 +5,7 @@ struct GameSettingsView: View {
     @EnvironmentObject var router: AppRouter
     @EnvironmentObject var themeManager: ThemeManager
     @ObservedObject private var authVM = AuthViewModel.shared
+    @ObservedObject private var consent = ConsentManager.shared
     @Environment(\.openURL) private var openURL
 
     @State private var soundEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_sound") as? Bool ?? true
@@ -159,6 +160,41 @@ struct GameSettingsView: View {
                             }
                             .disabled(isDeleting)
                         }
+                        // Privacy (ATT status + Google privacy choices where required)
+                        settingsSection("PRIVACY") {
+                            Button {
+                                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "eye.slash.fill").foregroundColor(.white.opacity(0.5))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Ad Tracking").font(.system(size: 14, weight: .semibold)).foregroundColor(.white.opacity(0.8))
+                                        Text(trackingStatusText).font(.system(size: 11)).foregroundColor(.white.opacity(0.45))
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.system(size: 11)).foregroundColor(.white.opacity(0.3))
+                                }
+                                .padding(14)
+                            }
+                            .accessibilityIdentifier("settings.privacy.tracking")
+
+                            if consent.privacyOptionsRequired {
+                                Divider().background(Color.white.opacity(0.06))
+                                Button {
+                                    Task { await consent.presentPrivacyOptions() }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "checkmark.shield.fill").foregroundColor(.white.opacity(0.5))
+                                        Text("Privacy Choices").font(.system(size: 14, weight: .semibold)).foregroundColor(.white.opacity(0.8))
+                                        Spacer()
+                                        Image(systemName: "chevron.right").font(.system(size: 11)).foregroundColor(.white.opacity(0.3))
+                                    }
+                                    .padding(14)
+                                }
+                                .accessibilityIdentifier("settings.privacy.choices")
+                            }
+                        }
+
                         // Legal
                         settingsSection("LEGAL") {
                             Button {
@@ -262,6 +298,15 @@ struct GameSettingsView: View {
             }
         } message: {
             Text("Enter your password to complete account deletion.")
+        }
+    }
+
+    private var trackingStatusText: String {
+        switch consent.trackingStatus {
+        case .authorized: return "Allowed — ads may be personalized. Change in iOS Settings."
+        case .denied: return "Not allowed — ads are not personalized. Change in iOS Settings."
+        case .restricted: return "Restricted on this device — ads are not personalized."
+        case .notDetermined: return "Not asked yet — ads are not personalized."
         }
     }
 

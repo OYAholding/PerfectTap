@@ -213,6 +213,8 @@ In-app purchases are processed by Apple or the applicable platform provider. We 
 
 If the Service includes advertisements, including rewarded ads, advertising partners may collect or receive data in accordance with their own technologies, legal obligations, and privacy practices.
 
+Tracking only with your permission: before any tracking, the app asks through Apple's App Tracking Transparency prompt. Only if you choose "Allow" can Google use your device's advertising identifier (IDFA) for personalized ads. If you choose "Ask App Not to Track", the advertising identifier is not accessed, ads are not personalized, and no advertising signals are sent from Firebase Analytics. The game works the same either way. You can change this in iOS Settings → Privacy & Security → Tracking, or in the app under Settings → Privacy. Where the law requires it (EEA, UK, Switzerland), Google's consent message is shown before ads are requested, and you can change your choice under Settings → Privacy → Privacy Choices.
+
 14. Changes to This Privacy Policy
 
 We may update this Privacy Policy from time to time. The updated version will be posted at:

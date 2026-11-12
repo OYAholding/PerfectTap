@@ -32,8 +32,12 @@ bundle install
 |---|---|---|
 | `asc_check` | לא | בודק חיבור, גרסאות, builds, TestFlight, סטטוס review, ו-HTTP של Privacy/Support URL |
 | `metadata_pull` | לא | מוריד metadata ל-`fastlane/metadata` (פרטי איש קשר ל-review לא נכנסים לגיט) |
-| `build` | לא | `xcodegen generate` + ‏`.ipa` חתום ל-`build/fastlane/`; מספר build = הגבוה ביותר שהועלה + 1 |
-| `beta` | **כן** — `PT_CONFIRM=yes` | `build` + העלאה ל-TestFlight. בלי Beta App Review ובלי בודקים חיצוניים |
+| `validate_release` | לא | גרסה > החיה, גרסת App Store Connect = `MARKETING_VERSION`, מספר build פנוי, מחרוזת ATT, ‏privacy manifest, ‏5 כתובות חוקיות, אין סודות בריפו. נכשל כשיש חסם |
+| `release_report` | לא | אותן בדיקות → `build/fastlane/release_report.md` |
+| `build` | לא | `xcodegen generate` + ‏`.ipa` חתום ל-`build/fastlane/`. מספר build = מעל כל מה שהועלה. בודק את הגרסה **בתוך** ה-IPA |
+| `beta` | **כן** — `PT_CONFIRM=yes` | `build` + העלאה ל-TestFlight עם "What to Test" מ-`testflight_notes.txt`, לקבוצות פנימיות בלבד. בלי Beta App Review ובלי בודקים חיצוניים |
+| `internal_group` | **כן** — `PT_CONFIRM=yes` | יוצר את "PerfectTap Internal" אם חסרה. בודקים מוסיפים ב-App Store Connect (חייבים להיות משתמשי הצוות) |
+| `rename_version` | **כן** — `PT_CONFIRM=yes` | משנה את שם הגרסה **הניתנת לעריכה** (`version:1.1.0`). לעולם לא את החיה |
 | `metadata_push` | **כן** — `PT_CONFIRM=yes` | מעלה טקסט metadata בלבד. בלי binary, בלי צילומי מסך, בלי שליחה ל-review |
 
 ```bash

@@ -72,6 +72,28 @@ def pt_get(path)
   body
 end
 
+# Authenticated write (PATCH/POST). Callers must run pt_require_confirmation! first.
+def pt_write(method, path, body)
+  uri = URI("https://api.appstoreconnect.apple.com#{path}")
+  req = (method == :patch ? Net::HTTP::Patch : Net::HTTP::Post).new(uri)
+  req["Authorization"] = "Bearer #{Spaceship::ConnectAPI.token.text}"
+  req["Content-Type"] = "application/json"
+  req.body = JSON.dump(body)
+  res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+  parsed = JSON.parse(res.body) rescue {}
+  unless res.code.to_i.between?(200, 299)
+    detail = (parsed["errors"] || []).map { |e| e["detail"] || e["title"] }.join("; ")
+    UI.user_error!("#{method.upcase} #{uri.path} -> HTTP #{res.code} #{detail}")
+  end
+  parsed
+end
+
+def pt_editable_version
+  pt_get("/v1/apps/#{PT_APP_ID}/appStoreVersions?limit=50")["data"].find do |v|
+    %w[PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED REJECTED METADATA_REJECTED INVALID_BINARY].include?(v.dig("attributes", "appStoreState"))
+  end
+end
+
 def pt_assert_app!
   attrs = pt_get("/v1/apps/#{PT_APP_ID}")["data"]["attributes"]
   UI.user_error!("App #{PT_APP_ID} is #{attrs['bundleId']}, expected #{PT_BUNDLE_ID}") unless attrs["bundleId"] == PT_BUNDLE_ID
@@ -188,22 +210,90 @@ platform :ios do
         "-authenticationKeyPath #{File.expand_path(ENV['ASC_KEY_PATH']).shellescape}",
         "-authenticationKeyID #{ENV['ASC_KEY_ID']}",
         "-authenticationKeyIssuerID #{ENV['ASC_ISSUER_ID']}"
-      ].join(" ")
+      ].join(" "),
+      export_options: { signingStyle: "automatic", teamID: PT_TEAM_ID, manageAppVersionAndBuildNumber: false }
     )
+    # Verify what was actually built (a hard-coded Info.plist once produced 1.0 (1)).
+    ipa = File.join(PT_OUTPUT_DIR, "PerfectTap.ipa")
+    info = sh("unzip -p #{ipa.shellescape} 'Payload/*.app/Info.plist' | plutil -convert json -o - -", log: false)
+    built = JSON.parse(info)
+    expected = pt_project_versions[:version]
+    unless built["CFBundleShortVersionString"] == expected && built["CFBundleVersion"] == build_number.to_s
+      UI.user_error!("IPA is #{built['CFBundleShortVersionString']} (#{built['CFBundleVersion']}), expected #{expected} (#{build_number})")
+    end
+    UI.success("IPA #{expected} (#{build_number}) — #{built['CFBundleIdentifier']}")
   end
 
-  desc "WRITE (PT_CONFIRM=yes): build and upload to TestFlight — internal only, no review, no external testers"
+  desc "Read-only: version/build/privacy/URL/secret checks before a release (fails on blockers)"
+  lane :validate_release do
+    pt_api_key
+    pt_assert_app!
+    rows, failures = pt_release_checks
+    puts Terminal::Table.new(title: "PerfectTap release checks", headings: ["", "Check", "Result"], rows: rows)
+    UI.user_error!("#{failures} release blocker(s)") if failures > 0
+    UI.success("No blockers found by automated checks (App Review is still a human decision)")
+  end
+
+  desc "Read-only: write build/fastlane/release_report.md (ASC status + release checks)"
+  lane :release_report do
+    pt_api_key
+    pt_assert_app!
+    rows, failures = pt_release_checks
+    FileUtils.mkdir_p(PT_OUTPUT_DIR)
+    path = File.join(PT_OUTPUT_DIR, "release_report.md")
+    File.write(path, ["# PerfectTap release readiness — #{Time.now.utc.strftime('%Y-%m-%d %H:%M UTC')}", "",
+                      "| | Check | Result |", "|---|---|---|", *rows.map { |r| "| #{r.join(' | ')} |" }, "",
+                      "Blockers: #{failures}"].join("\n"))
+    UI.success("Wrote #{path}")
+  end
+
+  desc "WRITE (PT_CONFIRM=yes): build and upload to TestFlight — internal group only, no review, no external testers"
   lane :beta do |options|
     pt_require_confirmation!("Uploading a TestFlight build")
     build(options)
+    notes = options[:changelog] || ENV["PT_TESTFLIGHT_NOTES"]
+    notes ||= File.read(File.expand_path("testflight_notes.txt", __dir__)) if File.exist?(File.expand_path("testflight_notes.txt", __dir__))
+    groups = pt_get("/v1/apps/#{PT_APP_ID}/betaGroups?limit=50")["data"]
+               .select { |g| g.dig("attributes", "isInternalGroup") }.map { |g| g.dig("attributes", "name") }
     upload_to_testflight(
       api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
       app_identifier: PT_BUNDLE_ID,
       ipa: File.join(PT_OUTPUT_DIR, "PerfectTap.ipa"),
-      skip_submission: true,            # no Beta App Review, no external distribution
+      changelog: notes,                 # "What to Test"
+      groups: groups.empty? ? nil : groups,  # internal groups only (no Beta App Review)
       distribute_external: false,
-      skip_waiting_for_build_processing: true
+      skip_submission: true,
+      skip_waiting_for_build_processing: groups.empty? && notes.nil?
     )
+  end
+
+  desc "WRITE (PT_CONFIRM=yes): create the internal TestFlight group if missing (testers are added in App Store Connect)"
+  lane :internal_group do
+    pt_require_confirmation!("Creating a TestFlight group")
+    pt_api_key
+    pt_assert_app!
+    existing = pt_get("/v1/apps/#{PT_APP_ID}/betaGroups?limit=50")["data"].map { |g| g.dig("attributes", "name") }
+    next UI.success("Group '#{PT_INTERNAL_GROUP}' already exists") if existing.include?(PT_INTERNAL_GROUP)
+    pt_write(:post, "/v1/betaGroups", {
+      data: { type: "betaGroups", attributes: { name: PT_INTERNAL_GROUP, isInternalGroup: true },
+              relationships: { app: { data: { type: "apps", id: PT_APP_ID } } } }
+    })
+    UI.success("Created internal group '#{PT_INTERNAL_GROUP}'")
+  end
+
+  desc "WRITE (PT_CONFIRM=yes): rename the editable App Store version, e.g. version:1.1.0 (never the live one)"
+  lane :rename_version do |options|
+    pt_require_confirmation!("Renaming the App Store version")
+    target = options[:version] || pt_project_versions[:version]
+    pt_api_key
+    pt_assert_app!
+    v = pt_editable_version
+    UI.user_error!("No editable App Store version") unless v
+    current = v.dig("attributes", "versionString")
+    next UI.success("Already #{target}") if current == target
+    UI.message("Renaming #{current} → #{target}")
+    pt_write(:patch, "/v1/appStoreVersions/#{v['id']}", { data: { type: "appStoreVersions", id: v["id"], attributes: { versionString: target } } })
+    UI.success("Editable version is now #{pt_get("/v1/appStoreVersions/#{v['id']}").dig('data', 'attributes', 'versionString')}")
   end
 
   desc "WRITE (PT_CONFIRM=yes): upload fastlane/metadata text only — no binary, no screenshots, no submission"
@@ -226,9 +316,82 @@ platform :ios do
   end
 end
 
-# Next build number: one above the highest build uploaded for this app.
+# Next build number: above every build ever uploaded for this app, and never below the
+# value in project.yml (so a local bump is respected).
 def pt_next_build_number
   builds = pt_get("/v1/builds?filter[app]=#{PT_APP_ID}&sort=-uploadedDate&limit=200&fields[builds]=version")["data"]
   highest = builds.map { |b| b.dig("attributes", "version").to_i }.max || 0
-  highest + 1
+  [highest + 1, pt_project_versions[:build].to_i].max
 end
+
+PT_PROJECT_YML = File.expand_path("../ios/PerfectTap/project.yml", __dir__)
+PT_LEGAL_URLS = {
+  "Privacy Policy" => "https://oyaholding.github.io/PerfectTap/",
+  "Terms" => "https://oyaholding.github.io/PerfectTap/terms.html",
+  "Support" => "https://oyaholding.github.io/PerfectTap/support.html",
+  "Legacy privacy (live 1.0)" => "https://oyaholding.github.io/perfecttap-pages/",
+  "Legacy support (live 1.0)" => "https://oyaholding.github.io/perfecttap-pages/support.html"
+}.freeze
+
+def pt_project_versions
+  yml = File.read(PT_PROJECT_YML)
+  { version: yml[/MARKETING_VERSION:\s*"?([0-9.]+)"?/, 1], build: yml[/CURRENT_PROJECT_VERSION:\s*"?([0-9]+)"?/, 1] }
+end
+
+def pt_version_tuple(v)
+  v.to_s.split(".").map(&:to_i).fill(0, v.to_s.split(".").size...3)
+end
+
+# Read-only release checks. Returns [rows, failures].
+def pt_release_checks
+  rows = []
+  fail = ->(name, detail) { rows << ["❌", name, detail] }
+  ok = ->(name, detail) { rows << ["✅", name, detail] }
+  warn = ->(name, detail) { rows << ["⚠️", name, detail] }
+
+  local = pt_project_versions
+  versions = pt_get("/v1/apps/#{PT_APP_ID}/appStoreVersions?limit=50")["data"]
+  live = versions.select { |v| %w[READY_FOR_SALE READY_FOR_DISTRIBUTION].include?(v.dig("attributes", "appStoreState")) }
+                 .map { |v| v.dig("attributes", "versionString") }.max_by { |v| pt_version_tuple(v) }
+  editable = versions.find { |v| %w[PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED REJECTED METADATA_REJECTED INVALID_BINARY].include?(v.dig("attributes", "appStoreState")) }
+
+  if live.nil? || (pt_version_tuple(local[:version]) <=> pt_version_tuple(live)) == 1
+    ok.call("Version", "#{local[:version]} > live #{live || '-'}")
+  else
+    fail.call("Version", "#{local[:version]} must be greater than live #{live}")
+  end
+  if editable.nil?
+    warn.call("App Store version", "no editable version — create #{local[:version]} in App Store Connect")
+  elsif editable.dig("attributes", "versionString") == local[:version]
+    ok.call("App Store version", "#{local[:version]} (#{editable.dig('attributes', 'appStoreState')})")
+  else
+    fail.call("App Store version", "editable version is #{editable.dig('attributes', 'versionString')}, build is #{local[:version]} — run `fastlane rename_version version:#{local[:version]}`")
+  end
+
+  builds = pt_get("/v1/builds?filter[app]=#{PT_APP_ID}&limit=200&fields[builds]=version")["data"].map { |b| b.dig("attributes", "version").to_i }
+  next_build = pt_next_build_number
+  if builds.include?(local[:build].to_i)
+    warn.call("Build number", "project.yml #{local[:build]} already uploaded — the build lane will use #{next_build}")
+  else
+    ok.call("Build number", "#{local[:build]} unused (highest uploaded: #{builds.max || '-'}), next = #{next_build}")
+  end
+
+  plist = File.read(PT_PROJECT_YML)
+  plist.include?("NSUserTrackingUsageDescription") ? ok.call("ATT usage string", "present") : fail.call("ATT usage string", "NSUserTrackingUsageDescription missing")
+  plist.include?("CFBundleShortVersionString: $(MARKETING_VERSION)") ? ok.call("Info.plist version", "bound to MARKETING_VERSION") : fail.call("Info.plist version", "hard-coded")
+  manifest = File.read(File.join(PT_PROJECT_DIR, "PrivacyInfo.xcprivacy"))
+  manifest[/<key>NSPrivacyTracking<\/key>\s*<true\/>/] ? ok.call("Privacy manifest", "NSPrivacyTracking = true (ATT)") : fail.call("Privacy manifest", "NSPrivacyTracking must be true while AdMob uses IDFA")
+
+  PT_LEGAL_URLS.each do |name, url|
+    code = pt_url_status(url)
+    code.to_s.start_with?("2", "3") ? ok.call(name, "#{url} → #{code}") : fail.call(name, "#{url} → #{code}")
+  end
+
+  repo = File.expand_path("..", __dir__)
+  keys = Dir.glob(File.join(repo, "**/*.{p8,p12,mobileprovision}")).reject { |f| f.include?("/vendor/") || f.include?("/build/") }
+  keys.empty? ? ok.call("Secrets in repo", "no .p8/.p12/.mobileprovision") : fail.call("Secrets in repo", keys.map { |k| k.sub(repo + '/', '') }.join(", "))
+
+  [rows, rows.count { |r| r[0] == "❌" }]
+end
+
+PT_INTERNAL_GROUP = "PerfectTap Internal"

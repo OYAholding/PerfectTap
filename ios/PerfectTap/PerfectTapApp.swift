@@ -12,7 +12,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         FirebaseApp.configure()
         FirebaseService.connectToLocalEmulatorsIfRequested()
-        AdManager.shared.initializeSDK()
+        // Ads are NOT started here: ConsentManager (Google UMP + Apple ATT) starts them
+        // once the app is active and consent has been handled. See ConsentManager.swift.
         return true
     }
 }
@@ -27,6 +28,7 @@ struct PerfectTapApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var authVM = AuthViewModel.shared
     @StateObject private var duelAutoLaunchCoordinator = DuelAutoLaunchCoordinator()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -37,10 +39,25 @@ struct PerfectTapApp: App {
                 .environmentObject(duelAutoLaunchCoordinator)
                 .preferredColorScheme(.dark)
                 .task {
+                    // First launch: scenePhase may already be .active, so onChange won't fire.
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    await ConsentManager.shared.gatherConsentIfNeeded()
+                }
+                .task {
                     // Load IAP products from App Store Connect on launch.
                     // Without this, coinProducts and specialProducts are empty
                     // and no IAP purchases can be made.
                     await PurchaseManager.shared.loadProducts()
+                }
+                .onChange(of: scenePhase) { phase in
+                    guard phase == .active else { return }
+                    Task {
+                        // ATT can only be shown while active; iPadOS may report "active"
+                        // slightly before the window can present, so give it a moment.
+                        try? await Task.sleep(nanoseconds: 600_000_000)
+                        await ConsentManager.shared.gatherConsentIfNeeded()
+                        ConsentManager.shared.refreshTrackingStatus()
+                    }
                 }
         }
     }

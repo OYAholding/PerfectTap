@@ -1,0 +1,7 @@
+PerfectTap 1.1.0 — what to test
+1. Fresh install: the "Allow tracking" (ATT) prompt appears on first launch. Try both "Allow" and "Ask App Not to Track" (reinstall between).
+2. Either way: choose a name, play every mode, use a rewarded ad for revive; the game must work the same.
+3. Settings → Privacy → Ad Tracking shows your choice.
+4. Existing players (1.0.x): your account, coins and progress move over on first launch.
+5. Friends and duels: invite, accept, play a duel.
+Report anything odd via TestFlight feedback.
