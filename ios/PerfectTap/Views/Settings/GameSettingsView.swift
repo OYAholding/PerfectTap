@@ -5,6 +5,7 @@ struct GameSettingsView: View {
     @EnvironmentObject var router: AppRouter
     @EnvironmentObject var themeManager: ThemeManager
     @ObservedObject private var authVM = AuthViewModel.shared
+    @Environment(\.openURL) private var openURL
 
     @State private var soundEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_sound") as? Bool ?? true
     @State private var musicEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_music") as? Bool ?? true
@@ -161,7 +162,7 @@ struct GameSettingsView: View {
                         // Legal
                         settingsSection("LEGAL") {
                             Button {
-                                showPrivacyPolicy = true
+                                openURL(LegalLinks.privacy) { opened in if !opened { showPrivacyPolicy = true } }
                             } label: {
                                 HStack {
                                     Image(systemName: "hand.raised.fill").foregroundColor(.white.opacity(0.5))
@@ -175,11 +176,25 @@ struct GameSettingsView: View {
                             Divider().background(Color.white.opacity(0.06))
 
                             Button {
-                                showTermsOfUse = true
+                                openURL(LegalLinks.terms) { opened in if !opened { showTermsOfUse = true } }
                             } label: {
                                 HStack {
                                     Image(systemName: "doc.text.fill").foregroundColor(.white.opacity(0.5))
                                     Text("Terms of Use").font(.system(size: 14, weight: .semibold)).foregroundColor(.white.opacity(0.8))
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.system(size: 11)).foregroundColor(.white.opacity(0.3))
+                                }
+                                .padding(14)
+                            }
+
+                            Divider().background(Color.white.opacity(0.06))
+
+                            Button {
+                                openURL(LegalLinks.support)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "questionmark.circle.fill").foregroundColor(.white.opacity(0.5))
+                                    Text("Support").font(.system(size: 14, weight: .semibold)).foregroundColor(.white.opacity(0.8))
                                     Spacer()
                                     Image(systemName: "chevron.right").font(.system(size: 11)).foregroundColor(.white.opacity(0.3))
                                 }

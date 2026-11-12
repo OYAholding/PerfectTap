@@ -40,3 +40,20 @@ supabase/.temp/
 supabase/.branches/
 # Firestore exports contain player data
 scripts/migration/*.csv
+
+# Release / signing artifacts and credentials — never commit
+*.xcarchive
+*.ipa
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+ExportOptions.local.plist
+AuthKey_*.p8
+service-account*.json
+*-adminsdk-*.json
+# Firestore / Auth exports (player data)
+scripts/migration/*export*.json
+scripts/migration/*.ndjson
+firestore-export*
+auth-export*

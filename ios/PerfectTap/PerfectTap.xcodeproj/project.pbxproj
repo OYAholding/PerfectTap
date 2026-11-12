@@ -33,6 +33,7 @@
 		45D61EB1F2B31C5AFD585119 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7AFC096252F7B539008E384C /* FirebaseCore */; };
 		48210D823E71668287C03E89 /* OfflineBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568451359E13C8AA70311BDF /* OfflineBackend.swift */; };
 		4D3A6E7BD9360736AFB90AE1 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = 55CD7B0979810E853BB0A6C0 /* GoogleMobileAds */; };
+		51C3A5937410EF0EAF26AF87 /* LegacyClaimIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E23D5C355699D9BE4585FF /* LegacyClaimIdentityTests.swift */; };
 		534E45AF29DACF2799581852 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 22EC89932937EE1C8B3B1342 /* FirebaseAnalytics */; };
 		57575E81714AE3FFA7368594 /* GameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDA347BF7085D0C57524AEF4 /* GameView.swift */; };
 		59BC951A874D1BDC70F446FD /* GameOverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7873DC6E5FAE59984C052C2 /* GameOverView.swift */; };
@@ -98,6 +99,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		01E23D5C355699D9BE4585FF /* LegacyClaimIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyClaimIdentityTests.swift; sourceTree = "<group>"; };
 		0254D8266FEBE3A7F003F704 /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
 		033201DE74AC2F6490004DE3 /* LeaderboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeaderboardView.swift; sourceTree = "<group>"; };
 		040BE6C1FE8834C0B6BE09CD /* GameViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameViewModel.swift; sourceTree = "<group>"; };
@@ -212,6 +214,7 @@
 				F2754EC3C8C3DAFD69C770B5 /* BackendCodecTests.swift */,
 				71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */,
 				8C21B66226905092B4B80C1B /* GamePhaseTests.swift */,
+				01E23D5C355699D9BE4585FF /* LegacyClaimIdentityTests.swift */,
 				4C75868A125000157351554F /* TimingEngineTests.swift */,
 			);
 			path = PerfectTapTests;
@@ -633,6 +636,7 @@
 				EE17B897592BE4BBDCEB18D7 /* BackendCodecTests.swift in Sources */,
 				9E49A3DC43AFFC7EB2C389B0 /* DuelSettlementTests.swift in Sources */,
 				62021B5EB2283FEECE31FD1E /* GamePhaseTests.swift in Sources */,
+				51C3A5937410EF0EAF26AF87 /* LegacyClaimIdentityTests.swift in Sources */,
 				D3EEEB8D79675DCE566FEDBD /* TimingEngineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -668,7 +672,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = K88C7DPG4C;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -684,10 +688,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.2;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.perfecttap.app;
 				PRODUCT_NAME = PerfectTap;
-				PT_BACKEND = firebase;
+				PT_BACKEND = supabase;
+				PT_EMAIL_OTP_ENABLED = NO;
 				SDKROOT = auto;
 				SUPABASE_PUBLISHABLE_KEY = sb_publishable_F6bkQwmaoL_yAi1N3iElGQ_2HVEH8xV;
 				SUPABASE_URL = "https://pgvtaotdyspwnpqtxpju.supabase.co";
@@ -820,7 +825,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = K88C7DPG4C;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -836,10 +841,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.2;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.perfecttap.app;
 				PRODUCT_NAME = PerfectTap;
 				PT_BACKEND = supabase;
+				PT_EMAIL_OTP_ENABLED = NO;
 				SDKROOT = auto;
 				SUPABASE_PUBLISHABLE_KEY = sb_publishable_F6bkQwmaoL_yAi1N3iElGQ_2HVEH8xV;
 				SUPABASE_URL = "https://pgvtaotdyspwnpqtxpju.supabase.co";

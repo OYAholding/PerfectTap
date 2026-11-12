@@ -22,6 +22,8 @@
 	<string>ca-app-pub-5350899688701342~1011431660</string>
 	<key>PT_BACKEND</key>
 	<string>$(PT_BACKEND)</string>
+	<key>PT_EMAIL_OTP_ENABLED</key>
+	<string>$(PT_EMAIL_OTP_ENABLED)</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>

@@ -249,6 +249,7 @@ final class AdManager: ObservableObject {
     /// if success { gameVM.acceptRevive() }
     /// ```
     func showRewardedAd(placement: AdPlacement) async -> Bool {
+        if Self.uiTestAdsDisabled { return false }
         // No-ads users get the reward for free
         guard !noAdsPurchased else {
             adLog("showRewardedAd shortcut: noAdsPurchased=true placement=\(placement.rawValue)")
@@ -312,9 +313,22 @@ final class AdManager: ObservableObject {
 
     // MARK: - Show Interstitial Ad
     /// Shows an interstitial ad and waits for dismiss/fail.
+    /// DEBUG-only: UI tests launch with `-PTUITestNoAds` because XCUITest cannot
+    /// watch or close a real full-screen ad (the run would stall behind it).
+    /// Ads then behave as "no inventory" (revive fails open). Never active in Release.
+    static var uiTestAdsDisabled: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-PTUITestNoAds")
+        #else
+        return false
+        #endif
+    }
+
+    /// Shows an interstitial ad and waits for dismiss/fail.
     /// Returns true only if it was presented and dismissed normally.
     @discardableResult
     func showInterstitialAd(placement: AdPlacement) async -> Bool {
+        if Self.uiTestAdsDisabled { return false }
         guard !noAdsPurchased else {
             adLog("showInterstitialAd blocked: noAdsPurchased=true placement=\(placement.rawValue)")
             return false
@@ -483,6 +497,7 @@ final class AdManager: ObservableObject {
     // MARK: - Convenience Checks
     func isAdReady(for placement: AdPlacement) -> Bool {
         if noAdsPurchased { return true }
+        if Self.uiTestAdsDisabled { return false }
         switch placement {
         case .reviveReward, .doubleCoins, .freeSpinReward, .seasonPassUnlock:
             return isRewardedAdReady

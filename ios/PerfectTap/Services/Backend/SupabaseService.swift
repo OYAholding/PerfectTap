@@ -219,12 +219,49 @@ final class SupabaseService: GameBackend {
             let token = try await firebaseUser.getIDToken()
             let reply = try await invokeClaim(firebaseToken: token, password: nil)
             log("legacy claim: \(reply.status)")
+            if reply.status == "claimed" || reply.status == "already_claimed" {
+                // Retry next launch (claim is idempotent) until local identity matches the server.
+                guard await adoptServerIdentityAfterClaim() else { return }
+            }
             // Terminal outcomes: never retry. Transient errors (thrown) retry next launch.
             UserDefaults.standard.set(true, forKey: doneKey)
         } catch {
             log("legacy claim deferred: \(error.localizedDescription)")
         }
         #endif
+    }
+
+    /// The claim drops a legacy username / friend code that another player already
+    /// owns (e.g. two Firebase accounts both named "GG"). The device still holds the
+    /// Firebase-era copy, and AuthViewModel re-saves it right after sign-in — with the
+    /// old values every save_profile would then fail (username_taken /
+    /// friend_code_taken) and progress would silently stop syncing. Make the local
+    /// identity follow the server; an empty username sends the player to the picker.
+    /// Returns false when the server profile could not be read (retry next launch).
+    func adoptServerIdentityAfterClaim() async -> Bool {
+        guard let server = await loadProfile() else { return false }
+        guard var local = PlayerProfile.load() else { return true }   // bootstrap restores from server
+        let adopted = Self.reconcileIdentity(local: local, server: server)
+        if adopted.username != local.username || adopted.friendCode != local.friendCode {
+            log("legacy claim: local identity adjusted to server (username changed: \(adopted.username != local.username))")
+            local = adopted
+            local.save()
+        }
+        return true
+    }
+
+    /// Pure helper (unit-tested): server owns username and friend code after a claim.
+    nonisolated static func reconcileIdentity(local: PlayerProfile, server: PlayerProfile,
+                                              newCode: () -> String = SupabaseService.generateFriendCode) -> PlayerProfile {
+        var out = local
+        out.username = server.username
+        out.friendCode = server.friendCode.isEmpty ? newCode() : server.friendCode
+        return out
+    }
+
+    nonisolated static func generateFriendCode() -> String {
+        let chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        return String((0..<6).map { _ in chars.randomElement() ?? "A" })
     }
 
     private struct ClaimReply: Decodable {

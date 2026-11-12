@@ -1,5 +1,7 @@
 # PerfectTap — מעבר מ-Firebase ל-Supabase (נובמבר 2026)
 
+> **עדכון 1.1.0:** Release עבר ל-Supabase, ונתוני Firestore יובאו ל-`legacy`. תוכנית השחרור וה-rollback: `docs/RELEASE_PLAN_1.1.0.he.md`.
+>
 > **מצב עדכני (12.11.2026):** ה-backend נפרס לפרויקט `pgvtaotdyspwnpqtxpju` (פרנקפורט) ואומת מול הענן. פרטים מלאים: `docs/STATUS_REPORT_2026-11-12.he.md`. סעיפים 0, 1 ו-13 שלמטה מתארים את המצב שלפני הפריסה.
 
 סימון: **[אומת]** = הורץ בפועל, והתוצאה מתועדת כאן. **[לא אומת]** = מוכן, אבל לא הורץ מול הענן.
@@ -329,13 +331,13 @@ cd ios/PerfectTap && xcodebuild test -scheme PerfectTap -destination 'platform=i
 - [x] pgTAP ‏66/66, אינטגרציה ‏7/7, ‏Swift ‏29/29, ‏advisors נקי, build מצליח
 - [x] משחק דו-קרב מלא באפליקציה מול Supabase מקומי
 - [x] החלטה על האזור: EU
-- [ ] יצירת פרויקט ב-`eu-central-1` + `use-supabase-project.sh <ref>`
+- [x] יצירת פרויקט ב-`eu-central-1` + `use-supabase-project.sh <ref>`
 - [ ] מחיקה או השהיה של פרויקט סינגפור
 - [ ] הפעלת anonymous sign-ins (ו-CAPTCHA) בדשבורד
-- [ ] `deploy-supabase.sh --apply`
+- [x] `deploy-supabase.sh --apply`
 - [ ] בדיקת עשן מול הענן משני מכשירים
-- [ ] ייצוא וייבוא Firestore ואימות ספירות
-- [ ] TestFlight עם Release=`supabase`
+- [x] ייצוא וייבוא Firestore ואימות ספירות (12.11.2026: ‏19 שחקנים, 2 חברויות; `docs/RELEASE_PLAN_1.1.0.he.md` §3)
+- [ ] TestFlight עם Release=`supabase` (build ‏1.1.0 (2) מוכן; העלאה ידנית, `RELEASE_PLAN_1.1.0.he.md` §6)
 - [ ] שחרור הדרגתי
 - [ ] ייבוא חוזר אחרי 2–3 שבועות
 - [ ] ניקוי Firebase (באישור)

@@ -40,6 +40,9 @@ final class ModeRuntimeQATests: XCTestCase {
     }
 
     func test_mode_runtime_matrix() {
+        // Real full-screen ads cannot be dismissed by XCUITest; real-ad revive is a
+        // manual TestFlight check (docs/RELEASE_PLAN_1.1.0.he.md §6 #7).
+        app.launchArguments += ["-PTUITestNoAds"]
         app.launch()
         completeOnboardingIfNeeded()
         dismissTutorialIfNeeded()
@@ -309,10 +312,20 @@ final class ModeRuntimeQATests: XCTestCase {
             return waitForHome()
         }
 
+        // Focus currently has (hidden) lives: misses can end the run in the revive
+        // modal, which covers QUIT. Give up there instead (open product question:
+        // docs/RELEASE_PLAN_1.1.0.he.md — should Focus be fail-free like Zen?).
+        if app.staticTexts["CONTINUE?"].exists, app.buttons["Give Up"].exists {
+            print("QA_NOTE|Focus|revive_modal_reached_hidden_lives")
+            app.buttons["Give Up"].tap()
+            return waitForGameOver(timeout: 8) || waitForHome()
+        }
+
         // Focus (and fallback) uses QUIT -> confirmation alert -> Quit.
         if app.buttons["QUIT"].waitForExistence(timeout: 2) {
             app.buttons["QUIT"].tap()
-            if app.buttons["Quit"].waitForExistence(timeout: 2) {
+            // The alert can take a moment right after a burst of taps.
+            if app.buttons["Quit"].waitForExistence(timeout: 6) {
                 app.buttons["Quit"].tap()
             }
             return waitForGameOver(timeout: 8) || waitForHome()
