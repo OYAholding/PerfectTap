@@ -54,6 +54,10 @@
 האתר הישן `perfecttap-pages` אוחד לריפו `PerfectTap`, והכתובות ב-App Store Connect לא עודכנו.
 כרגע מדיניות הפרטיות של האפליקציה החיה לא נגישה.
 
+**עדכון (באישור):** ב-1.01 עודכנו Privacy Policy URL ו-Support URL לכתובות החדשות (PATCH 200, נקרא בחזרה).
+בגרסה החיה 1.0 ‏Apple חוסמת עריכה (409 — "can not be modified in the current state").
+שם זה יתוקן רק כשהגרסה הבאה תשוחרר, או אם הכתובת הישנה תפנה שוב (redirect ב-`oyaholding.github.io/perfecttap-pages/`).
+
 ### ב. פרסום ומעקב (הסיבה הסבירה ל-5.1.2)
 - האפליקציה כוללת **Google Mobile Ads (AdMob)** ו-**Firebase Analytics**.
 - **אין** `AppTrackingTransparency`, **אין** `NSUserTrackingUsageDescription` ב-Info.plist, ו**אין** מסך הסכמה (Google UMP).
