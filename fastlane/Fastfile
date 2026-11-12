@@ -250,7 +250,20 @@ platform :ios do
   desc "WRITE (PT_CONFIRM=yes): build and upload to TestFlight — internal group only, no review, no external testers"
   lane :beta do |options|
     pt_require_confirmation!("Uploading a TestFlight build")
-    build(options)
+    if options[:skip_build]
+      # Upload the IPA already in build/fastlane, after re-checking what it contains.
+      pt_api_key
+      pt_assert_app!
+      ipa = File.join(PT_OUTPUT_DIR, "PerfectTap.ipa")
+      UI.user_error!("No #{ipa} — run `fastlane build` first") unless File.exist?(ipa)
+      built = JSON.parse(sh("unzip -p #{ipa.shellescape} 'Payload/*.app/Info.plist' | plutil -convert json -o - -", log: false))
+      uploaded = pt_get("/v1/builds?filter[app]=#{PT_APP_ID}&limit=200&fields[builds]=version")["data"].map { |b| b.dig("attributes", "version") }
+      UI.user_error!("IPA is #{built['CFBundleShortVersionString']}, project is #{pt_project_versions[:version]}") unless built["CFBundleShortVersionString"] == pt_project_versions[:version]
+      UI.user_error!("Build #{built['CFBundleVersion']} was already uploaded") if uploaded.include?(built["CFBundleVersion"])
+      UI.message("Uploading existing IPA #{built['CFBundleShortVersionString']} (#{built['CFBundleVersion']})")
+    else
+      build(options)
+    end
     notes = options[:changelog] || ENV["PT_TESTFLIGHT_NOTES"]
     notes ||= File.read(File.expand_path("testflight_notes.txt", __dir__)) if File.exist?(File.expand_path("testflight_notes.txt", __dir__))
     groups = pt_get("/v1/apps/#{PT_APP_ID}/betaGroups?limit=50")["data"]

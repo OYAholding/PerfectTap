@@ -28,7 +28,7 @@
 | Beta App Review info | ריק (נדרש רק לבדיקה חיצונית) | 👤 |
 | Export compliance | `usesNonExemptEncryption=false` | ✅ |
 | Bundle ID / Profile | ‏`com.perfecttap.app`, ‏App Store profile פעיל עד 22.3.2027 | ✅ |
-| Distribution certificate | ‏2 ב-ASC (עד 20.2.2027). **המפתח הפרטי לא על המחשב הזה** | 🔒 |
+| Distribution certificate | ‏2 ב-ASC (עד 20.2.2027). חתימה דרך cloud signing עם מפתח Admin | ✅ |
 | שאלון App Privacy | **לא נגיש ב-API** | 🔒 / 👤 |
 | טקסט הדחייה המלא | לא נגיש ב-API. נמסר על ידיך | — |
 
@@ -66,7 +66,7 @@
 | Supabase pgTAP (מקומי) | **70/70** ✅ |
 | Supabase E2E (מקומי): דו-קרבות realtime, חברים/הזמנות, legacy claim, rate limit | **8/8** ✅ |
 | Release archive ‏(unsigned) | ✅ ‏1.1.0 (2), ‏iPhone+iPad, ‏Supabase Frankfurt, ‏UMP מוטמע |
-| Signed IPA export | 🔒 אין distribution identity |
+| Signed IPA export | ✅ ‏1.1.0 (2), ‏Apple Distribution (cloud signing, מפתח Admin) |
 | gitleaks (tree + history) | אין דליפות ✅ |
 | AdMob אמיתי (revive, interstitial) | 🧪 בדיקה ידנית ב-TestFlight. ‏XCUITest לא יכול לסגור מודעה אמיתית |
 | CI ‏(GitHub) | נוסף job ‏iOS unit tests. התוצאה ב-PR |
@@ -74,12 +74,10 @@
 בדיקות ה-UI יצרו שחקני בדיקה אנונימיים ב-Supabase cloud ‏(`qa_runtime_*`, ‏`qa_att_*`). צריך למחוק אותם (👤, דורש service key / Dashboard).
 
 ## 5. חסמים להגשה
-1. 👤 **חתימה להפצה:** אין מפתח פרטי של iOS Distribution במחשב הזה.
-   **עדכון 12.11:** הותקן Team API Key בתפקיד **Admin** (`asc.env`), ונבדק בקריאה בלבד.
-   הוא מאפשר cloud-managed signing ‏(`-allowProvisioningUpdates`), אבל export חתום עלול
-   ליצור profile מנוהל של Xcode ותעודת Cloud Managed Distribution, אם עוד אין כזו.
-   לכן מריצים אותו **רק באישור מפורש**.
-   חלופות: Xcode Organizer עם ה-Apple ID שלך, או ייבוא `.p12`.
+1. ✅ **חתימה להפצה (12.11, באישור):** ‏`fastlane build` עם מפתח ה-Admin יצר IPA חתום **1.1.0 (2)**
+   (‏Apple Distribution: K88C7DPG4C, ‏App Store profile, ‏`get-task-allow=false`, ‏`codesign --verify` עבר).
+   החתימה נעשתה ב-cloud signing. **לא נוצרו ולא שונו תעודות או profiles בחשבון** (השוואה לפני ואחרי).
+   לא הועלה.
 2. 👤 **שאלון App Privacy:** לפי `docs/APP_PRIVACY_DECLARATION.he.md`, ואז Publish.
 3. 👤 **הודעת GDPR ב-AdMob:** ‏AdMob → Privacy & messaging → European regulations → יצירה ופרסום (חינם). בלעדיה UMP לא מציג טופס ב-EEA.
 4. 👤 **העלאת build 2 ל-TestFlight** (`PT_CONFIRM=yes fastlane beta` או Organizer), ובדיקת ATT ומודעות במכשיר.
