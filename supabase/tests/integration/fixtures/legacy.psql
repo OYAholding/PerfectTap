@@ -1,0 +1,7 @@
+-- Shape matches scripts/migration/export-firestore.mjs output.
+insert into legacy.raw_docs (collection, doc_id, parent_id, data) values
+ ('players', 'fb_legacy_anon', '', '{"uid":"fb_legacy_anon","username":"LegacyAnon","friend_code":"LEGAC1","coins":4321,"level":7,"xp":900,"best_classic":5000,"equipped_avatar":"fox","stats":{"totalGames":40,"duelWins":3},"owned_items":["theme_neon"],"no_ads":true}'),
+ ('players', 'fb_legacy_email', '', '{"uid":"fb_legacy_email","username":"LegacyMail","friend_code":"LEGAC2","coins":10,"level":2}'),
+ ('friendships', 'fb_legacy_anon_fb_legacy_email', '', '{"user_ids":["fb_legacy_anon","fb_legacy_email"],"created_at":"2026-04-01T10:00:00Z"}'),
+ ('leaderboard', 'fb_legacy_anon', 'classic', '{"uid":"fb_legacy_anon","username":"LegacyAnon","score":5000,"max_combo":40}');
+select legacy.ingest();
