@@ -28,6 +28,8 @@
 	<false/>
 	<key>GOOGLE_ANALYTICS_DEFAULT_ALLOW_ANALYTICS_STORAGE</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>PerfectTap shows ads. If you allow tracking, ads can be more relevant to you. If you don't, you'll still see ads, but they won't be personalized. The game works the same either way.</string>
 	<key>PT_BACKEND</key>

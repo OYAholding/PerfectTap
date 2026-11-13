@@ -105,6 +105,8 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         GADApplicationIdentifier: ca-app-pub-5350899688701342~1011431660
+        # Export compliance: only standard HTTPS/TLS (exempt). Same answer as builds 1.0.x.
+        ITSAppUsesNonExemptEncryption: false
         # Apple App Tracking Transparency prompt (ConsentManager.swift).
         NSUserTrackingUsageDescription: "PerfectTap shows ads. If you allow tracking, ads can be more relevant to you. If you don't, you'll still see ads, but they won't be personalized. The game works the same either way."
         # Firebase Analytics consent-mode defaults: no ad signals until ATT is authorized

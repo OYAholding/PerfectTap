@@ -80,7 +80,10 @@
    לא הועלה.
 2. 👤 **שאלון App Privacy:** לפי `docs/APP_PRIVACY_DECLARATION.he.md`, ואז Publish.
 3. 👤 **הודעת GDPR ב-AdMob:** ‏AdMob → Privacy & messaging → European regulations → יצירה ופרסום (חינם). בלעדיה UMP לא מציג טופס ב-EEA.
-4. 👤 **העלאת build 2 ל-TestFlight** (`PT_CONFIRM=yes fastlane beta` או Organizer), ובדיקת ATT ומודעות במכשיר.
+4. ✅ **TestFlight פנימי (13.11, באישור):** ‏1.1.0 (2) הועלה ועבר עיבוד (`VALID`), ‏export compliance = false,
+   "What to Test" באנגלית, קבוצת "PerfectTap Internal" (בודק אחד: Account Holder).
+   מצב פנימי **`IN_BETA_TESTING`**. חיצוני: **לא נשלח** (`READY_FOR_BETA_SUBMISSION`). תוקף ה-build עד 11.2.2027.
+   👤 נותר: להתקין מ-TestFlight במכשיר ולבדוק את ATT, מודעות אמיתיות ומעבר חשבון.
 5. 👤 חיבור build 2 לגרסה 1.1.0, תשובה ב-Resolution Center (`docs/APP_REVIEW_RESPONSE_5.1.2.md`), הגשה.
 
 ## 6. עלויות

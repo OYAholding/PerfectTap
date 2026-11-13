@@ -268,16 +268,20 @@ platform :ios do
     notes ||= File.read(File.expand_path("testflight_notes.txt", __dir__)) if File.exist?(File.expand_path("testflight_notes.txt", __dir__))
     groups = pt_get("/v1/apps/#{PT_APP_ID}/betaGroups?limit=50")["data"]
                .select { |g| g.dig("attributes", "isInternalGroup") }.map { |g| g.dig("attributes", "name") }
+    ipa = File.join(PT_OUTPUT_DIR, "PerfectTap.ipa")
+    built = JSON.parse(sh("unzip -p #{ipa.shellescape} 'Payload/*.app/Info.plist' | plutil -convert json -o - -", log: false))
+    # Upload + wait for processing only. fastlane's distribute step (skipped by
+    # skip_submission) is what would set compliance/groups, so those are done below
+    # via the API — internal group only, never Beta App Review or external testers.
     upload_to_testflight(
       api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
       app_identifier: PT_BUNDLE_ID,
-      ipa: File.join(PT_OUTPUT_DIR, "PerfectTap.ipa"),
-      changelog: notes,                 # "What to Test"
-      groups: groups.empty? ? nil : groups,  # internal groups only (no Beta App Review)
+      ipa: ipa,
       distribute_external: false,
       skip_submission: true,
-      skip_waiting_for_build_processing: groups.empty? && notes.nil?
+      skip_waiting_for_build_processing: false
     )
+    pt_finish_internal_build(built["CFBundleShortVersionString"], built["CFBundleVersion"], notes, groups)
   end
 
   desc "WRITE (PT_CONFIRM=yes): create the internal TestFlight group if missing (testers are added in App Store Connect)"
@@ -408,3 +412,27 @@ def pt_release_checks
 end
 
 PT_INTERNAL_GROUP = "PerfectTap Internal"
+
+# After processing: export compliance (HTTPS only, exempt), "What to Test", and the
+# INTERNAL groups. Verifies the result; never touches external testing.
+def pt_finish_internal_build(version, build_number, notes, group_names)
+  build = pt_get("/v1/builds?filter[app]=#{PT_APP_ID}&filter[version]=#{build_number}&filter[preReleaseVersion.version]=#{version}")["data"].first
+  UI.user_error!("Build #{version} (#{build_number}) not found after processing") unless build
+  bid = build["id"]
+  pt_write(:patch, "/v1/builds/#{bid}", { data: { type: "builds", id: bid, attributes: { usesNonExemptEncryption: false } } })
+  if notes
+    loc = pt_get("/v1/builds/#{bid}/betaBuildLocalizations")["data"].find { |l| l.dig("attributes", "locale") == "en-US" }
+    if loc
+      pt_write(:patch, "/v1/betaBuildLocalizations/#{loc['id']}", { data: { type: "betaBuildLocalizations", id: loc["id"], attributes: { whatsNew: notes.strip } } })
+    else
+      pt_write(:post, "/v1/betaBuildLocalizations", { data: { type: "betaBuildLocalizations", attributes: { locale: "en-US", whatsNew: notes.strip },
+                                                              relationships: { build: { data: { type: "builds", id: bid } } } } })
+    end
+  end
+  internal = pt_get("/v1/apps/#{PT_APP_ID}/betaGroups?limit=50")["data"]
+               .select { |g| g.dig("attributes", "isInternalGroup") && group_names.include?(g.dig("attributes", "name")) }
+  internal.each { |g| pt_write(:post, "/v1/betaGroups/#{g['id']}/relationships/builds", { data: [{ type: "builds", id: bid }] }) }
+  state = pt_get("/v1/builds/#{bid}/buildBetaDetail").dig("data", "attributes", "internalBuildState")
+  UI.important("Internal TestFlight state: #{state}")
+  UI.success("#{version} (#{build_number}) available to: #{internal.map { |g| g.dig('attributes', 'name') }.join(', ')}") if state == "IN_BETA_TESTING"
+end
