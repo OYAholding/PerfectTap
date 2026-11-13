@@ -52,7 +52,16 @@ struct LegalTextView: View {
     }
 }
 
-// MARK: - Legal Content
+// MARK: - Public legal pages (GitHub Pages, from website/ in this repo)
+
+enum LegalLinks {
+    static let privacy = URL(string: "https://oyaholding.github.io/PerfectTap/")!
+    static let terms   = URL(string: "https://oyaholding.github.io/PerfectTap/terms.html")!
+    static let support = URL(string: "https://oyaholding.github.io/PerfectTap/support.html")!
+    static let contactEmail = "PerfectTap@oyaholding.com"
+}
+
+// MARK: - Legal Content (offline fallback; the published pages above are authoritative)
 
 enum LegalContent {
 
@@ -69,8 +78,8 @@ By downloading, accessing, or using the Service, you acknowledge that you have r
 PerfectTap is a mobile game application and related service.
 
 If you have any questions about this Privacy Policy, you may contact us at:
-Email: evolutionofwear@gmail.com
-Website: perfecttap.app
+Email: PerfectTap@oyaholding.com
+Website: https://oyaholding.github.io/PerfectTap/
 
 2. Information We Collect
 
@@ -190,7 +199,7 @@ Depending on your location, you may have rights to:
 • request data portability
 • withdraw consent where processing is based on consent
 
-To exercise applicable rights, contact us at: evolutionofwear@gmail.com
+To exercise applicable rights, contact us at: PerfectTap@oyaholding.com
 
 11. Third-Party Services
 
@@ -204,17 +213,19 @@ In-app purchases are processed by Apple or the applicable platform provider. We 
 
 If the Service includes advertisements, including rewarded ads, advertising partners may collect or receive data in accordance with their own technologies, legal obligations, and privacy practices.
 
+Tracking only with your permission: before any tracking, the app asks through Apple's App Tracking Transparency prompt. Only if you choose "Allow" can Google use your device's advertising identifier (IDFA) for personalized ads. If you choose "Ask App Not to Track", the advertising identifier is not accessed, ads are not personalized, and no advertising signals are sent from Firebase Analytics. The game works the same either way. You can change this in iOS Settings → Privacy & Security → Tracking, or in the app under Settings → Privacy. Where the law requires it (EEA, UK, Switzerland), Google's consent message is shown before ads are requested, and you can change your choice under Settings → Privacy → Privacy Choices.
+
 14. Changes to This Privacy Policy
 
 We may update this Privacy Policy from time to time. The updated version will be posted at:
-perfecttap.app/privacy
+https://oyaholding.github.io/PerfectTap/
 
 The "Last updated" date will be revised accordingly. Your continued use of the Service after any update constitutes your acknowledgment of the revised Privacy Policy to the extent permitted by law.
 
 15. Contact Us
 
 If you have questions about this Privacy Policy, you may contact us at:
-evolutionofwear@gmail.com
+PerfectTap@oyaholding.com
 """
 
     static let termsOfUse = """
@@ -341,7 +352,7 @@ The Service may include, depend on, or interact with third-party services and pl
 14. Updates and Changes
 
 We may modify these Terms at any time. Updated Terms will be posted at:
-perfecttap.app/terms
+https://oyaholding.github.io/PerfectTap/terms.html
 
 Continued use of the Service after updated Terms become effective constitutes acceptance of the revised Terms, except where further consent is required by law.
 
@@ -374,6 +385,6 @@ If any provision of these Terms is found to be invalid, unlawful, or unenforceab
 18. Contact
 
 For support, legal inquiries, or questions regarding the Service, contact:
-evolutionofwear@gmail.com
+PerfectTap@oyaholding.com
 """
 }

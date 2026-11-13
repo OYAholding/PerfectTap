@@ -40,6 +40,9 @@ final class ModeRuntimeQATests: XCTestCase {
     }
 
     func test_mode_runtime_matrix() {
+        // Real full-screen ads cannot be dismissed by XCUITest; real-ad revive is a
+        // manual TestFlight check (docs/RELEASE_PLAN_1.1.0.he.md §6 #7).
+        app.launchArguments += ["-PTUITestNoAds"]
         app.launch()
         completeOnboardingIfNeeded()
         dismissTutorialIfNeeded()
@@ -271,8 +274,12 @@ final class ModeRuntimeQATests: XCTestCase {
     }
 
     private func completeOnboardingIfNeeded() {
+        // First launch on a fresh simulator (notably iPad) can take >20 s to settle.
         let chooseName = app.staticTexts["Choose Your Name"]
-        guard chooseName.waitForExistence(timeout: 4) else { return }
+        let play = app.buttons["PLAY"]
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline && !chooseName.exists && !play.exists { _ = chooseName.waitForExistence(timeout: 1) }
+        guard chooseName.exists else { return }
 
         let usernameField = app.textFields.element(boundBy: 0)
         if usernameField.waitForExistence(timeout: 3) {
@@ -309,10 +316,20 @@ final class ModeRuntimeQATests: XCTestCase {
             return waitForHome()
         }
 
+        // Focus currently has (hidden) lives: misses can end the run in the revive
+        // modal, which covers QUIT. Give up there instead (open product question:
+        // docs/RELEASE_PLAN_1.1.0.he.md — should Focus be fail-free like Zen?).
+        if app.staticTexts["CONTINUE?"].exists, app.buttons["Give Up"].exists {
+            print("QA_NOTE|Focus|revive_modal_reached_hidden_lives")
+            app.buttons["Give Up"].tap()
+            return waitForGameOver(timeout: 8) || waitForHome()
+        }
+
         // Focus (and fallback) uses QUIT -> confirmation alert -> Quit.
         if app.buttons["QUIT"].waitForExistence(timeout: 2) {
             app.buttons["QUIT"].tap()
-            if app.buttons["Quit"].waitForExistence(timeout: 2) {
+            // The alert can take a moment right after a burst of taps.
+            if app.buttons["Quit"].waitForExistence(timeout: 6) {
                 app.buttons["Quit"].tap()
             }
             return waitForGameOver(timeout: 8) || waitForHome()

@@ -7,7 +7,7 @@
 //   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json node export-firestore.mjs ./firestore-export.csv
 //   (or `gcloud auth application-default login` instead of the key file)
 //
-// Migrated: players, friendships, leaderboard/{mode}/scores.
+// Migrated: players, friendships (+ mutual players.friends mirrors), leaderboard/{mode}/scores.
 // Not migrated (short-lived): duels, duel_invitations, friend_requests, *_state guards, game_sessions.
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
@@ -40,6 +40,10 @@ function emit(collection, docId, parentId, data) {
   counts[collection] = (counts[collection] ?? 0) + 1;
 }
 
+const friendsOf = new Map(); // players.friends arrays (pre-canonical app versions)
+const canonicalPairs = new Set();
+const pairKey = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+
 async function dumpCollection(name) {
   let last = null;
   for (;;) {
@@ -47,13 +51,27 @@ async function dumpCollection(name) {
     if (last) q = q.startAfter(last);
     const snap = await q.get();
     if (snap.empty) break;
-    for (const doc of snap.docs) emit(name, doc.id, '', doc.data());
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      emit(name, doc.id, '', data);
+      if (name === 'players' && Array.isArray(data.friends)) friendsOf.set(doc.id, new Set(data.friends));
+      if (name === 'friendships' && Array.isArray(data.user_ids) && data.user_ids.length === 2) {
+        canonicalPairs.add(pairKey(data.user_ids[0], data.user_ids[1]));
+      }
+    }
     last = snap.docs[snap.docs.length - 1];
   }
 }
 
 await dumpCollection('players');
 await dumpCollection('friendships');
+// Older app versions only wrote the players.friends mirror. Carry a pair over only when
+// BOTH players list each other (a one-sided entry is not proof of an accepted request).
+for (const [a, fa] of friendsOf) for (const b of fa) {
+  if (a < b && friendsOf.get(b)?.has(a) && !canonicalPairs.has(pairKey(a, b))) {
+    emit('friendships', `mirror:${pairKey(a, b)}`, '', { user_ids: [a, b], created_at: null });
+  }
+}
 const scores = await db.collectionGroup('scores').get();
 for (const doc of scores.docs) {
   const mode = doc.ref.parent.parent?.id;

@@ -40,3 +40,32 @@ supabase/.temp/
 supabase/.branches/
 # Firestore exports contain player data
 scripts/migration/*.csv
+
+# Release / signing artifacts and credentials — never commit
+*.xcarchive
+*.ipa
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+ExportOptions.local.plist
+AuthKey_*.p8
+service-account*.json
+*-adminsdk-*.json
+# Firestore / Auth exports (player data)
+scripts/migration/*export*.json
+scripts/migration/*.ndjson
+firestore-export*
+auth-export*
+# Fastlane / Bundler (local only)
+vendor/bundle/
+.bundle/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+fastlane/README.md
+fastlane/.env*
+build/fastlane/
+*.dSYM.zip
+# App Review contact details pulled by `fastlane metadata_pull` (personal data)
+fastlane/metadata/review_information/

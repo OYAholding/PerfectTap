@@ -1,0 +1,4 @@
+# PerfectTap only. Authentication is the App Store Connect API key (see Fastfile);
+# no Apple ID / password is used or stored.
+app_identifier("com.perfecttap.app")
+team_id("K88C7DPG4C")

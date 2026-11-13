@@ -72,19 +72,26 @@ struct TapBarView: View {
             }
             .frame(height: 56)
 
-            // Zone labels — symmetrical, color-coded (hidden in invisible zone mode)
-            HStack(spacing: 0) {
-                zoneLabel("MISS", color: Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.5))
-                zoneLabel(strictPerfectOnly ? "MISS" : "GOOD", color: strictPerfectOnly ? Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.45) : Color(red: 0.98, green: 0.73, blue: 0.26).opacity(0.7))
-                zoneLabel(strictPerfectOnly ? "MISS" : "GREAT", color: strictPerfectOnly ? Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.45) : Color(red: 0.29, green: 0.86, blue: 0.50).opacity(0.8))
-                zoneLabel("PERFECT", color: theme.targetColor)
-                    .fontWeight(.bold)
-                zoneLabel(strictPerfectOnly ? "MISS" : "GREAT", color: strictPerfectOnly ? Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.45) : Color(red: 0.29, green: 0.86, blue: 0.50).opacity(0.8))
-                zoneLabel(strictPerfectOnly ? "MISS" : "GOOD", color: strictPerfectOnly ? Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.45) : Color(red: 0.98, green: 0.73, blue: 0.26).opacity(0.7))
-                zoneLabel("MISS", color: Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.5))
+            // Zone labels — symmetrical, color-coded. Invisible Zone renders a same-height
+            // placeholder instead: opacity 0 alone still exposed the zone names to
+            // VoiceOver / accessibility (found by ModeRuntimeQATests).
+            if hideZones {
+                Text(" ")
+                    .font(.system(size: 8, weight: .bold))
+                    .accessibilityHidden(true)
+            } else {
+                HStack(spacing: 0) {
+                    zoneLabel("MISS", color: Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.5))
+                    zoneLabel(strictPerfectOnly ? "MISS" : "GOOD", color: strictPerfectOnly ? Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.45) : Color(red: 0.98, green: 0.73, blue: 0.26).opacity(0.7))
+                    zoneLabel(strictPerfectOnly ? "MISS" : "GREAT", color: strictPerfectOnly ? Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.45) : Color(red: 0.29, green: 0.86, blue: 0.50).opacity(0.8))
+                    zoneLabel("PERFECT", color: theme.targetColor)
+                        .fontWeight(.bold)
+                    zoneLabel(strictPerfectOnly ? "MISS" : "GREAT", color: strictPerfectOnly ? Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.45) : Color(red: 0.29, green: 0.86, blue: 0.50).opacity(0.8))
+                    zoneLabel(strictPerfectOnly ? "MISS" : "GOOD", color: strictPerfectOnly ? Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.45) : Color(red: 0.98, green: 0.73, blue: 0.26).opacity(0.7))
+                    zoneLabel("MISS", color: Color(red: 0.92, green: 0.27, blue: 0.27).opacity(0.5))
+                }
+                .font(.system(size: 8, weight: .bold))
             }
-            .font(.system(size: 8, weight: .bold))
-            .opacity(hideZones ? 0 : 1)
         }
     }
 
@@ -92,6 +99,7 @@ struct TapBarView: View {
         Text(text)
             .foregroundColor(color)
             .frame(maxWidth: .infinity)
+
     }
 }
 

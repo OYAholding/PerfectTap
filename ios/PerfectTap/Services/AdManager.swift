@@ -140,16 +140,27 @@ final class AdManager: ObservableObject {
         )
     }
 
-    // MARK: - SDK Initialization
-    /// Call once at app launch (from AppDelegate.didFinishLaunchingWithOptions).
-    func initializeSDK() {
+    // MARK: - SDK Initialization (driven by ConsentManager)
+    private var sdkStarted = false
+
+    /// Called by ConsentManager after Google UMP + Apple ATT. The SDK is never started and
+    /// no ad is requested before this. Personalized (IDFA) ads only with ATT `.authorized`.
+    func applyPrivacy(_ decision: AdPrivacyDecision) {
+        MobileAds.shared.requestConfiguration.publisherPrivacyPersonalizationState =
+            decision.personalizedAds ? .default : .disabled
+        adLog("applyPrivacy: canRequestAds=\(decision.canRequestAds) personalized=\(decision.personalizedAds)")
+        guard decision.canRequestAds, !sdkStarted else { return }
+        sdkStarted = true
+        initializeSDK()
+    }
+
+    private func initializeSDK() {
         adLog(
             """
             initializeSDK: useTestAds=\(AdConfig.useTestAds), interstitialAdUnitID=\(AdConfig.interstitialAdUnitID), \
             rewardedAdUnitID=\(AdConfig.rewardedAdUnitID), interstitialConfigured=\(AdConfig.isInterstitialConfigured), noAdsPurchased=\(noAdsPurchased)
             """
         )
-        MobileAds.shared.requestConfiguration.publisherPrivacyPersonalizationState = .disabled
         MobileAds.shared.start { [weak self] status in
             adLog("SDK initialized. Adapter statuses: \(status.adapterStatusesByClassName)")
             Task { @MainActor in
@@ -161,6 +172,7 @@ final class AdManager: ObservableObject {
     // MARK: - Preload Ads
     /// Preload both rewarded and interstitial ads so they're ready instantly.
     func preloadAds() {
+        guard sdkStarted else { return }
         guard !noAdsPurchased else {
             adLog("preloadAds skipped: noAdsPurchased=true")
             return
@@ -180,6 +192,7 @@ final class AdManager: ObservableObject {
     }
 
     private func loadRewardedAd() {
+        guard sdkStarted else { return } // consent flow has not allowed ads yet
         guard !isLoadingAd else {
             adLog("loadRewardedAd skipped: isLoadingAd=true")
             return
@@ -209,6 +222,7 @@ final class AdManager: ObservableObject {
     }
 
     private func loadInterstitialAd(reason: String) {
+        guard sdkStarted else { return } // consent flow has not allowed ads yet
         let adUnitID = AdConfig.interstitialAdUnitID
         guard !adUnitID.isEmpty else {
             adLog("Interstitial load skipped (\(reason)): ad unit ID empty / not configured")
@@ -249,6 +263,7 @@ final class AdManager: ObservableObject {
     /// if success { gameVM.acceptRevive() }
     /// ```
     func showRewardedAd(placement: AdPlacement) async -> Bool {
+        if Self.uiTestAdsDisabled { return false }
         // No-ads users get the reward for free
         guard !noAdsPurchased else {
             adLog("showRewardedAd shortcut: noAdsPurchased=true placement=\(placement.rawValue)")
@@ -312,9 +327,22 @@ final class AdManager: ObservableObject {
 
     // MARK: - Show Interstitial Ad
     /// Shows an interstitial ad and waits for dismiss/fail.
+    /// DEBUG-only: UI tests launch with `-PTUITestNoAds` because XCUITest cannot
+    /// watch or close a real full-screen ad (the run would stall behind it).
+    /// Ads then behave as "no inventory" (revive fails open). Never active in Release.
+    static var uiTestAdsDisabled: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-PTUITestNoAds")
+        #else
+        return false
+        #endif
+    }
+
+    /// Shows an interstitial ad and waits for dismiss/fail.
     /// Returns true only if it was presented and dismissed normally.
     @discardableResult
     func showInterstitialAd(placement: AdPlacement) async -> Bool {
+        if Self.uiTestAdsDisabled { return false }
         guard !noAdsPurchased else {
             adLog("showInterstitialAd blocked: noAdsPurchased=true placement=\(placement.rawValue)")
             return false
@@ -483,6 +511,7 @@ final class AdManager: ObservableObject {
     // MARK: - Convenience Checks
     func isAdReady(for placement: AdPlacement) -> Bool {
         if noAdsPurchased { return true }
+        if Self.uiTestAdsDisabled { return false }
         switch placement {
         case .reviveReward, .doubleCoins, .freeSpinReward, .seasonPassUnlock:
             return isRewardedAdReady

@@ -21,6 +21,9 @@ packages:
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads
     from: "12.3.0"
+  GoogleUserMessagingPlatform:
+    url: https://github.com/googleads/swift-package-manager-google-user-messaging-platform
+    from: "3.1.0"
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     from: "11.15.0"
@@ -43,6 +46,7 @@ targets:
           - "*.xcworkspace"
     dependencies:
       - package: GoogleMobileAds
+      - package: GoogleUserMessagingPlatform
       - package: Firebase
         product: FirebaseCore
       - package: Firebase
@@ -51,8 +55,6 @@ targets:
         product: FirebaseFirestore
       - package: Firebase
         product: FirebaseAnalytics
-      - package: Firebase
-        product: FirebaseMessaging
       - package: Firebase
         product: FirebaseFunctions
       - package: Supabase
@@ -64,8 +66,8 @@ targets:
         PRODUCT_NAME: PerfectTap
         DEVELOPMENT_TEAM: K88C7DPG4C
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.arcade-games"
-        MARKETING_VERSION: "1.0.2"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.1.0"
+        CURRENT_PROJECT_VERSION: "3"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
@@ -82,17 +84,38 @@ targets:
         SUPABASE_URL: "https://pgvtaotdyspwnpqtxpju.supabase.co"   # set by scripts/use-supabase-project.sh <ref>
         SUPABASE_PUBLISHABLE_KEY: "sb_publishable_F6bkQwmaoL_yAi1N3iElGQ_2HVEH8xV"
       configs:
-        # Backend switch (Backend.swift). Release stays on Firebase until cutover
-        # (docs/SUPABASE_MIGRATION.he.md §cutover); flip to "supabase" to ship.
+        # Backend switch (Backend.swift). Release = Supabase Frankfurt from 1.1.0 (RC for
+        # TestFlight; docs/RELEASE_PLAN_1.1.0.he.md). Older App Store builds stay on Firebase,
+        # which is kept running. Rollback = "firebase" here + a new build (see plan: data
+        # written to Supabase after cutover does NOT flow back to Firestore).
+        # PT_EMAIL_OTP_ENABLED: Cloud Backup sign-up needs verified email delivery (custom
+        # SMTP). Keep NO until SMTP is configured and tested; never bypass verification.
         Debug:
           PT_BACKEND: supabase
+          PT_EMAIL_OTP_ENABLED: "NO"
         Release:
-          PT_BACKEND: firebase
+          PT_BACKEND: supabase
+          PT_EMAIL_OTP_ENABLED: "NO"
     info:
       path: Info.plist
       properties:
+        # Version comes from MARKETING_VERSION / CURRENT_PROJECT_VERSION (never hard-coded).
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         GADApplicationIdentifier: ca-app-pub-5350899688701342~1011431660
+        # Export compliance: only standard HTTPS/TLS (exempt). Same answer as builds 1.0.x.
+        ITSAppUsesNonExemptEncryption: false
+        # Apple App Tracking Transparency prompt (ConsentManager.swift).
+        NSUserTrackingUsageDescription: "PerfectTap shows ads. If you allow tracking, ads can be more relevant to you. If you don't, you'll still see ads, but they won't be personalized. The game works the same either way."
+        # Firebase Analytics consent-mode defaults: everything denied until the consent flow
+        # (ConsentManager): usage analytics outside the EEA/UK/CH or with TCF Purpose 1
+        # consent; ad signals only with ATT authorized outside regulated regions.
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_ANALYTICS_STORAGE: false
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_STORAGE: false
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_USER_DATA: false
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS: false
         PT_BACKEND: $(PT_BACKEND)
+        PT_EMAIL_OTP_ENABLED: $(PT_EMAIL_OTP_ENABLED)
         SUPABASE_URL: $(SUPABASE_URL)
         SUPABASE_PUBLISHABLE_KEY: $(SUPABASE_PUBLISHABLE_KEY)
         SKAdNetworkItems:
@@ -183,3 +206,14 @@ schemes:
     test:
       targets:
         - PerfectTapTests
+  # Mode-by-mode UI run. Uses the Debug backend (Supabase cloud): it creates one anonymous
+  # test player — delete it afterwards. Kept out of the default scheme so `xcodebuild test`
+  # stays offline.
+  PerfectTapUITests:
+    build:
+      targets:
+        PerfectTap: all
+        PerfectTapUITests: [test]
+    test:
+      targets:
+        - PerfectTapUITests

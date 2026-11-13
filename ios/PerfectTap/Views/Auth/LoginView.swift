@@ -10,6 +10,7 @@ struct LinkAccountView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var isSignUp = true
+    private let signUpAvailable = Backend.cloudBackupSignUpAvailable
     @State private var isLoading = false
     @State private var successMessage: String? = nil
     @State private var verificationCode = ""
@@ -92,6 +93,9 @@ struct LinkAccountView: View {
                         .background(Color.white.opacity(0.04))
                         .cornerRadius(12)
 
+                        if isSignUp && !signUpAvailable {
+                            signUpUnavailableNotice
+                        } else {
                         // Form
                         VStack(spacing: 14) {
                             formField(placeholder: "Email", text: $email, isSecure: false, keyboard: .emailAddress)
@@ -171,6 +175,7 @@ struct LinkAccountView: View {
                             .foregroundColor(.white.opacity(0.3))
                             .multilineTextAlignment(.center)
                             .padding(.top, 4)
+                        }
                     }
                 }
                 .padding(.horizontal, 28)
@@ -178,6 +183,29 @@ struct LinkAccountView: View {
                 Spacer()
             }
         }
+    }
+
+    /// Shown instead of the sign-up form while verified email delivery is unavailable.
+    private var signUpUnavailableNotice: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "envelope.badge.shield.half.filled")
+                .font(.system(size: 28))
+                .foregroundColor(.white.opacity(0.5))
+            Text("Cloud Backup is temporarily unavailable")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(.white.opacity(0.85))
+                .multilineTextAlignment(.center)
+            Text("Creating a backup requires verifying your email, and we can't send verification emails yet. Your progress stays saved to your account on this device. We'll turn backup on in an update.")
+                .font(.system(size: 13))
+                .foregroundColor(.white.opacity(0.5))
+                .multilineTextAlignment(.center)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity)
+        .background(Color.white.opacity(0.04))
+        .cornerRadius(14)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("cloudBackupUnavailable")
     }
 
     private var awaitingCode: Bool { isSignUp && authVM.pendingVerificationEmail != nil }

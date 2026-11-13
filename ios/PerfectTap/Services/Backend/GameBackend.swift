@@ -244,6 +244,16 @@ enum BackendKind: String {
 enum Backend {
     static let kind: BackendKind = BackendKind.configured
 
+    /// Creating a Cloud Backup on Supabase requires a verified email (6-digit code).
+    /// Until the project has working SMTP, `PT_EMAIL_OTP_ENABLED` stays NO and the
+    /// sign-up path is disabled in the UI instead of bypassing verification.
+    /// Firebase builds keep their existing flow.
+    static var cloudBackupSignUpAvailable: Bool {
+        if kind == .firebase { return true }
+        let raw = (Bundle.main.object(forInfoDictionaryKey: "PT_EMAIL_OTP_ENABLED") as? String ?? "").uppercased()
+        return raw == "YES" || raw == "TRUE" || raw == "1"
+    }
+
     /// True when the app is the host process of a unit-test run.
     static var isRunningUnitTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
