@@ -1,8 +1,9 @@
 # PerfectTap — הצהרת App Privacy (שאלון ב-App Store Connect)
 
-> **סטטוס:** טיוטה לאישור הבעלים. השאלון **לא עודכן**: ה-API לא תומך בו, וממשק הדפדפן דורש התחברות שלך.
-> נבדק ב-13.11.2026 מול: התווית החיה ב-App Store, קוד 1.0 ו-1.1.0, ‏`PrivacyInfo.xcprivacy`,
-> ה-manifests של Google Mobile Ads ‏12.14 ו-UMP ‏3.1, Firebase Analytics ו-Supabase.
+> **סטטוס: פורסם ונבדק (13.11.2026, באישור הבעלים).** ‏11 סוגי מידע. Tracking רק ל-Device ID.
+> Not Linked רק ל-Diagnostics. דף החנות הציבורי כבר מציג את התווית החדשה.
+> **נמצא ותוקן בזמן הפרסום:** כשמוסיפים מטרות לסוג קיים, App Store Connect שומר את שאלת ה-Linked
+> לכל מטרה בנפרד. ה-Product Interaction נשמר בהתחלה גם כ-"Not Linked", ותוקן ל-Linked.
 
 ## איפה ממלאים
 App Store Connect → PerfectTap → **App Privacy** → Edit. השאלון הוא **לכל האפליקציה**, לא לגרסה מסוימת.
@@ -55,11 +56,14 @@ Apple מאחדת את כל ה-privacy manifests שבתוך ה-build. ה-manifest
 2. "Data Linked to You": ‏Contact Info (Name, Email), ‏Identifiers, ‏Location, ‏User Content, ‏Usage Data.
 
 ## AdMob: הודעת GDPR (13.11.2026)
-- **נוצרה כטיוטה, לא פורסמה:** "PerfectTap - GDPR consent (EEA, UK, CH)".
+- **פורסמה (13.11.2026, באישור הבעלים) ונבדקה באפליקציה:** "PerfectTap - GDPR consent (EEA, UK, CH)".
 - **אפליקציה:** PerfectTap! בלבד (iOS, ‏6760975737). ‏Privacy URL: ‏`https://oyaholding.github.io/PerfectTap/`.
 - **כפתורים:** Consent, ‏**Do not consent** (פעיל בכל 34 האזורים), ‏Manage options.
 - **שותפי פרסום:** ברירת המחדל של Google.
-- **פרסום:** AdMob → Privacy & messaging → European regulations → מתג "פרסום" בשורת ההודעה.
-- **אחרי פרסום:** UMP באפליקציה (כבר ב-build 3) מציג את הטופס ב-EEA/UK/CH. **Privacy Choices** מופיע ב-Settings → Privacy.
+- **נבדק ב-iPad Air 11 M3**, עם debug geography = EEA (`-PTUMPDebugEEA`, ‏DEBUG בלבד):
+  - הטופס מופיע ראשון, ואחריו בקשת ATT.
+  - אחרי Do not consent + Ask App Not to Track המשחק עובד.
+  - Settings → Privacy מציג Ad Tracking: Not allowed ו-**Privacy Choices**, שפותח את הטופס מחדש (ביטול הסכמה).
+- 🧪 לא נבדק במכשיר אמיתי באזור EEA.
 3. "Data Not Linked to You": ‏Diagnostics.
 4. Privacy Policy URL: ‏`https://oyaholding.github.io/PerfectTap/` (‏HTTP 200).

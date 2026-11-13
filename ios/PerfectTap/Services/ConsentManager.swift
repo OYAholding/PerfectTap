@@ -234,6 +234,16 @@ final class LiveConsentEnvironment: ConsentEnvironment {
 
     func updateConsentInfo() async throws {
         let parameters = RequestParameters()
+        #if DEBUG
+        // QA only: `-PTUMPDebugEEA` makes UMP treat this simulator/test device as being in
+        // the EEA, to check the published GDPR message without travelling. Never in Release.
+        if ProcessInfo.processInfo.arguments.contains("-PTUMPDebugEEA") {
+            let debug = DebugSettings()
+            debug.geography = .EEA
+            if ProcessInfo.processInfo.arguments.contains("-PTUMPReset") { info.reset() }
+            parameters.debugSettings = debug
+        }
+        #endif
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             info.requestConsentInfoUpdate(with: parameters) { error in
                 if let error { cont.resume(throwing: error) } else { cont.resume() }
