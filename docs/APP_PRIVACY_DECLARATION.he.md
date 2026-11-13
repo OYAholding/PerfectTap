@@ -1,37 +1,49 @@
 # PerfectTap — הצהרת App Privacy (שאלון ב-App Store Connect)
 
-ה-API של App Store Connect **לא מאפשר** לקרוא או לעדכן את השאלון. ממלא אותו Account Holder / Admin / App Manager,
-ב-App Store Connect → PerfectTap → **App Privacy** → Edit. השאלון לא נשמר עד ללחיצה על **Publish**.
+> **סטטוס:** טיוטה לאישור הבעלים. השאלון **לא עודכן**: ה-API לא תומך בו, וממשק הדפדפן דורש התחברות שלך.
+> נבדק ב-13.11.2026 מול: התווית החיה ב-App Store, קוד 1.0 ו-1.1.0, ‏`PrivacyInfo.xcprivacy`,
+> ה-manifests של Google Mobile Ads ‏12.14 ו-UMP ‏3.1, Firebase Analytics ו-Supabase.
 
-המקור לטבלה: הקוד ב-1.1.0, ‏`PrivacyInfo.xcprivacy` של האפליקציה, וה-privacy manifests של Google Mobile Ads ‏(12.14) ו-UMP ‏(3.1), כפי שהם ב-build.
-אם מוסיפים SDK או אוסף מידע חדש, צריך לעדכן גם את הטבלה וגם את השאלון.
+## איפה ממלאים
+App Store Connect → PerfectTap → **App Privacy** → Edit. השאלון הוא **לכל האפליקציה**, לא לגרסה מסוימת.
+הוא מתעדכן בחנות מיד עם **Publish**, ולכן הוא חייב להיות נכון גם ל-1.0 החיה וגם ל-1.1.0.
+
+## מה מופיע היום בחנות (1.0, נקרא מהדף הציבורי)
+- **Data Used to Track You:** Identifiers
+- **Data Linked to You:** Contact Info, Identifiers, Usage Data
+- **חסר**, גם ל-1.0 (שכבר כוללת AdMob ו-Firebase): Location, User Content, Diagnostics.
 
 ## האם האפליקציה מבצעת Tracking?
-**כן**, ורק אחרי אישור ATT. כש-ATT מאושר, ‏Google Mobile Ads משתמש ב-IDFA למודעות מותאמות אישית ולמדידה בין אפליקציות.
-ה-manifest של Google מסמן את Device ID כ-"used for tracking". בלי אישור אין גישה ל-IDFA והמודעות לא מותאמות אישית.
-כלומר ההצהרה "Device ID — used to track" **נכונה**. מה שחסר ב-1.01 היה בקשת ATT, וזה תוקן ב-1.1.0.
+**כן, ב-1.1.0 רק אחרי אישור ATT.** כש-ATT מאושר, ‏Google Mobile Ads משתמש ב-IDFA למודעות מותאמות ולמדידה בין אפליקציות.
+ה-manifest של Google מסמן את Device ID כ-tracking. התווית "Identifiers — Used to Track" **נכונה ונשארת**.
+ב-1.0 לא הייתה בקשת ATT, ולכן iOS לא חשף שם את ה-IDFA (אפסים). זו בדיוק הסתירה שבגללה Apple דחתה את 1.01.
 
-## מה לסמן
-| קטגוריה → סוג | מטרות (Purposes) | Linked to user | Used for tracking |
-|---|---|---|---|
-| Identifiers → **Device ID** | Third-Party Advertising, Analytics | Yes | **Yes** |
-| Identifiers → **User ID** | App Functionality | Yes | No |
-| Contact Info → **Email Address** | App Functionality | Yes | No |
-| User Content → **Gameplay Content** | App Functionality | Yes | No |
-| Location → **Coarse Location** | Third-Party Advertising, Analytics | Yes | No |
-| Usage Data → **Product Interaction** | Analytics, Third-Party Advertising | Yes | No |
-| Usage Data → **Advertising Data** | Third-Party Advertising, Analytics | Yes | No |
-| Diagnostics → **Crash Data** | Analytics | No | No |
-| Diagnostics → **Performance Data** | Analytics, Third-Party Advertising | No | No |
-| Diagnostics → **Other Diagnostic Data** | Analytics, Third-Party Advertising | No | No |
+## התשובות הסופיות
+| קטגוריה → סוג | Purposes | Linked | Tracking | מקור |
+|---|---|---|---|---|
+| Identifiers → **Device ID** | Third-Party Advertising, Analytics | Yes | **Yes** | IDFA אחרי ATT, ‏IDFV. ‏AdMob ו-Firebase Analytics |
+| Identifiers → **User ID** | App Functionality | Yes | No | מזהה חשבון ב-Supabase (ב-1.0: ‏Firebase UID) |
+| Contact Info → **Email Address** | App Functionality | Yes | No | חשבונות אימייל ישנים (Firebase) שעוברים ב-claim. ‏Cloud Backup (כבוי כרגע) |
+| User Content → **Gameplay Content** | App Functionality | Yes | No | שם משתמש, ניקוד, חברים, דו-קרבות, לוחות תוצאות |
+| Location → **Coarse Location** | Third-Party Advertising, Analytics, App Functionality | Yes | No | נגזר מ-IP ב-AdMob. ‏UMP קובע לפיו אזור (App Functionality) |
+| Usage Data → **Product Interaction** | Analytics, Third-Party Advertising, App Functionality | Yes | No | אירועי Firebase Analytics, ‏AdMob ו-UMP |
+| Usage Data → **Advertising Data** | Third-Party Advertising, Analytics | Yes | No | חשיפות ולחיצות על מודעות (AdMob) |
+| Diagnostics → **Crash Data** | Analytics | No | No | AdMob |
+| Diagnostics → **Performance Data** | Analytics, Third-Party Advertising, App Functionality | No | No | AdMob ו-UMP |
+| Diagnostics → **Other Diagnostic Data** | Analytics, Third-Party Advertising | No | No | AdMob |
 
-הערות:
-- **Email Address:** רק אם Cloud Backup או חשבונות אימייל ישנים (Firebase) פעילים. ב-1.1.0 ‏`PT_EMAIL_OTP_ENABLED=NO`, אבל חשבונות ישנים עוברים דרך claim. לכן מסמנים.
-- **Purchases:** לא לסמן. ‏IAP כבוי ב-UI ‏(`iapEnabled = false`), ואין מוצרים ב-App Store Connect.
-- **Name:** לא לסמן. שם המשתמש במשחק הוא כינוי ונכנס תחת Gameplay Content.
-- **Linked = Yes** אצל Google הוא ההגדרה של Google ב-manifest שלה. Apple מאחדת את כל ה-manifests, ולכן כדאי להתאים.
+**לא לסמן:**
+- **Purchases:** אין IAP ב-App Store Connect, וה-UI כבוי.
+- **Name:** הכינוי במשחק נכנס תחת Gameplay Content.
+- **Precise Location**, ‏**Health**, ‏**Financial**, ‏**Contacts**, ‏**Photos**, ‏**Audio**, ‏**Browsing / Search History**, ‏**Sensitive Info**: לא נאספים.
+- **Push / Messaging:** ‏FirebaseMessaging הוסר ב-1.1.0. ב-1.0 הוא היה מקושר בלי הרשאת push, ולא מצאתי בו איסוף מידע שדורש הצהרה נפרדת.
 
-## אחרי השמירה
-1. לבדוק שכרטיס "Data Used to Track You" מציג רק **Identifiers**.
-2. Privacy Policy URL: ‏`https://oyaholding.github.io/PerfectTap/` (עודכן ב-1.01, ‏HTTP 200).
-3. **Publish**. רק אז ההצהרה מעודכנת. לא לדווח "עודכן" לפני שבדקת שזה נשמר.
+## למה "Linked = Yes" במידע של Google
+Apple מאחדת את כל ה-privacy manifests שבתוך ה-build. ה-manifest של Google Mobile Ads מסמן Device ID, ‏Coarse Location, ‏Product Interaction ו-Advertising Data כ-linked.
+הצהרה שמרנית (Linked) לא תיצור סתירה מול ה-privacy report של Apple. הצהרה מקלה עלולה.
+
+## אחרי Publish (בדיקה)
+1. בדף החנות: "Data Used to Track You" = **Identifiers** בלבד.
+2. "Data Linked to You": ‏Contact Info, ‏Identifiers, ‏Location, ‏User Content, ‏Usage Data.
+3. "Data Not Linked to You": ‏Diagnostics.
+4. Privacy Policy URL: ‏`https://oyaholding.github.io/PerfectTap/` (‏HTTP 200).

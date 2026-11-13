@@ -175,5 +175,22 @@
   - (ב) להציג מחוון חיים מינימלי.
 - זה שינוי גיימפליי, ולכן לא ביצעתי אותו.
 
+## 9ב. סדר השחרור הסופי (נוסף 13.11.2026)
+ההגדרות ב-App Store Connect כבר מוכנות: גרסה 1.1.0 עם **Release: Manual** ו-**Phased Release** (7 ימים, `INACTIVE`).
+אישור של Apple **לא** משחרר את הגרסה אוטומטית.
+
+| # | שלב | מי |
+|---|---|---|
+| 1 | אחרי Approved: ייצוא Firestore טרי (`scripts/migration/export-firestore.mjs`) וייבוא חוזר (`EXPECTED_REF=pgvtaotdyspwnpqtxpju ./import-legacy.sh`). ‏`ingest` מעדכן רק שחקנים שעוד לא עברו | 👤 אישור (כתיבה ל-DB בענן) |
+| 2 | בדיקת SQL מסעיף 7, לפני ואחרי | בודק |
+| 3 | App Store Connect → 1.1.0 → **Release This Version** (מתחיל phased release) | 👤 |
+| 4 | יום 1–7: ניטור לפי סעיף 7, ‏`bundle exec fastlane asc_check` (סטטוס), Xcode Organizer → Crashes | בודק |
+| 5 | בעיה לפי קריטריוני סעיף 8 → **Pause Phased Release** (אין צורך ב-build חדש), ואז תיקון ב-build חדש | 👤 |
+| 6 | שבועיים-שלושה אחרי: ייבוא חוזר נוסף. Firebase נשאר פעיל לפי סעיף 9 | 👤 אישור |
+
+**ניטור הסכמה:** אין טלמטריה ל-UMP/ATT באפליקציה (בכוונה, בלי SDK נוסף).
+סימנים לבעיה: ירידה חדה בהכנסות AdMob באזור EEA (טופס UMP לא פורסם, ראו `RELEASE_1.1.0_READINESS.he.md`),
+או דיווחי TestFlight / ביקורות על בקשת מעקב חוזרת.
+
 ## 10. עלויות
 ‎$0. ‏Supabase Free, ‏Firebase Spark (חיוב כבוי), ‏GitHub Pages ו-Actions ב-repo ציבורי. לא הופעל אף שירות בתשלום.

@@ -44,13 +44,20 @@ struct AdPrivacyDecision: Equatable {
     /// Requires ATT `.authorized` and a region where UMP consent is not required
     /// (in regulated regions Google's SDKs take the user's choice from the UMP/TCF signal).
     let analyticsAdSignals: Bool
+    /// Firebase Analytics analytics_storage (first-party usage analytics, never tracking).
+    /// Off by default (Info.plist) until this decision. Outside regulated regions: on.
+    /// In regulated regions (EEA/UK/CH): only with TCF Purpose 1 consent ("store and/or
+    /// access information on a device") from the UMP form.
+    let analyticsStorage: Bool
 
-    static func make(canRequestAds: Bool, consentRequiredRegion: Bool, tracking: TrackingAuthorization) -> AdPrivacyDecision {
+    static func make(canRequestAds: Bool, consentRequiredRegion: Bool, tracking: TrackingAuthorization,
+                     storageConsent: Bool = false) -> AdPrivacyDecision {
         let tracked = tracking == .authorized
         return AdPrivacyDecision(
             canRequestAds: canRequestAds,
             personalizedAds: canRequestAds && tracked,
-            analyticsAdSignals: tracked && !consentRequiredRegion
+            analyticsAdSignals: tracked && !consentRequiredRegion,
+            analyticsStorage: !consentRequiredRegion || storageConsent
         )
     }
 }
@@ -62,6 +69,8 @@ protocol ConsentEnvironment: AnyObject {
     func presentConsentFormIfRequired() async throws
     var canRequestAds: Bool { get }
     var consentRequiredRegion: Bool { get }
+    /// TCF Purpose 1 consent from the UMP form (only meaningful in regulated regions).
+    var storageConsent: Bool { get }
     var privacyOptionsRequired: Bool { get }
     var trackingStatus: TrackingAuthorization { get }
     var isAppActive: Bool { get }
@@ -163,7 +172,8 @@ final class ConsentManager: ObservableObject {
         let result = AdPrivacyDecision.make(
             canRequestAds: environment.canRequestAds,
             consentRequiredRegion: environment.consentRequiredRegion,
-            tracking: tracking
+            tracking: tracking,
+            storageConsent: environment.storageConsent
         )
         environment.apply(result)
         decision = result
@@ -178,7 +188,8 @@ final class ConsentManager: ObservableObject {
         let result = AdPrivacyDecision.make(
             canRequestAds: environment.canRequestAds,
             consentRequiredRegion: environment.consentRequiredRegion,
-            tracking: environment.trackingStatus
+            tracking: environment.trackingStatus,
+            storageConsent: environment.storageConsent
         )
         environment.apply(result)
         decision = result
@@ -195,7 +206,8 @@ final class ConsentManager: ObservableObject {
         let result = AdPrivacyDecision.make(
             canRequestAds: environment.canRequestAds,
             consentRequiredRegion: environment.consentRequiredRegion,
-            tracking: status
+            tracking: status,
+            storageConsent: environment.storageConsent
         )
         environment.apply(result)
         decision = result
@@ -245,6 +257,10 @@ final class LiveConsentEnvironment: ConsentEnvironment {
         }
     }
     var privacyOptionsRequired: Bool { info.privacyOptionsRequirementStatus == .required }
+    /// IAB TCF v2 string written by UMP: position 1 = Purpose 1 (store/access info on device).
+    var storageConsent: Bool {
+        (UserDefaults.standard.string(forKey: "IABTCF_PurposeConsents") ?? "").first == "1"
+    }
     var trackingStatus: TrackingAuthorization { TrackingAuthorization(ATTrackingManager.trackingAuthorizationStatus) }
     var isAppActive: Bool { UIApplication.shared.applicationState == .active }
 
@@ -255,7 +271,7 @@ final class LiveConsentEnvironment: ConsentEnvironment {
     func apply(_ decision: AdPrivacyDecision) {
         let ads: ConsentStatusValue = decision.analyticsAdSignals ? .granted : .denied
         Analytics.setConsent([
-            .analyticsStorage: .granted,   // first-party, non-tracking usage analytics
+            .analyticsStorage: decision.analyticsStorage ? .granted : .denied,
             .adStorage: ads,
             .adUserData: ads,
             .adPersonalization: ads,

@@ -56,8 +56,6 @@ targets:
       - package: Firebase
         product: FirebaseAnalytics
       - package: Firebase
-        product: FirebaseMessaging
-      - package: Firebase
         product: FirebaseFunctions
       - package: Supabase
         product: Supabase
@@ -69,7 +67,7 @@ targets:
         DEVELOPMENT_TEAM: K88C7DPG4C
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.arcade-games"
         MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "2"
+        CURRENT_PROJECT_VERSION: "3"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
@@ -109,9 +107,10 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # Apple App Tracking Transparency prompt (ConsentManager.swift).
         NSUserTrackingUsageDescription: "PerfectTap shows ads. If you allow tracking, ads can be more relevant to you. If you don't, you'll still see ads, but they won't be personalized. The game works the same either way."
-        # Firebase Analytics consent-mode defaults: no ad signals until ATT is authorized
-        # (ConsentManager grants them afterwards). Usage analytics stays on.
-        GOOGLE_ANALYTICS_DEFAULT_ALLOW_ANALYTICS_STORAGE: true
+        # Firebase Analytics consent-mode defaults: everything denied until the consent flow
+        # (ConsentManager): usage analytics outside the EEA/UK/CH or with TCF Purpose 1
+        # consent; ad signals only with ATT authorized outside regulated regions.
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_ANALYTICS_STORAGE: false
         GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_STORAGE: false
         GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_USER_DATA: false
         GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS: false

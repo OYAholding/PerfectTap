@@ -12,7 +12,7 @@ final class ConsentFlowTests: XCTestCase {
 
     func testAuthorizedOutsideRegulatedRegionEnablesPersonalization() {
         let d = AdPrivacyDecision.make(canRequestAds: true, consentRequiredRegion: false, tracking: .authorized)
-        XCTAssertEqual(d, AdPrivacyDecision(canRequestAds: true, personalizedAds: true, analyticsAdSignals: true))
+        XCTAssertEqual(d, AdPrivacyDecision(canRequestAds: true, personalizedAds: true, analyticsAdSignals: true, analyticsStorage: true))
     }
 
     func testDeniedRestrictedAndNotDeterminedNeverPersonalize() {
@@ -30,6 +30,39 @@ final class ConsentFlowTests: XCTestCase {
         XCTAssertFalse(d.analyticsAdSignals)
     }
 
+    // MARK: GDPR analytics storage (regression: usage analytics must not run before consent in the EEA)
+
+    func testOutsideRegulatedRegionAnalyticsStorageOnWhateverATT() {
+        for status in [TrackingAuthorization.denied, .authorized, .restricted, .notDetermined] {
+            XCTAssertTrue(AdPrivacyDecision.make(canRequestAds: true, consentRequiredRegion: false, tracking: status).analyticsStorage)
+        }
+    }
+
+    func testRegulatedRegionAnalyticsStorageNeedsTCFPurpose1() {
+        XCTAssertFalse(AdPrivacyDecision.make(canRequestAds: true, consentRequiredRegion: true, tracking: .authorized, storageConsent: false).analyticsStorage)
+        XCTAssertTrue(AdPrivacyDecision.make(canRequestAds: true, consentRequiredRegion: true, tracking: .denied, storageConsent: true).analyticsStorage)
+    }
+
+    func testRegulatedRegionFlowWithoutStorageConsentKeepsAnalyticsOff() async {
+        let env = FakeConsentEnvironment(tracking: .notDetermined, answer: .authorized)
+        env.consentRequiredRegion = true
+        env.storageConsent = false
+        let manager = ConsentManager(environment: env)
+        await manager.gatherConsentIfNeeded()
+        XCTAssertEqual(env.applied.last?.analyticsStorage, false)
+        XCTAssertEqual(env.applied.last?.analyticsAdSignals, false)
+        XCTAssertEqual(env.applied.last?.personalizedAds, true, "AdMob applies the TCF choice itself")
+    }
+
+    func testUMPTimeoutStillReachesATT() async {
+        let env = FakeConsentEnvironment(tracking: .notDetermined, answer: .denied)
+        env.umpHangs = true
+        let manager = ConsentManager(environment: env, umpTimeout: 0.2)
+        await manager.gatherConsentIfNeeded()
+        XCTAssertTrue(env.calls.contains("requestATT"), "a stalled UMP request must not block the ATT prompt")
+        XCTAssertFalse(env.calls.contains("presentForm"))
+    }
+
     func testNoUMPConsentMeansNoAds() {
         let d = AdPrivacyDecision.make(canRequestAds: false, consentRequiredRegion: true, tracking: .authorized)
         XCTAssertFalse(d.canRequestAds)
@@ -43,7 +76,7 @@ final class ConsentFlowTests: XCTestCase {
         let manager = ConsentManager(environment: env)
         await manager.gatherConsentIfNeeded()
         XCTAssertEqual(env.calls, ["updateConsentInfo", "presentForm", "requestATT", "apply"])
-        XCTAssertEqual(env.applied.last, AdPrivacyDecision(canRequestAds: true, personalizedAds: false, analyticsAdSignals: false))
+        XCTAssertEqual(env.applied.last, AdPrivacyDecision(canRequestAds: true, personalizedAds: false, analyticsAdSignals: false, analyticsStorage: true))
         XCTAssertEqual(manager.trackingStatus, .denied)
     }
 
@@ -132,6 +165,8 @@ private final class FakeConsentEnvironment: ConsentEnvironment {
     var umpError: Error?
     var canRequestAds = true
     var consentRequiredRegion = false
+    var storageConsent = false
+    var umpHangs = false
     var privacyOptionsRequired = false
     var isAppActive = true
 
@@ -144,6 +179,7 @@ private final class FakeConsentEnvironment: ConsentEnvironment {
 
     func updateConsentInfo() async throws {
         calls.append("updateConsentInfo")
+        if umpHangs { try await Task.sleep(nanoseconds: 5_000_000_000) }
         if let umpError { throw umpError }
     }
     func presentConsentFormIfRequired() async throws { calls.append("presentForm") }
