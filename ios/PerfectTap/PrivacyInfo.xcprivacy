@@ -2,12 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Tracking happens only when the user allows it in the ATT prompt (personalized ads).
-	     Google's SDKs declare their own data in their bundled privacy manifests. -->
+	<!-- NSPrivacyTracking describes the APP'S OWN code, which contacts no tracking domains.
+	     Tracking (personalized ads, only after ATT "Allow") is done by Google Mobile Ads and is
+	     declared in its own bundled manifest; it lists no tracking domains on purpose (listing
+	     them would make iOS block all ad requests when ATT is denied). Apple rejects
+	     NSPrivacyTracking=true with an empty NSPrivacyTrackingDomains list (ITMS-91064, build 3),
+	     so the app manifest mirrors Google's: no tracking flag, Device ID marked as tracking data.
+	     The App Store privacy label still declares "Data Used to Track You: Identifiers". -->
 	<key>NSPrivacyTracking</key>
-	<true/>
-	<key>NSPrivacyTrackingDomains</key>
-	<array/>
+	<false/>
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
 		<!-- IDFA (only after ATT authorization) and IDFV, used by Google Mobile Ads / Firebase Analytics -->
@@ -15,7 +18,7 @@
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeDeviceID</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<false/>
+			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypePurposes</key>
@@ -29,7 +32,7 @@
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeAdvertisingData</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<false/>
+			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
 			<false/>
 			<key>NSPrivacyCollectedDataTypePurposes</key>
@@ -42,7 +45,7 @@
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeProductInteraction</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<false/>
+			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
 			<false/>
 			<key>NSPrivacyCollectedDataTypePurposes</key>
