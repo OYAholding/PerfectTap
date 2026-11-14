@@ -1,17 +1,26 @@
 # PerfectTap — הצהרת App Privacy (שאלון ב-App Store Connect)
 
-> **סטטוס:** טיוטה לאישור הבעלים. השאלון **לא עודכן**: ה-API לא תומך בו, וממשק הדפדפן דורש התחברות שלך.
-> נבדק ב-13.11.2026 מול: התווית החיה ב-App Store, קוד 1.0 ו-1.1.0, ‏`PrivacyInfo.xcprivacy`,
-> ה-manifests של Google Mobile Ads ‏12.14 ו-UMP ‏3.1, Firebase Analytics ו-Supabase.
+> **סטטוס: פורסם ונבדק (13.11.2026, באישור הבעלים).** ‏11 סוגי מידע. Tracking רק ל-Device ID.
+> Not Linked רק ל-Diagnostics. דף החנות הציבורי כבר מציג את התווית החדשה.
+> **נמצא ותוקן בזמן הפרסום:** כשמוסיפים מטרות לסוג קיים, App Store Connect שומר את שאלת ה-Linked
+> לכל מטרה בנפרד. ה-Product Interaction נשמר בהתחלה גם כ-"Not Linked", ותוקן ל-Linked.
 
 ## איפה ממלאים
 App Store Connect → PerfectTap → **App Privacy** → Edit. השאלון הוא **לכל האפליקציה**, לא לגרסה מסוימת.
 הוא מתעדכן בחנות מיד עם **Publish**, ולכן הוא חייב להיות נכון גם ל-1.0 החיה וגם ל-1.1.0.
 
-## מה מופיע היום בחנות (1.0, נקרא מהדף הציבורי)
-- **Data Used to Track You:** Identifiers
-- **Data Linked to You:** Contact Info, Identifiers, Usage Data
-- **חסר**, גם ל-1.0 (שכבר כוללת AdMob ו-Firebase): Location, User Content, Diagnostics.
+## מה מופיע היום (נקרא ב-App Store Connect, 13.11.2026)
+פורסם לפני 7 חודשים. 5 סוגים:
+- **Name:** App Functionality, ‏Linked
+- **Email Address:** App Functionality, ‏Linked
+- **Device ID:** Third-Party Advertising + Analytics, ‏Linked, **Tracking**
+- **Product Interaction:** Analytics, ‏Linked
+- **Advertising Data:** Third-Party Advertising + Analytics, ‏Linked
+
+**חסר**, גם ל-1.0 (שכבר כוללת AdMob ו-Firebase): ‏User ID, ‏Gameplay Content, ‏Coarse Location, ‏Diagnostics.
+ב-Product Interaction חסרות המטרות Third-Party Advertising ו-App Functionality.
+**שים לב:** ב-App Store Connect שמירת השינויים בסוגי המידע נגמרת בכפתור **Publish**, בלי שלב טיוטה.
+לכן לא ביצעתי שינוי.
 
 ## האם האפליקציה מבצעת Tracking?
 **כן, ב-1.1.0 רק אחרי אישור ATT.** כש-ATT מאושר, ‏Google Mobile Ads משתמש ב-IDFA למודעות מותאמות ולמדידה בין אפליקציות.
@@ -21,6 +30,7 @@ App Store Connect → PerfectTap → **App Privacy** → Edit. השאלון הו
 ## התשובות הסופיות
 | קטגוריה → סוג | Purposes | Linked | Tracking | מקור |
 |---|---|---|---|---|
+| Contact Info → **Name** | App Functionality | Yes | No | **להשאיר** (כבר מוצהר). שם המשתמש במשחק עשוי להיחשב שם |
 | Identifiers → **Device ID** | Third-Party Advertising, Analytics | Yes | **Yes** | IDFA אחרי ATT, ‏IDFV. ‏AdMob ו-Firebase Analytics |
 | Identifiers → **User ID** | App Functionality | Yes | No | מזהה חשבון ב-Supabase (ב-1.0: ‏Firebase UID) |
 | Contact Info → **Email Address** | App Functionality | Yes | No | חשבונות אימייל ישנים (Firebase) שעוברים ב-claim. ‏Cloud Backup (כבוי כרגע) |
@@ -34,7 +44,6 @@ App Store Connect → PerfectTap → **App Privacy** → Edit. השאלון הו
 
 **לא לסמן:**
 - **Purchases:** אין IAP ב-App Store Connect, וה-UI כבוי.
-- **Name:** הכינוי במשחק נכנס תחת Gameplay Content.
 - **Precise Location**, ‏**Health**, ‏**Financial**, ‏**Contacts**, ‏**Photos**, ‏**Audio**, ‏**Browsing / Search History**, ‏**Sensitive Info**: לא נאספים.
 - **Push / Messaging:** ‏FirebaseMessaging הוסר ב-1.1.0. ב-1.0 הוא היה מקושר בלי הרשאת push, ולא מצאתי בו איסוף מידע שדורש הצהרה נפרדת.
 
@@ -44,6 +53,17 @@ Apple מאחדת את כל ה-privacy manifests שבתוך ה-build. ה-manifest
 
 ## אחרי Publish (בדיקה)
 1. בדף החנות: "Data Used to Track You" = **Identifiers** בלבד.
-2. "Data Linked to You": ‏Contact Info, ‏Identifiers, ‏Location, ‏User Content, ‏Usage Data.
+2. "Data Linked to You": ‏Contact Info (Name, Email), ‏Identifiers, ‏Location, ‏User Content, ‏Usage Data.
+
+## AdMob: הודעת GDPR (13.11.2026)
+- **פורסמה (13.11.2026, באישור הבעלים) ונבדקה באפליקציה:** "PerfectTap - GDPR consent (EEA, UK, CH)".
+- **אפליקציה:** PerfectTap! בלבד (iOS, ‏6760975737). ‏Privacy URL: ‏`https://oyaholding.github.io/PerfectTap/`.
+- **כפתורים:** Consent, ‏**Do not consent** (פעיל בכל 34 האזורים), ‏Manage options.
+- **שותפי פרסום:** ברירת המחדל של Google.
+- **נבדק ב-iPad Air 11 M3**, עם debug geography = EEA (`-PTUMPDebugEEA`, ‏DEBUG בלבד):
+  - הטופס מופיע ראשון, ואחריו בקשת ATT.
+  - אחרי Do not consent + Ask App Not to Track המשחק עובד.
+  - Settings → Privacy מציג Ad Tracking: Not allowed ו-**Privacy Choices**, שפותח את הטופס מחדש (ביטול הסכמה).
+- 🧪 לא נבדק במכשיר אמיתי באזור EEA.
 3. "Data Not Linked to You": ‏Diagnostics.
 4. Privacy Policy URL: ‏`https://oyaholding.github.io/PerfectTap/` (‏HTTP 200).

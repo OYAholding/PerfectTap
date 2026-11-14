@@ -284,6 +284,20 @@ platform :ios do
     pt_finish_internal_build(built["CFBundleShortVersionString"], built["CFBundleVersion"], notes, groups)
   end
 
+  desc "WRITE (PT_CONFIRM=yes): finish an already-processed build for internal TestFlight, e.g. build:3 (compliance, notes, internal groups)"
+  lane :testflight_finish do |options|
+    pt_require_confirmation!("Making a build available to internal testers")
+    pt_api_key
+    pt_assert_app!
+    version = options[:version] || pt_project_versions[:version]
+    build_number = (options[:build] || pt_project_versions[:build]).to_s
+    notes_path = File.expand_path("testflight_notes.txt", __dir__)
+    notes = File.exist?(notes_path) ? File.read(notes_path) : nil
+    groups = pt_get("/v1/apps/#{PT_APP_ID}/betaGroups?limit=50")["data"]
+               .select { |g| g.dig("attributes", "isInternalGroup") }.map { |g| g.dig("attributes", "name") }
+    pt_finish_internal_build(version, build_number, notes, groups)
+  end
+
   desc "WRITE (PT_CONFIRM=yes): create the internal TestFlight group if missing (testers are added in App Store Connect)"
   lane :internal_group do
     pt_require_confirmation!("Creating a TestFlight group")
@@ -419,7 +433,11 @@ def pt_finish_internal_build(version, build_number, notes, group_names)
   build = pt_get("/v1/builds?filter[app]=#{PT_APP_ID}&filter[version]=#{build_number}&filter[preReleaseVersion.version]=#{version}")["data"].first
   UI.user_error!("Build #{version} (#{build_number}) not found after processing") unless build
   bid = build["id"]
-  pt_write(:patch, "/v1/builds/#{bid}", { data: { type: "builds", id: bid, attributes: { usesNonExemptEncryption: false } } })
+  # Builds with ITSAppUsesNonExemptEncryption in Info.plist already carry the answer;
+  # Apple rejects setting it twice (409), so only set it when it is still missing.
+  if build.dig("attributes", "usesNonExemptEncryption").nil?
+    pt_write(:patch, "/v1/builds/#{bid}", { data: { type: "builds", id: bid, attributes: { usesNonExemptEncryption: false } } })
+  end
   if notes
     loc = pt_get("/v1/builds/#{bid}/betaBuildLocalizations")["data"].find { |l| l.dig("attributes", "locale") == "en-US" }
     if loc
