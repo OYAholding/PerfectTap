@@ -1,11 +1,14 @@
 # App Review response — Guideline 5.1.2(i) (final text, ready to send)
 
-> **Status (14.11.2026): ready to send, not sent.** Done: build 1.1.0 (3) is attached to version 1.1.0 (`VALID`,
+> **Build 4 (14.11.2026):** after the build 3 resubmission, App Store Connect returned **ITMS-91064** (invalid tracking
+> information in the app's `PrivacyInfo.xcprivacy`: `NSPrivacyTracking=true` with an empty `NSPrivacyTrackingDomains`).
+> Version 1.1.0 became `INVALID_BINARY`. Build **1.1.0 (4)** = build 3 + a corrected privacy manifest only (no code change).
+> The follow-up message below was posted in the same thread before resubmitting build 4.
+>
+> **Status (14.11.2026): final, approved by the owner for sending.** Done: build 1.1.0 (3) is attached to version 1.1.0 (`VALID`,
 > export compliance `false`). App Privacy is published (the public App Store page shows it). The AdMob GDPR message is published.
 > Review Notes are updated in App Store Connect (below).
-> **Real-device status:** build 3 has **not** been tested on a real device yet. Build 2 (same consent flow) passed the owner's
-> real-device test on 13.11.2026. The text below says exactly that. Recommended: run the build 3 checklist first
-> (`docs/RELEASE_1.1.0_READINESS.he.md`, "Real device"). Only after it passes, swap in the "after the build 3 test" sentence below.
+> **Real-device status:** the owner tested build 1.1.0 (3) on a real iPhone via TestFlight on 14.11.2026, and it passed.
 >
 > **Where to send:** App Store Connect → PerfectTap → App Review → the open submission (Guideline 5.1.2(i), `UNRESOLVED_ISSUES`) → **Reply**
 > with the text below. Then press **Resubmit to App Review** on the same submission. Build 3 is already attached, so no build change is needed.
@@ -39,16 +42,25 @@ Thank you for reviewing PerfectTap!. We have addressed the issue raised under Gu
 
 No login or demo account is needed.
 
-**Testing we performed:** the prompt, both answers, and a single prompt per install were tested on iPhone and iPad Air 11-inch (M3) simulators running the 1.1.0 code, including the EEA consent message. The same consent flow was tested on a real iPhone via TestFlight (build 2).
-
-<!-- Only after the owner's real-device check of build 3 passes, replace the paragraph above with:
 **Testing we performed:** the prompt, both answers, and a single prompt per install were tested on a real iPhone with this exact build (1.1.0 (3), via TestFlight), and on iPhone and iPad Air 11-inch (M3) simulators, including the EEA consent message.
--->
 
 Thank you,
 PerfectTap! team — PerfectTap@oyaholding.com
 
 ---
+
+## Follow-up message (build 4)
+
+```
+Hello App Review team,
+
+Following up on our message above: after we resubmitted, App Store Connect reported ITMS-91064 (invalid tracking information in the app's privacy manifest) for build 3.
+
+We have uploaded build 1.1.0 (4). It is identical to build 3 except for the corrected privacy manifest: the app's own manifest no longer sets NSPrivacyTracking without tracking domains, and the Device ID is still declared as data used for tracking (the Google Mobile Ads SDK declares its own tracking in its bundled manifest). There are no code changes. The App Tracking Transparency flow, the App Privacy information and the test steps described above are unchanged.
+
+Thank you,
+PerfectTap! team — PerfectTap@oyaholding.com
+```
 
 ## App Review notes (already saved in App Store Connect, 14.11.2026)
 

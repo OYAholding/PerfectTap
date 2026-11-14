@@ -1,6 +1,21 @@
 # PerfectTap 1.1.0 (3) — מוכנות להגשה חוזרת (14.11.2026, עודכן אחרי release gate)
 
-## שורה תחתונה
+## סטטוס: build 4 הוגש ל-App Review ✅ (14.11.2026, 20:06 שעון ישראל)
+- **build 3:**
+  - הוגש ב-19:51. כמה דקות אחר כך App Store Connect החזיר **ITMS-91064**, והגרסה עברה ל-`INVALID_BINARY`.
+  - **הסיבה:** ב-`PrivacyInfo.xcprivacy` של האפליקציה הוגדר `NSPrivacyTracking=true` עם רשימת `NSPrivacyTrackingDomains` ריקה.
+- **התיקון, build 1.1.0 (4):**
+  - ב-manifest של האפליקציה אין דגל tracking ואין רשימת דומיינים, כמו ב-manifest של Google Mobile Ads. ‏Device ID עדיין מוצהר כמידע ל-tracking. ‏Linked מיושר לתווית.
+  - **אין שינוי קוד.** גרסאות ה-SDK זהות. השינוי היחיד בקוד מאז build 3 הוא בלוק DEBUG שלא קיים בבינארי.
+  - `validate_release` אוכף עכשיו את הכלל של Apple.
+- **ההגשה:**
+  - build 4 הועלה, עבר עיבוד (`VALID`), נמצא בבדיקה פנימית ב-TestFlight ומחובר לגרסה.
+  - נשלחה הודעת המשך ל-Apple באותו thread (Messages: 3).
+  - Resubmit באותה הגשה: ‏`016ce0ae-319d-4cd1-8877-6ff36f61bad2` → **`WAITING_FOR_REVIEW`**.
+- **הגדרות שחרור:** Release **MANUAL**, ‏Phased release ‏`INACTIVE`. 1.0 נשארת `READY_FOR_SALE`.
+- **בדיקת מכשיר אמיתי:** build 3 נבדק על ידי הבעלים. build 4 זהה לו בקוד. 🧪 build 4 עצמו לא נבדק במכשיר (מומלץ לפתוח אותו פעם אחת מ-TestFlight).
+
+## שורה תחתונה (לפני ההגשה)
 - **ה-build להגשה:** ‏**1.1.0 (3)**, ‏build id ‏`a4d8ec4a-332d-4017-a821-9e0a3fba9df1`. כבר מחובר לגרסה 1.1.0. **אין צורך ב-build חדש:** כל השינויים החדשים בשרת.
 - **בוצע ב-14.11.2026:**
   - ‏PR 8 מוזג (`d2df2be`).

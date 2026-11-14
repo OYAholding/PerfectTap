@@ -67,7 +67,7 @@ targets:
         DEVELOPMENT_TEAM: K88C7DPG4C
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.arcade-games"
         MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "3"
+        CURRENT_PROJECT_VERSION: "4"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES

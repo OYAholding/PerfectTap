@@ -411,7 +411,17 @@ def pt_release_checks
   plist.include?("NSUserTrackingUsageDescription") ? ok.call("ATT usage string", "present") : fail.call("ATT usage string", "NSUserTrackingUsageDescription missing")
   plist.include?("CFBundleShortVersionString: $(MARKETING_VERSION)") ? ok.call("Info.plist version", "bound to MARKETING_VERSION") : fail.call("Info.plist version", "hard-coded")
   manifest = File.read(File.join(PT_PROJECT_DIR, "PrivacyInfo.xcprivacy"))
-  manifest[/<key>NSPrivacyTracking<\/key>\s*<true\/>/] ? ok.call("Privacy manifest", "NSPrivacyTracking = true (ATT)") : fail.call("Privacy manifest", "NSPrivacyTracking must be true while AdMob uses IDFA")
+  # ITMS-91064: NSPrivacyTracking=true needs a non-empty NSPrivacyTrackingDomains, and domains need
+  # NSPrivacyTracking=true. The app's own code tracks nothing (Google Mobile Ads declares its own).
+  tracking = !!manifest[/<key>NSPrivacyTracking<\/key>\s*<true\/>/]
+  domains = manifest[/<key>NSPrivacyTrackingDomains<\/key>\s*<array>(.*?)<\/array>/m, 1].to_s.scan(/<string>/).size
+  if tracking != (domains > 0)
+    fail.call("Privacy manifest", "NSPrivacyTracking=#{tracking} with #{domains} tracking domain(s): invalid (ITMS-91064)")
+  else
+    ok.call("Privacy manifest", "NSPrivacyTracking=#{tracking}, #{domains} tracking domain(s)")
+  end
+  manifest[/NSPrivacyCollectedDataTypeDeviceID<\/string>.*?<key>NSPrivacyCollectedDataTypeTracking<\/key>\s*<true\/>/m] ?
+    ok.call("Privacy manifest", "Device ID declared as tracking data") : fail.call("Privacy manifest", "Device ID must be declared as tracking data (AdMob IDFA after ATT)")
 
   PT_LEGAL_URLS.each do |name, url|
     code = pt_url_status(url)
