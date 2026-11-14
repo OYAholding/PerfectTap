@@ -6,11 +6,20 @@
 // account. The email login is carried over ONLY if Firebase had verified that
 // the player owns the address (email_verified); otherwise the player links and
 // verifies an email again in the app (Supabase email-change OTP).
+//
+// Just-in-time migration: right before the claim, the player's CURRENT Firestore document is
+// read with their own verified Firebase ID token and claimed in the same DB transaction, so
+// progress made in 1.0 after the last snapshot import is not lost. If Firestore can't be read,
+// the claim uses the snapshot (previous behaviour). Already-claimed or deleted players are
+// never refreshed.
 import { withSupabase } from "@supabase/server";
 import { dbErrorCode, fail, json, readJson } from "../_shared/http.ts";
 import { verifyFirebaseIdToken, verifyFirebasePassword } from "../_shared/firebase.ts";
+import { fetchLatestLegacyPlayer } from "../_shared/firestore.ts";
 
-type ClaimResult = { status: string; user_id?: string; username_conflict?: boolean; friendships_restored?: number };
+type ClaimResult = {
+  status: string; user_id?: string; username_conflict?: boolean; friendships_restored?: number; fresh?: string;
+};
 
 export default {
   fetch: withSupabase({ auth: "user" }, async (req, ctx) => {
@@ -38,12 +47,22 @@ export default {
       passwordVerified = true;
     }
 
-    const claim = await admin.rpc("claim_legacy_profile", { p_user: callerId, p_firebase_uid: fb.uid });
+    const latest = await fetchLatestLegacyPlayer(fb.uid, body.firebaseIdToken);
+    if (latest.kind === "error") console.warn("firestore read failed, using snapshot", { reason: latest.reason });
+    const claim = await admin.rpc("claim_legacy_profile_fresh", {
+      p_user: callerId,
+      p_firebase_uid: fb.uid,
+      p_fresh: latest.kind === "found" ? latest.data : null,
+      p_friend_uids: latest.kind === "found" ? latest.friendUids : [],
+    });
     if (claim.error) {
       console.error("claim_legacy_profile failed", { code: dbErrorCode(claim.error) });
       return fail(500, "claim_failed");
     }
     const result = claim.data as ClaimResult;
+    if (result.fresh === "error" || result.fresh === "invalid" || result.fresh === "uid_mismatch") {
+      console.warn("fresh legacy data not used", { fresh: result.fresh });
+    }
 
     // Account with this Firebase identity already lives on another Supabase user.
     if (result.status === "claimed_elsewhere") {
