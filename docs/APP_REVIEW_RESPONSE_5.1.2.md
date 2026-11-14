@@ -1,13 +1,14 @@
-# App Review response — Guideline 5.1.2(i) (draft for owner review)
+# App Review response — Guideline 5.1.2(i) (final text, ready to send)
 
-> **Status:** draft. Not sent. Send only after (1) build 1.1.0 (3) is uploaded and attached to version 1.1.0,
-> (2) the App Privacy questionnaire is published (`docs/APP_PRIVACY_DECLARATION.he.md`), and
-> (3) a quick check of build 3 on a real device (build 2 already passed the owner's full device test on 13.11.2026).
-> Remove any sentence below that is not true at the time of sending.
+> **Status (14.11.2026): ready to send, not sent.** Done: build 1.1.0 (3) is attached to version 1.1.0 (`VALID`,
+> export compliance `false`). App Privacy is published (the public App Store page shows it). The AdMob GDPR message is published.
+> Review Notes are updated in App Store Connect (below).
+> **One condition before sending:** the owner's quick check of build 3 on a real device (`docs/RELEASE_1.1.0_READINESS.he.md`, section "Real device").
+> Until then, the last sentence ("Testing we performed") is true only for build 2.
 >
-> **Where to send:** App Store Connect → PerfectTap → App Review → the open submission (Guideline 5.1.2(i)) → Reply.
-> Then replace the build in version 1.1.0 and use **Resubmit to App Review** on the same submission
-> (it is `UNRESOLVED_ISSUES`, so it is updated and resubmitted rather than replaced by a new one).
+> **Where to send:** App Store Connect → PerfectTap → App Review → the open submission (Guideline 5.1.2(i), `UNRESOLVED_ISSUES`) → **Reply**
+> with the text below. Then press **Resubmit to App Review** on the same submission. Build 3 is already attached, so no build change is needed.
+> Do not create a new submission.
 
 ---
 
@@ -30,25 +31,27 @@ Thank you for reviewing PerfectTap!. We have addressed the issue raised under Gu
 
 **How to test (iPhone or iPad):**
 1. Install the app fresh and open it. The ATT prompt appears within a few seconds, on the first screen.
+   (On a device in the EEA, UK or Switzerland, Google's consent message appears first, then the ATT prompt.)
 2. Choose **Ask App Not to Track**. Enter any name and play. Ads appear and the game works.
 3. Open **Settings → Privacy → Ad Tracking**. It shows "Not allowed — ads are not personalized."
 4. (Optional) Reinstall, choose **Allow**, and check that Settings shows "Allowed."
 
 No login or demo account is needed.
 
-**Testing we performed:** the prompt, both answers, and a single prompt per install were tested on iPhone and on iPad Air 11-inch (M3) simulators, and on a real device via TestFlight.
+**Testing we performed:** the prompt, both answers, and a single prompt per install were tested on iPhone and on iPad Air 11-inch (M3) simulators (including the EEA consent message), and on a real iPhone via TestFlight.
 
 Thank you,
 PerfectTap! team — PerfectTap@oyaholding.com
 
 ---
 
-## App Review notes (for the "Notes" field of version 1.1.0)
+## App Review notes (already saved in App Store Connect, 14.11.2026)
 
 ```
 No login is required: a player account is created automatically after choosing a name.
 This is a reaction-based arcade game. Ads may appear between runs; rewarded ads are optional (revive / continue).
-App Tracking Transparency: the system prompt appears on first launch, before any ad is requested.
+App Tracking Transparency: the system prompt appears on first launch, before the ad SDK starts or any ad is requested.
+In the EEA, UK and Switzerland, Google's consent message (UMP) is shown first, then the ATT prompt.
 Denying tracking keeps all features; ads are then non-personalized.
 Privacy choices: Settings → Privacy (Ad Tracking, and Privacy Choices where required by law).
 Account deletion: Settings → Delete Account.
