@@ -19,6 +19,15 @@ const jwk = { ...(await exportJWK(publicKey)), kid: "test-key", alg: "RS256", us
 const FIREBASE_PASSWORDS: Record<string, { uid: string; password: string }> = {
   "legacy@test.local": { uid: "fb_legacy_email", password: "secret123" },
 };
+const FIRESTORE_PLAYERS: Record<string, Record<string, unknown>> = {};
+const FIRESTORE_FRIENDSHIPS: string[][] = [];
+const FIRESTORE_DOWN = new Set<string>();
+const PSQL_URL = "postgresql://postgres:postgres@127.0.0.1:55622/postgres";
+function psql(sql: string): string {
+  const out = new Deno.Command("psql", { args: [PSQL_URL, "-tAc", sql] }).outputSync();
+  if (!out.success) throw new Error(new TextDecoder().decode(out.stderr));
+  return new TextDecoder().decode(out.stdout).trim();
+}
 const fakeFirebase = Deno.serve({ port: FAKE_FIREBASE_PORT, hostname: "0.0.0.0", onListen() {} }, async (req) => {
   const u = new globalThis.URL(req.url);
   if (u.pathname === "/jwks") return Response.json({ keys: [jwk] });
@@ -28,8 +37,41 @@ const fakeFirebase = Deno.serve({ port: FAKE_FIREBASE_PORT, hostname: "0.0.0.0",
     if (acct && acct.password === b.password) return Response.json({ localId: acct.uid });
     return Response.json({ error: { message: "INVALID_PASSWORD" } }, { status: 400 });
   }
+  // Fake Firestore REST (just-in-time claim): players/{uid} GET and friendships :runQuery.
+  const docsPrefix = `/v1/projects/${PROJECT}/databases/(default)/documents`;
+  const path = decodeURIComponent(u.pathname);
+  if (path.startsWith(docsPrefix)) {
+    if (!(req.headers.get("authorization") ?? "").startsWith("Bearer ey")) return new Response("unauth", { status: 401 });
+    const rest = path.slice(docsPrefix.length);
+    if (rest.startsWith("/players/")) {
+      const uid = rest.slice("/players/".length);
+      if (FIRESTORE_DOWN.has(uid)) return Response.json({ error: { code: 503 } }, { status: 503 });
+      const doc = FIRESTORE_PLAYERS[uid];
+      if (!doc) return Response.json({ error: { code: 404, status: "NOT_FOUND" } }, { status: 404 });
+      return Response.json({ name: `projects/${PROJECT}/databases/(default)/documents/players/${uid}`, fields: toFsFields(doc) });
+    }
+    if (rest === ":runQuery") {
+      const q = await req.json();
+      const uid = q.structuredQuery?.where?.fieldFilter?.value?.stringValue;
+      return Response.json(FIRESTORE_FRIENDSHIPS.filter((ids) => ids.includes(uid))
+        .map((ids) => ({ document: { fields: toFsFields({ user_ids: ids, created_at: new Date() }) } })));
+    }
+  }
   return new Response("nf", { status: 404 });
 });
+// Firestore typed-value encoding (what the REST API returns).
+function toFs(v: unknown): Record<string, unknown> {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (v instanceof Date) return { timestampValue: v.toISOString() };
+  if (typeof v === "string") return { stringValue: v };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFs) } };
+  return { mapValue: { fields: toFsFields(v as Record<string, unknown>) } };
+}
+function toFsFields(o: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(o).map(([k, x]) => [k, toFs(x)]));
+}
 
 async function firebaseToken(uid: string, opts: { email?: string; issuer?: string; emailVerified?: boolean } = {}) {
   const now = Math.floor(Date.now() / 1000);
@@ -312,6 +354,118 @@ Deno.test({ name: "legacy Firebase claim, email link, deletion", ...opts, fn: as
   const reingest = new Deno.Command("psql", { args: ["postgresql://postgres:postgres@127.0.0.1:55622/postgres", "-tAc",
     "select legacy.ingest(); select count(*) from legacy.players where firebase_uid='fb_legacy_anon';"] }).outputSync();
   assert(new TextDecoder().decode(reingest.stdout).trim().endsWith("0"), "deleted player not re-imported");
+}});
+
+Deno.test({ name: "just-in-time claim: latest Firestore data, no overwrite, tombstones, fallback", ...opts, fn: async () => {
+  const claim = async (c: SupabaseClient, uid: string) => await fn(c, "claim-legacy-account", { firebaseIdToken: await firebaseToken(uid) });
+  const me = async (c: SupabaseClient) => (await c.rpc("get_my_profile")).data;
+
+  // 1. Snapshot is stale (coins 10); Firestore has newer progress → the claim uses Firestore.
+  FIRESTORE_PLAYERS["fb_jit_stale"] = { uid: "fb_jit_stale", username: "JitStale", friend_code: "JITST1", coins: 999,
+    level: 9, best_classic: 7000, last_login: new Date("2026-11-13T10:00:00Z") };
+  const a = await anonUser();
+  const ra = await claim(a.c, "fb_jit_stale");
+  assertEquals(ra.body.status, "claimed", JSON.stringify(ra.body));
+  assertEquals((await me(a.c)).coins, 999, "fresh Firestore coins, not the stale snapshot");
+  assertEquals((await me(a.c)).level, 9);
+
+  // 2. Already migrated progress is never overwritten by a later Firestore read or re-import.
+  const p = await me(a.c);
+  assert(!(await a.c.rpc("save_profile", { p: { ...p, coins: 1500 } })).error);
+  FIRESTORE_PLAYERS["fb_jit_stale"].coins = 5;
+  assertEquals((await claim(a.c, "fb_jit_stale")).body.status, "already_claimed");
+  psql("select legacy.ingest()");
+  assertEquals((await me(a.c)).coins, 1500, "progress made after migration is kept");
+  const thief = await anonUser();
+  assertEquals((await claim(thief.c, "fb_jit_stale")).status, 409, "ownership stays with the first device");
+
+  // 3. Player who started on 1.0 AFTER the last snapshot (not in legacy at all) still migrates.
+  FIRESTORE_PLAYERS["fb_jit_new"] = { uid: "fb_jit_new", username: "JitNew", friend_code: "JITNW1", coins: 77, level: 3 };
+  const b = await anonUser();
+  const rb = await claim(b.c, "fb_jit_new");
+  assertEquals(rb.body.status, "claimed", JSON.stringify(rb.body));
+  assertEquals((await me(b.c)).username, "JitNew");
+
+  // 4. Friendships Firestore confirms: canonical doc + mutual players.friends mirror.
+  FIRESTORE_PLAYERS["fb_jit_c"] = { uid: "fb_jit_c", username: "JitC", friend_code: "JITC01", coins: 1, friends: ["fb_jit_b"] };
+  const c = await anonUser();
+  assertEquals((await claim(c.c, "fb_jit_c")).body.status, "claimed");
+  FIRESTORE_PLAYERS["fb_jit_b"] = { uid: "fb_jit_b", username: "JitB", friend_code: "JITB01", coins: 2, friends: ["fb_jit_c"] };
+  FIRESTORE_FRIENDSHIPS.push(["fb_jit_new", "fb_jit_b"]);
+  const d = await anonUser();
+  const rd = await claim(d.c, "fb_jit_b");
+  assertEquals(rd.body.friendshipsRestored, 2, JSON.stringify(rd.body));
+
+  // 5. Firestore unreachable → falls back to the snapshot (fixture coins 10).
+  FIRESTORE_DOWN.add("fb_jit_down");
+  const e = await anonUser();
+  const re = await claim(e.c, "fb_jit_down");
+  assertEquals(re.body.status, "claimed", JSON.stringify(re.body));
+  assertEquals((await me(e.c)).coins, 10, "snapshot used when Firestore can't be read");
+
+  // 6. A document whose uid doesn't match the token is ignored.
+  FIRESTORE_PLAYERS["fb_jit_mismatch"] = { uid: "someone_else", username: "Mismatch", coins: 100000 };
+  const f = await anonUser();
+  assertEquals((await claim(f.c, "fb_jit_mismatch")).body.status, "no_legacy_data");
+
+  // 7. Deleted account: tombstone wins even though Firestore still has the document.
+  assertEquals((await fn(b.c, "delete-account", {})).body.status, "deleted");
+  const g = await anonUser();
+  assertEquals((await claim(g.c, "fb_jit_new")).body.status, "account_deleted");
+  assertEquals(psql("select count(*) from legacy.players where firebase_uid='fb_jit_new'"), "0", "not resurrected");
+
+  // 8. Blocked legacy username → player is asked to choose a new name; progress still moves.
+  FIRESTORE_PLAYERS["fb_jit_rude"] = { uid: "fb_jit_rude", username: "Sh1tLord", friend_code: "JITRD1", coins: 42 };
+  const h = await anonUser();
+  const rh = await claim(h.c, "fb_jit_rude");
+  assertEquals(rh.body.usernameConflict, true, JSON.stringify(rh.body));
+  assertEquals((await me(h.c)).username, "");
+  assertEquals((await me(h.c)).coins, 42);
+}});
+
+Deno.test({ name: "username moderation: blocklist, neutral rename, sync never breaks", ...opts, fn: async () => {
+  const u = await anonUser();
+  const avail = async (n: string) => (await u.c.rpc("is_username_available", { p_username: n })).data;
+  for (const bad of ["FuckYou", "sh1t_head", "B1TCH", "Admin", "perfect_tap", "fuuuuck"]) assertEquals(await avail(bad), false, bad);
+  for (const ok of ["Grapefruit", "class_pass", "Scott99", "Hancock", "Therapist"]) assertEquals(await avail(ok), true, ok);
+
+  // An old/offline client saves a blocked name without asking first → neutral name, no failure.
+  const bad = await anonUser();
+  assert(!(await bad.c.rpc("save_profile", { p: { username: "FuckYou" + rid(), friend_code: "BAD" + rid().slice(0, 3).toUpperCase(), coins: 5 } })).error);
+  const prof = (await bad.c.rpc("get_my_profile")).data;
+  assert(String(prof.username).startsWith("Player_"), prof.username);
+  // The app keeps sending its cached name: saves keep working and keep the neutral name.
+  const again = await bad.c.rpc("save_profile", { p: { ...prof, username: "FuckYou1", coins: 9 } });
+  assert(!again.error, again.error?.message);
+  assertEquals((await bad.c.rpc("get_my_profile")).data.coins, 9);
+  assert(String((await bad.c.rpc("get_my_profile")).data.username).startsWith("Player_"));
+
+  // Report → moderator renames the player everywhere; progress and sync are unaffected.
+  const name = "Rude" + rid();
+  const r = await anonUser(name);
+  const neu = psql(`select private.moderate_username('${r.id}', 'test report')`);
+  assert(neu.startsWith("Player_"), neu);
+  const rp = (await r.c.rpc("get_my_profile")).data;
+  assertEquals(rp.username, neu);
+  assert(!(await r.c.rpc("save_profile", { p: { ...rp, username: name, coins: 3 } })).error, "cached old name ignored");
+  assertEquals((await r.c.rpc("get_my_profile")).data.username, neu);
+  assertEquals(psql(`select count(*) from private.moderation_log where user_id='${r.id}'`), "1");
+
+  // A normal (not moderated) player still can't change a chosen name.
+  const n = await anonUser("Keep" + rid());
+  const np = (await n.c.rpc("get_my_profile")).data;
+  const ch = await n.c.rpc("save_profile", { p: { ...np, username: "Other" + rid() } });
+  assertEquals(ch.error?.message, "username_immutable");
+
+  // Reports: stored once per pair, can't report yourself.
+  assert(!(await u.c.rpc("report_player", { p_reported: r.id })).error);
+  assert(!(await u.c.rpc("report_player", { p_reported: r.id })).error, "duplicate report is a no-op");
+  assertEquals(psql(`select count(*) from private.player_reports where reported_id='${r.id}'`), "1");
+  assert((await u.c.rpc("report_player", { p_reported: u.id })).error, "self-report rejected");
+
+  // Not callable through the API.
+  assert((await u.c.rpc("moderate_username", { p_user: u.id })).error);
+  assert((await u.c.rpc("claim_legacy_profile_fresh", { p_user: u.id, p_firebase_uid: "x" })).error);
 }});
 
 addEventListener("unload", () => fakeFirebase.shutdown());

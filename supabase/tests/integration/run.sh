@@ -26,6 +26,7 @@ FIREBASE_PROJECT_ID=perfecttap-48a08
 FIREBASE_JWKS_URL=http://$HOST_ALIAS:55699/jwks
 FIREBASE_IDENTITY_URL=http://$HOST_ALIAS:55699
 FIREBASE_WEB_API_KEY=test-key
+FIRESTORE_URL=http://$HOST_ALIAS:55699
 ENV
 supabase functions serve --env-file /tmp/perfecttap-functions.env >/tmp/perfecttap-functions.log 2>&1 &
 SERVE_PID=$!
