@@ -2,12 +2,15 @@
 
 ## שורה תחתונה
 - **ה-build להגשה:** ‏**1.1.0 (3)**, ‏build id ‏`a4d8ec4a-332d-4017-a821-9e0a3fba9df1`. כבר מחובר לגרסה 1.1.0. **אין צורך ב-build חדש:** כל השינויים החדשים בשרת.
+- **בוצע ב-14.11.2026:**
+  - ‏PR 8 מוזג (`d2df2be`).
+  - just-in-time וסינון שמות פרוסים ב-Supabase.
+  - ‏UGC=Yes ו-Social Media=No ב-App Store Connect (הדירוג נשאר 4+).
+  - עמוד ה-Support עם דרך הדיווח חי.
 - **חסמים לפני Resubmit (👤):**
   1. בדיקת build 3 במכשיר אמיתי (טבלה למטה).
-  2. אישור לפרוס ל-Supabase את המיגרציה ואת `claim-legacy-account` (‏just-in-time + סינון שמות).
-  3. אישור לשנות ב-App Store Connect: ‏UGC → Yes.
-  4. מיזוג ה-PR (מפרסם את עמוד ה-Support).
-- **שחרור פומבי בטוח להתקדמות השחקנים?** **כן, אחרי פריסת just-in-time.**
+  2. Reply + Resubmit.
+- **שחרור פומבי בטוח להתקדמות השחקנים?** **כן. ה-just-in-time פרוס.**
   - ה-claim קורא את המצב העדכני מ-Firestore.
   - שחקנים שכבר עברו לא נדרסים.
   - Tombstones נשמרים.
@@ -46,7 +49,7 @@
 | Description / Keywords / Promo | ‏659 / 100 / 76 תווים | ✅ |
 | URLs | Privacy, ‏Support ו-Marketing ב-`oyaholding.github.io/PerfectTap/` | ✅ |
 | צילומי מסך | iPhone 6.5" ‏×4, ‏iPad 13" ‏×4, ‏iPad 11" ‏×4. כולם `COMPLETE` | ✅ |
-| Age rating | ‏4+. כרגע UGC=No. **מומלץ UGC=Yes** (שמות משתמש פומביים), ‏Messaging=No. ראו `AGE_RATING_UGC_AUDIT.he.md` | 👤 |
+| Age rating | ‏4+. ‏**UGC=Yes**, ‏Social Media=No, ‏Messaging=No, ‏Advertising=Yes. ראו `AGE_RATING_UGC_AUDIT.he.md` | ✅ |
 | App Privacy | פורסם. דף החנות הציבורי תואם (Track: Identifiers. ‏Not Linked: Diagnostics) | ✅ |
 | AdMob GDPR | "פורסמה", פעילה, רק ל-PerfectTap | ✅ |
 | Review submission | `016ce0ae…` ‏`UNRESOLVED_ISSUES`, ‏item ‏`REJECTED` → **Reply + Resubmit** באותה הגשה | 👤 |
@@ -74,7 +77,7 @@
 ## הגירה מ-Firebase ל-Supabase
 - **just-in-time claim** (`RELEASE_PLAN_1.1.0.he.md` §9ב): קריאה עדכנית מ-Firestore עם ה-token של השחקן, ו-claim באותה טרנזקציה.
 - **בדיקות מקומיות:** ‏pgTAP ‏70/70, ‏E2E ‏10/10, כולל 8 תרחישי JIT ו-moderation.
-- **לא נפרס לענן.**
+- **פרוס בענן** (14.11.2026). הנתונים לא השתנו, והתקבל 401 בלי JWT.
 - `import-legacy.sh` (‏upsert בטרנזקציה אחת) נשאר כגיבוי.
 - Firebase לא נכתב. **Rollback ל-Firebase נשמר.**
 
