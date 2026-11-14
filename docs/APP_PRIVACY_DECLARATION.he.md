@@ -54,6 +54,10 @@ Apple מאחדת את כל ה-privacy manifests שבתוך ה-build. ה-manifest
 ## אחרי Publish (בדיקה)
 1. בדף החנות: "Data Used to Track You" = **Identifiers** בלבד.
 2. "Data Linked to You": ‏Contact Info (Name, Email), ‏Identifiers, ‏Location, ‏User Content, ‏Usage Data.
+3. "Data Not Linked to You": ‏Diagnostics.
+4. Privacy Policy URL: ‏`https://oyaholding.github.io/PerfectTap/` (‏HTTP 200).
+
+**אומת שוב ב-14.11.2026** בדף ה-App Store הציבורי (us): כל ארבעת הסעיפים תואמים. Track = Identifiers. ‏Not Linked = Diagnostics בלבד.
 
 ## AdMob: הודעת GDPR (13.11.2026)
 - **פורסמה (13.11.2026, באישור הבעלים) ונבדקה באפליקציה:** "PerfectTap - GDPR consent (EEA, UK, CH)".
@@ -64,6 +68,5 @@ Apple מאחדת את כל ה-privacy manifests שבתוך ה-build. ה-manifest
   - הטופס מופיע ראשון, ואחריו בקשת ATT.
   - אחרי Do not consent + Ask App Not to Track המשחק עובד.
   - Settings → Privacy מציג Ad Tracking: Not allowed ו-**Privacy Choices**, שפותח את הטופס מחדש (ביטול הסכמה).
+- **אומת שוב ב-14.11.2026:** סטטוס "פורסמה", המתג פעיל, הודעה אחת פעילה (2 הצגות, שתיהן מבדיקות הסימולטור).
 - 🧪 לא נבדק במכשיר אמיתי באזור EEA.
-3. "Data Not Linked to You": ‏Diagnostics.
-4. Privacy Policy URL: ‏`https://oyaholding.github.io/PerfectTap/` (‏HTTP 200).

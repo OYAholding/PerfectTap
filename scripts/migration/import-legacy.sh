@@ -15,10 +15,20 @@ esac
 if [[ "$SUPABASE_DB_URL" != *"$EXPECTED_REF"* ]]; then
   echo "Refusing: SUPABASE_DB_URL does not reference $EXPECTED_REF" >&2; exit 2
 fi
-psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<SQL
-\copy legacy.raw_docs (collection, doc_id, parent_id, data) from '$CSV' csv
+# Re-runnable: a fresh export is staged in a temp table and upserted into legacy.raw_docs
+# (a plain \copy into raw_docs fails on the second run with raw_docs_pkey). legacy.ingest()
+# then refreshes unclaimed players only. One transaction: any error leaves the DB unchanged.
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction <<SQL
+create temp table raw_import (like legacy.raw_docs including defaults) on commit drop;
+\copy raw_import (collection, doc_id, parent_id, data) from '$CSV' csv
+insert into legacy.raw_docs (collection, doc_id, parent_id, data)
+select collection, doc_id, parent_id, data from raw_import
+on conflict (collection, parent_id, doc_id) do update set data = excluded.data
+  where legacy.raw_docs.data is distinct from excluded.data;
 select legacy.ingest();
-select (select count(*) from legacy.players) as players,
+select (select count(*) from raw_import) as rows_in_export,
+       (select count(*) from legacy.players) as players,
        (select count(*) from legacy.friendships) as friendships,
-       (select count(*) from legacy.leaderboard) as leaderboard_rows;
+       (select count(*) from legacy.leaderboard) as leaderboard_rows,
+       (select count(*) from private.legacy_claims) as claims;
 SQL
