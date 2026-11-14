@@ -1,11 +1,9 @@
 # App Review response — Guideline 5.1.2(i) (final text, ready to send)
 
-> **Status (14.11.2026): ready to send, not sent.** Done: build 1.1.0 (3) is attached to version 1.1.0 (`VALID`,
+> **Status (14.11.2026): final, approved by the owner for sending.** Done: build 1.1.0 (3) is attached to version 1.1.0 (`VALID`,
 > export compliance `false`). App Privacy is published (the public App Store page shows it). The AdMob GDPR message is published.
 > Review Notes are updated in App Store Connect (below).
-> **Real-device status:** build 3 has **not** been tested on a real device yet. Build 2 (same consent flow) passed the owner's
-> real-device test on 13.11.2026. The text below says exactly that. Recommended: run the build 3 checklist first
-> (`docs/RELEASE_1.1.0_READINESS.he.md`, "Real device"). Only after it passes, swap in the "after the build 3 test" sentence below.
+> **Real-device status:** the owner tested build 1.1.0 (3) on a real iPhone via TestFlight on 14.11.2026, and it passed.
 >
 > **Where to send:** App Store Connect → PerfectTap → App Review → the open submission (Guideline 5.1.2(i), `UNRESOLVED_ISSUES`) → **Reply**
 > with the text below. Then press **Resubmit to App Review** on the same submission. Build 3 is already attached, so no build change is needed.
@@ -39,11 +37,7 @@ Thank you for reviewing PerfectTap!. We have addressed the issue raised under Gu
 
 No login or demo account is needed.
 
-**Testing we performed:** the prompt, both answers, and a single prompt per install were tested on iPhone and iPad Air 11-inch (M3) simulators running the 1.1.0 code, including the EEA consent message. The same consent flow was tested on a real iPhone via TestFlight (build 2).
-
-<!-- Only after the owner's real-device check of build 3 passes, replace the paragraph above with:
 **Testing we performed:** the prompt, both answers, and a single prompt per install were tested on a real iPhone with this exact build (1.1.0 (3), via TestFlight), and on iPhone and iPad Air 11-inch (M3) simulators, including the EEA consent message.
--->
 
 Thank you,
 PerfectTap! team — PerfectTap@oyaholding.com
