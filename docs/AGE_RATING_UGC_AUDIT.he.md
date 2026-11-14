@@ -1,14 +1,18 @@
 # PerfectTap — דירוג גיל ו-UGC: שמות משתמש פומביים (עודכן 14.11.2026)
 
-> **המלצה (לפי התנהגות האפליקציה): לשנות ל-`User-Generated Content = Yes`.** ‏`Messaging and Chat` נשאר `No`.
-> הדירוג נשאר **4+**. **עוד לא שיניתי** ב-App Store Connect: השינוי ממתין לאישורך.
+> **בוצע (14.11.2026, באישור הבעלים):** ‏`User-Generated Content = Yes`, ‏`Social Media = No`, ‏`Messaging and Chat = No`.
+> הדירוג נשאר **4+** (נבדק ב-API). רק ב-appInfo של 1.1.0. ה-appInfo של 1.0 החיה לא השתנה.
+> **Social Media:** לפי Apple זו הפצה של UGC דרך feed, עם לייקים, תגובות או שיתופים. אין דבר כזה באפליקציה.
+> Apple דורשת לענות על השאלה הזו יחד עם UGC.
+> **סינון ומודרציה פרוסים ב-Supabase** (מיגרציה `20261114120000`). עמוד ה-Support עם דרך הדיווח חי.
 > **תיקון לגרסה הקודמת של המסמך:** המלצתי שם על No, ונימקתי בין השאר ב"פחות דרישות review". זה לא נימוק תקף.
 > ההצהרה צריכה לשקף את מה שהאפליקציה עושה.
 
 ## 1. מה מוצהר היום (API, 14.11.2026)
 | שדה | ערך |
 |---|---|
-| `userGeneratedContent` | `false` ← **מומלץ לשנות ל-`true`** |
+| `userGeneratedContent` | ~~`false`~~ → **`true`** (14.11.2026) |
+| `socialMedia` | ריק → **`false`** (14.11.2026) |
 | `messagingAndChat` | `false` (נכון) |
 | `advertising` | `true` (נכון) |
 | כל תיאורי התוכן | `NONE` (נכון) |
@@ -41,7 +45,7 @@
 - **לכן: UGC = Yes.** אין צ'אט ואין תקשורת ישירה, לכן **Messaging = No**.
 
 ## 5. מה הוכן כדי לעמוד ב-1.2 (בצד השרת, בלי build חדש)
-מיגרציה: ‏`20261114120000_jit_legacy_claim_and_username_moderation.sql`. נבדקה ב-stack המקומי. **עוד לא הועלתה לענן.**
+מיגרציה: ‏`20261114120000_jit_legacy_claim_and_username_moderation.sql`. נבדקה ב-stack המקומי, **ופרוסה בענן** (14.11.2026). בענן אין אף שם קיים שנחסם.
 
 | דרישה | מימוש | נבדק |
 |---|---|---|
@@ -57,7 +61,9 @@
 - Apple עלולה לבקש מנגנון בתוך האפליקציה. אם זה יקרה: כפתור Report בשורת לוח המובילים שקורא ל-`report_player` (מוכן בשרת), ו-build 4.
 - **ההמלצה שלי:** לא להעלות build 4 מראש. הסינון, ההסרה ופרטי הקשר פועלים בשרת, והתוכן מוגבל מאוד. את כפתור הדיווח להוסיף ב-1.1.1 בכל מקרה.
 
-## 7. מה צריך ממך
-1. אישור לפרוס את המיגרציה ואת ה-Edge Function ל-Supabase (‏`pgvtaotdyspwnpqtxpju`). כך הסינון פועל לפני ההגשה.
-2. אישור לשנות ב-App Store Connect: ‏User-Generated Content → **Yes**. הדירוג נשאר 4+.
-3. מיזוג ה-PR. הוא מפרסם את עדכון עמוד ה-Support ב-GitHub Pages.
+## 7. תפעול שוטף
+- **דיווח במייל:** ב-SQL Editor, למצוא את המשתמש לפי השם:
+  `select id from public.profiles where lower(username)=lower('<name>');`
+  ואז: `select private.moderate_username('<id>', 'email report <date>');`
+- **מונח חדש לחסימה:** `insert into private.blocked_username_terms (term, kind) values ('<term>', 'contains');`
+- **דיווחים מהאפליקציה (1.1.1 והלאה):** `select * from private.player_reports where resolved_at is null;`

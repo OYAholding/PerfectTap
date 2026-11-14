@@ -227,7 +227,14 @@ EXPECTED_REF=pgvtaotdyspwnpqtxpju SUPABASE_DB_URL='…' ./import-legacy.sh ~/per
 - **אחרי פריסה:** ב-Edge Function logs, שורה `firestore read failed, using snapshot` מסמנת שה-claim חזר ל-snapshot. סיבה אפשרית: App Check או כללים. זה עדיין בטוח, אבל צריך לבדוק.
 - **הייבוא התקופתי** נשאר כגיבוי, אבל כבר לא קריטי. מספיק לייבא ביום השחרור.
 
-**פריסה (👤 אישור. כתיבה ל-Supabase בענן, ‏`pgvtaotdyspwnpqtxpju` בלבד):**
+**פרוס (14.11.2026, באישור הבעלים):**
+- מיגרציה `20261114120000` (‏`db push`; ההיסטוריה תאמה, רק היא הייתה חסרה).
+- `claim-legacy-account` גרסה v2.
+- **לפני ואחרי:** ‏19 שחקני legacy, ‏0 claims, פרופיל אחד, 12 שורות leaderboard. אף נתון לא השתנה.
+- **הרשאות:** ‏`claim_legacy_profile_fresh`, ‏`legacy_refresh_player` ו-`moderate_username` לא נגישים ל-anon או ל-authenticated. הפונקציה מחזירה 401 בלי JWT.
+- 🧪 **עוד לא נבדק בענן:** claim אמיתי מול Firestore. ה-claim האמיתי הראשון יהיה הבדיקה: לחפש ב-Edge Function logs את השורה `firestore read failed`.
+
+**הפקודות ששימשו:**
 ```bash
 supabase link --project-ref pgvtaotdyspwnpqtxpju
 supabase db push                       # מיגרציה 20261114120000
