@@ -76,6 +76,8 @@ struct GameOverView: View {
         }
         .navigationBarHidden(true)
         .onAppear {
+            PerfRoundEnd.complete()
+            if Perf.probeEnabled { FrameMonitor.shared.context = "gameOver" }
             withAnimation(.easeOut(duration: 0.8).delay(0.4)) {
                 xpBarProgress = profile.xp > 0 ? Double(profile.xp) / Double(GameConfig.xpForLevel(profile.level)) : 0
             }
@@ -342,10 +344,7 @@ struct GameOverView: View {
                     gameOverAdFlowLog("Button tapped: SEE DUEL RESULTS")
                     navigateWithPostGameInterstitial {
                         gameOverAdFlowLog("Navigation start: SEE DUEL RESULTS")
-                        router.popToRoot()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            router.push(.duelResults)
-                        }
+                        router.replaceStack(with: [.duelResults])
                     }
                 } label: {
                     HStack(spacing: 10) {
@@ -372,12 +371,9 @@ struct GameOverView: View {
                     gameOverAdFlowLog("Button tapped: PLAY AGAIN")
                     navigateWithPostGameInterstitial {
                         gameOverAdFlowLog("Navigation start: PLAY AGAIN")
-                        // Pop to root first, then push game — prevents unbounded nav stack growth
+                        // One stack replacement — bounded stack, Home not re-mounted in between.
                         DuelContext.clear()
-                        router.popToRoot()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            router.push(.game(result.mode))
-                        }
+                        router.replaceStack(with: [.game(result.mode)])
                     }
                 } label: {
                     HStack(spacing: 10) {

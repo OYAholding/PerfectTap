@@ -98,6 +98,32 @@ final class AdManager: ObservableObject {
     private var interstitialAd: InterstitialAd?
     private var _adDismissDelegate: AdDismissDelegate?
     private let defaults = UserDefaults.standard
+
+    // MARK: - Gameplay-aware reloads (1.1.1)
+    // Ad loads do main-thread work in the Google Mobile Ads SDK. Reloads after a
+    // revive ad or a post-game interstitial used to start exactly as the
+    // resume countdown / next round began. They now wait for the round to end.
+    private var deferredLoads: [String: () -> Void] = [:]
+
+    /// Set by GameViewModel while a round is running (countdown/playing/revive).
+    var isGameplayActive = false {
+        didSet {
+            guard oldValue, !isGameplayActive else { return }
+            let loads = deferredLoads
+            deferredLoads.removeAll()
+            loads.values.forEach { $0() }
+        }
+    }
+
+    /// Runs `load` now, or — while a round is active, or when `untilRoundEnds`
+    /// is set — when the current/next round ends.
+    func loadWhenIdle(_ key: String, untilRoundEnds: Bool = false, _ load: @escaping () -> Void) {
+        if isGameplayActive || untilRoundEnds {
+            deferredLoads[key] = load
+        } else {
+            load()
+        }
+    }
     private let isFirstLaunchSession: Bool
 
     /// Whether the user purchased the no-ads IAP
@@ -317,10 +343,11 @@ final class AdManager: ObservableObject {
             }
         }
 
-        // Ad was consumed — clear it and preload the next one
+        // Ad was consumed — clear it and preload the next one (after the round
+        // if this was the in-game revive ad).
         self.rewardedAd = nil
         self.isRewardedAdReady = false
-        loadRewardedAd()
+        loadWhenIdle("rewarded") { [weak self] in self?.loadRewardedAd() }
 
         return didEarnReward
     }
@@ -391,8 +418,12 @@ final class AdManager: ObservableObject {
         // Ad object consumed — clear and preload
         self.interstitialAd = nil
         self.isInterstitialReady = false
+        // The interstitial is consumed right before the next round starts:
+        // preload it when that round ends (interstitials show every 3–4 runs).
         if AdConfig.isInterstitialConfigured {
-            loadInterstitialAd(reason: "post_interstitial_consumed")
+            loadWhenIdle("interstitial", untilRoundEnds: true) { [weak self] in
+                self?.loadInterstitialAd(reason: "post_interstitial_consumed")
+            }
         }
         adLog("showInterstitialAd completed placement=\(placement.rawValue) didShow=\(didShow)")
         return didShow

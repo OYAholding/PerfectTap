@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var incomingInviteListener: Any? = nil
     @State private var outgoingInviteListener: Any? = nil
     @State private var badgeRefreshTask: Task<Void, Never>? = nil
+    @State private var cloudRefreshTask: Task<Void, Never>? = nil
 
     var body: some View {
         ZStack {
@@ -102,20 +103,26 @@ struct HomeView: View {
         }
         .navigationBarHidden(true)
         .onAppear {
+            if Perf.probeEnabled { FrameMonitor.shared.context = "home" }
             profile = PlayerProfile.load() ?? PlayerProfile()
             themeManager.current = AppTheme.named(profile.equippedTheme)
             startBadgeListeners()
             // Cloud refresh in background; also retry unsent duel scores and
             // count results of duels the opponent finished meanwhile.
-            Task {
+            cloudRefreshTask?.cancel()
+            cloudRefreshTask = Task {
                 await DuelSettlement.settle()
-                if let updated = await Backend.shared.loadProfile() {
-                    profile = updated
-                    themeManager.current = AppTheme.named(profile.equippedTheme)
-                }
+                let updated = await Backend.shared.loadProfile()
+                // Home may already be covered by a game: changing the shared
+                // theme then re-rendered the whole game screen mid-round.
+                guard !Task.isCancelled, let updated else { return }
+                profile = updated
+                themeManager.current = AppTheme.named(profile.equippedTheme)
             }
         }
         .onDisappear {
+            cloudRefreshTask?.cancel()
+            cloudRefreshTask = nil
             stopBadgeListeners()
         }
     }

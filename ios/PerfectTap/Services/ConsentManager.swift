@@ -137,6 +137,10 @@ final class ConsentManager: ObservableObject {
     }
 
     /// Runs the consent flow once per launch. Call whenever the app becomes active:
+    /// Set by the app: true while a game round is on screen. The flow then stops
+    /// before showing any form/prompt and is retried later (not marked complete).
+    var isPresentationBlocked: @MainActor () -> Bool = { false }
+
     /// ATT can only be shown while the app is active, so an attempt made too early is retried.
     func gatherConsentIfNeeded() async {
         guard !(self === Self.shared && Self.isDisabledForTests), !isRunning, !hasCompleted else { return }
@@ -151,6 +155,7 @@ final class ConsentManager: ObservableObject {
         let updated = await Self.withTimeout(umpTimeout) {
             try await env.updateConsentInfo()
         }
+        if isPresentationBlocked() { return }
         if updated {
             // Presenting a form waits for the user, so it is not time-boxed.
             do { try await env.presentConsentFormIfRequired() } catch {
@@ -163,6 +168,7 @@ final class ConsentManager: ObservableObject {
         // 2. Apple ATT (only if never asked). If the system did not show the prompt because
         //    the app was not active, the status stays notDetermined and we retry next time.
         var tracking = environment.trackingStatus
+        if tracking == .notDetermined, isPresentationBlocked() { return }
         if tracking == .notDetermined {
             tracking = await environment.requestTrackingAuthorization()
         }

@@ -277,7 +277,7 @@ final class AuthViewModel: ObservableObject {
     /// Called after Auth + Firestore deletion is complete (or after best-effort fallback).
     func finishDeleteCleanup() {
         // Clear ALL local user data
-        UserDefaults.standard.removeObject(forKey: "perfecttap_player_profile")
+        PlayerProfile.clearSaved()
         UserDefaults.standard.removeObject(forKey: "perfecttap_device_uid")
         UserDefaults.standard.removeObject(forKey: "perfecttap_sound")
         UserDefaults.standard.removeObject(forKey: "perfecttap_music")

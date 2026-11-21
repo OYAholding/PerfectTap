@@ -820,8 +820,10 @@ final class RealtimeQueryListener<Value>: RealtimeListenerHandle {
         let statuses = channel.statusChange
 
         task = Task { @MainActor [weak self] in
-            // Initial authoritative state.
-            deliver(await reload())
+            // Initial authoritative state (skip if the listener was removed meanwhile).
+            let initial = await reload()
+            guard !Task.isCancelled else { return }
+            deliver(initial)
 
             await withTaskGroup(of: Void.self) { group in
                 // Change events → reload (coalesced: one reload in flight at a time).
