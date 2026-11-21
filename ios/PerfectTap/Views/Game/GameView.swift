@@ -21,10 +21,16 @@ struct GameView: View {
             themeManager.current.backgroundColor
                 .ignoresSafeArea()
 
+            // gameContent stays mounted under the countdown overlay. Swapping it
+            // in at GO built the tap bar / HUD for the first time on the first
+            // frame of play (measured: one ~620–720 ms stall right at GO in the
+            // first round after launch, docs/perf). Now it is built once, behind
+            // the 3-2-1, and never rebuilt at GO or after a resume countdown.
+            gameContent
+                .accessibilityHidden(isCountingDown)
+
             if case .countdown(let n) = vm.phase {
                 countdownOverlay(number: n)
-            } else {
-                gameContent
             }
 
             // Particle effects for PERFECT/GREAT
@@ -41,19 +47,28 @@ struct GameView: View {
             }
         }
         .navigationBarHidden(true)
+        // The TAP button sits just above the home indicator: make the first
+        // edge swipe not leave/pause the game (each pause forced a 3-2-1 that
+        // felt like a freeze).
+        .defersSystemGestures(on: .bottom)
+        .persistentSystemOverlays(.hidden)
         .onAppear {
-            guard !hasBootstrapped else { return }
+            guard !hasBootstrapped else {
+                // Re-appeared after a full-screen cover: restart a stopped clock.
+                vm.resumeAfterViewReappeared()
+                if vm.phase != .finished { SoundEngine.shared.startBgMusic() }
+                return
+            }
             hasBootstrapped = true
+            let bootstrap = Perf.begin("game.viewBootstrap")
+            defer { bootstrap.end() }
             let profile = PlayerProfile.load() ?? PlayerProfile()
             equippedTapFX = profile.equippedTapFX
             vm.soundEngine = SoundEngine.shared
             vm.hapticsEngine = HapticsEngine.shared
             vm.onGameFinished = { [weak router] result in
-                // Pop to root first, then push game over — prevents nav stack growth
-                router?.popToRoot()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    router?.push(.gameOver(result))
-                }
+                // Single stack replacement: bounded stack, Home is never re-shown.
+                router?.replaceStack(with: [.gameOver(result)])
             }
             vm.setup(mode: mode, profile: profile)
             SoundEngine.shared.startBgMusic()
@@ -95,6 +110,11 @@ struct GameView: View {
         } message: {
             Text("Your progress will be lost.")
         }
+    }
+
+    private var isCountingDown: Bool {
+        if case .countdown = vm.phase { return true }
+        return false
     }
 
     // MARK: - Main game content

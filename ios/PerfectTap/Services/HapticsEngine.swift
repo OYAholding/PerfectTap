@@ -17,8 +17,9 @@ final class HapticsEngine {
 
     private init() {
         _hapticsEnabled = UserDefaults.standard.object(forKey: "perfecttap_haptics") as? Bool ?? true
-        setupGenerators()
-        prepareHaptics()
+        Perf.measure("haptics.setup") {
+            setupGenerators()
+        }
     }
 
     private func setupGenerators() {
@@ -30,8 +31,10 @@ final class HapticsEngine {
         }
     }
 
-    private func prepareHaptics() {
-        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
+    /// Started lazily: the Core Haptics engine used to be created and kept
+    /// running from the first game although nothing played a pattern.
+    private func prepareHapticsIfNeeded() {
+        guard chEngine == nil, CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         chEngine = try? CHHapticEngine()
         try? chEngine?.start()
         chEngine?.resetHandler = { [weak self] in
@@ -41,6 +44,9 @@ final class HapticsEngine {
     }
 
     /// Call when user changes haptics setting
+    /// Touch at app launch so generator setup happens before the first game.
+    func warmUp() {}
+
     func refreshSettings() {
         _hapticsEnabled = UserDefaults.standard.object(forKey: "perfecttap_haptics") as? Bool ?? true
     }
@@ -56,6 +62,7 @@ final class HapticsEngine {
     // Custom haptic for PERFECT hit — stronger, distinctive feel
     func perfectHit() {
         guard isHapticsEnabled else { return }
+        prepareHapticsIfNeeded()
         guard let engine = chEngine,
               CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
             impact(.medium)

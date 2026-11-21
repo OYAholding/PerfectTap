@@ -262,6 +262,12 @@ enum Backend {
     static let shared: GameBackend = {
         // Unit tests must never create users or write data in real projects.
         if isRunningUnitTests { return OfflineBackend.shared }
+        #if DEBUG
+        // Perf / QA UI runs: never create anonymous users in the real project.
+        if ProcessInfo.processInfo.arguments.contains("-PTUITestOfflineBackend") {
+            return OfflineBackend.shared
+        }
+        #endif
         switch kind {
         case .supabase:
             if let service = SupabaseService.makeShared() { return service }

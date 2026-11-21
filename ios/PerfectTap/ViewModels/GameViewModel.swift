@@ -205,6 +205,12 @@ final class GameViewModel: ObservableObject {
         }
 
         phase = .countdown(Self.countdownStart)
+        if Perf.probeEnabled {
+            FrameMonitor.shared.noteGameStarted()
+            FrameMonitor.shared.isInGameplay = true
+            FrameMonitor.shared.context = "countdown:\(mode.rawValue)"
+        }
+        AdManager.shared.isGameplayActive = true
         soundEngine?.play(.countdown)
         // The display link drives the countdown too, so it honours suspension
         // (previously an asyncAfter chain kept running in the background).
@@ -252,7 +258,10 @@ final class GameViewModel: ObservableObject {
             duelSessionTask = nil
         }
         phase = .playing
-        AnalyticsService.logGameStart(mode: mode.rawValue)
+        if Perf.probeEnabled { FrameMonitor.shared.context = "playing:\(mode.rawValue)" }
+        Perf.measure("analytics.gameStart") {
+            AnalyticsService.logGameStart(mode: mode.rawValue)
+        }
     }
 
     /// playing → revive | finished.
@@ -308,7 +317,15 @@ final class GameViewModel: ObservableObject {
         guard phase != .finished else { return }
         phase = .finished
         displayLink?.invalidate()
-        finalizeAndReport()
+        if Perf.probeEnabled {
+            FrameMonitor.shared.isInGameplay = false
+            FrameMonitor.shared.context = "roundEnd:\(mode.rawValue)"
+        }
+        AdManager.shared.isGameplayActive = false
+        PerfRoundEnd.pending = Perf.begin("nav.roundEndToGameOver")
+        Perf.measure("game.finish") {
+            finalizeAndReport()
+        }
     }
 
     // MARK: - CADisplayLink game loop (60fps)
@@ -387,7 +404,7 @@ final class GameViewModel: ObservableObject {
         if mode == .mirror {
             let flipChance = min(GameConfig.mirrorFlipCap,
                                  GameConfig.mirrorBaseFlipChance + elapsed * GameConfig.mirrorFlipGrowth)
-            if Double.random(in: 0...1) < flipChance {
+            if Double.random(in: 0...1) < Self.mirrorFlipProbability(perFrameAt60Hz: flipChance, delta: delta) {
                 directionRef *= -1
             }
             speedRef = max(GameConfig.mirrorSpeedFloor,
@@ -407,8 +424,10 @@ final class GameViewModel: ObservableObject {
             let elapsed = playElapsed - timerBonus
             let duration = mode.timerDuration
             let remaining = max(0, duration - elapsed)
-            // Only publish when it changes visually (every ~0.1s) to reduce re-renders
-            if abs(timeLeft - remaining) >= 0.09 || remaining <= 0 {
+            // Publish only when the displayed whole second changes: the HUD shows
+            // ceil(timeLeft), and every publish re-renders the whole GameView
+            // (was ~11×/s, now 1×/s).
+            if ceil(timeLeft) != ceil(remaining) || remaining <= 0 {
                 timeLeft = remaining
             }
 
@@ -431,6 +450,15 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    /// The Mirror flip chance was tuned as a per-frame probability at 60 fps.
+    /// Applied per frame it made difficulty depend on frame rate (120 Hz =
+    /// twice the flips; a dropped frame = fewer). Convert to the equivalent
+    /// probability for the real elapsed time: identical at exactly 60 fps.
+    nonisolated static func mirrorFlipProbability(perFrameAt60Hz p: Double, delta: Double) -> Double {
+        guard p > 0, delta > 0 else { return 0 }
+        return 1 - pow(1 - min(p, 1), delta * 60)
+    }
+
     // MARK: - Tap handler
     /// - Parameter touchTimestamp: the UITouch timestamp (same clock as
     ///   CADisplayLink: CACurrentMediaTime). When provided, the tap is scored at
@@ -443,6 +471,7 @@ final class GameViewModel: ObservableObject {
         let tapStartedAt = CACurrentMediaTime()
         defer {
             let tapElapsedMs = (CACurrentMediaTime() - tapStartedAt) * 1000
+            if Perf.probeEnabled { FrameMonitor.shared.recordSpan("game.tap", ms: tapElapsedMs) }
             if tapElapsedMs >= perfTapThresholdMs {
                 print("[Perf][Tap] \(String(format: "%.2f", tapElapsedMs))ms mode=\(mode.rawValue)")
             }
@@ -764,10 +793,30 @@ final class GameViewModel: ObservableObject {
         onGameFinished?(result)
     }
 
+    /// True when the clock is not running although the round is unfinished —
+    /// e.g. a full-screen cover (consent form, ad) made GameView disappear and
+    /// `cleanup()` stopped the display link.
+    var needsLoopRestart: Bool {
+        phase != .finished && displayLink == nil
+    }
+
+    /// GameView re-appeared after an interruption: restart the clock. A round
+    /// that was mid-play gets the usual short 3-2-1 instead of resuming instantly.
+    /// Previously nothing restarted the link and the screen stayed frozen.
+    func resumeAfterViewReappeared() {
+        guard needsLoopRestart else { return }
+        if Perf.probeEnabled { FrameMonitor.shared.isInGameplay = true }
+        AdManager.shared.isGameplayActive = true
+        startGameLoop()
+        if phase == .playing { startResumeCountdown() }
+    }
+
     // MARK: - Cleanup
     /// View teardown. Stops the clock; the display link was the only driver of
     /// countdown and gameplay, so nothing can advance the phase afterwards.
     func cleanup() {
+        if Perf.probeEnabled { FrameMonitor.shared.isInGameplay = false }
+        AdManager.shared.isGameplayActive = false
         displayLink?.invalidate()
         displayLink = nil
         displayLinkProxy = nil
@@ -783,6 +832,7 @@ final class GameViewModel: ObservableObject {
 
     func appDidBecomeActive() {
         guard isSuspended else { return }
+        if Perf.probeEnabled { FrameMonitor.shared.context = "resumed:\(mode.rawValue)" }
         isSuspended = false
         lastTimestamp = 0   // first frame after resume has delta 0
         if phase == .playing { startResumeCountdown() }
@@ -810,6 +860,16 @@ final class GameViewModel: ObservableObject {
         if abs(tapBarPerfectZoneScale - newScale) > 0.0001 {
             tapBarPerfectZoneScale = newScale
         }
+    }
+}
+
+/// Holds the open "round end → Game Over visible" interval across views.
+@MainActor
+enum PerfRoundEnd {
+    static var pending: PerfInterval?
+    static func complete() {
+        pending?.end()
+        pending = nil
     }
 }
 

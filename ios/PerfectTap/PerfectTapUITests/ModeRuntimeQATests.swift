@@ -43,6 +43,11 @@ final class ModeRuntimeQATests: XCTestCase {
         // Real full-screen ads cannot be dismissed by XCUITest; real-ad revive is a
         // manual TestFlight check (docs/RELEASE_PLAN_1.1.0.he.md §6 #7).
         app.launchArguments += ["-PTUITestNoAds"]
+        // Opt-in: `TEST_RUNNER_PT_QA_OFFLINE=1 xcodebuild test …` runs the matrix
+        // against the offline backend (no anonymous user created in Supabase).
+        if ProcessInfo.processInfo.environment["PT_QA_OFFLINE"] == "1" {
+            app.launchArguments += ["-PTUITestOfflineBackend"]
+        }
         app.launch()
         completeOnboardingIfNeeded()
         dismissTutorialIfNeeded()
