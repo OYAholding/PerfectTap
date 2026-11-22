@@ -55,6 +55,8 @@ struct ParticleEffectView: View {
     let accuracy: TapAccuracy?
     let trigger: UUID   // changes when a new hit occurs
     let equippedFX: String
+    /// Premium skin colours, used while the default Tap FX is equipped.
+    var themeColors: [Color]? = nil
 
     @State private var particles: [Particle] = []
     @State private var startTime: Date = .now
@@ -69,6 +71,11 @@ struct ParticleEffectView: View {
         Color(red: 0.22, green: 0.87, blue: 0.98),
         Color(red: 0.36, green: 0.87, blue: 0.98)
     ]
+
+    /// Colours a Tap FX shows on PERFECT (for the shop preview).
+    static func previewColors(for fxId: String) -> [Color] {
+        TapFXPalette.colors(for: fxId, accuracy: .perfect)
+    }
 
     private var shouldAnimate: Bool {
         accuracy == .perfect || accuracy == .great
@@ -122,7 +129,12 @@ struct ParticleEffectView: View {
         }
 
         let count = acc == .perfect ? 20 : 10
-        let colors = TapFXPalette.colors(for: equippedFX, accuracy: acc)
+        let colors: [Color]
+        if let themeColors, equippedFX == "fx_default" || equippedFX.isEmpty {
+            colors = themeColors
+        } else {
+            colors = TapFXPalette.colors(for: equippedFX, accuracy: acc)
+        }
 
         startTime = .now
         particles = (0..<count).map { _ in

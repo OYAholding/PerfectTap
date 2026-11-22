@@ -6,8 +6,9 @@ import StoreKit
 // These product IDs must match what you configure in App Store Connect.
 // Until you create them there, StoreKit will return empty products.
 //
-// To test locally: create a StoreKit Configuration file in Xcode
-// (File → New → StoreKit Configuration File) and add these products.
+// Local testing: PerfectTap/PerfectTap.storekit lists every product (coin packs,
+// Remove Ads, premium skins). Select it in the scheme (Run › Options › StoreKit
+// Configuration) to buy with fake money in the simulator.
 
 enum CoinPackID: String, CaseIterable {
     case small  = "com.perfecttap.coins.500"
@@ -77,144 +78,171 @@ enum CoinPackPurchaseResult: Equatable {
     case failed(message: String)
 }
 
+// MARK: - Premium purchase result
+
+enum PremiumPurchaseResult: Equatable {
+    case success
+    case pending
+    case cancelled
+    /// Paid, but the server could not be reached: delivered automatically later.
+    case deferred
+    case failed(message: String)
+}
+
 // MARK: - PurchaseManager (StoreKit 2)
+//
+// Delivery pipeline for every transaction, whatever its source (purchase
+// flow, Transaction.updates, Transaction.unfinished at launch, restore):
+//   StoreKit on-device verification → server verification (when enabled) →
+//   EntitlementLedger (exactly once per transaction ID) → finish().
+// A transaction is finished only after it was delivered or rejected, so a
+// crash / network loss in between is retried from Transaction.unfinished.
 
 @MainActor
 final class PurchaseManager: ObservableObject {
 
     static let shared = PurchaseManager()
 
-    // All available products fetched from App Store
     @Published private(set) var coinProducts: [Product] = []
     @Published private(set) var specialProducts: [Product] = []
+    @Published private(set) var premiumProducts: [Product] = []
     @Published private(set) var purchaseInProgress: Bool = false
     @Published private(set) var lastError: String? = nil
     @Published private(set) var lastCoinPackCreditEvent: CoinPackCreditEvent? = nil
 
-    private var transactionListener: Task<Void, Error>?
-    private let processedTransactionIDsKey = "perfecttap_processed_iap_transaction_ids"
+    private var transactionListener: Task<Void, Never>?
+    private var ledger: EntitlementLedger
+    private let defaults: UserDefaults
+    var verifier: PurchaseVerifying
 
-    private init() {
-        transactionListener = listenForTransactions()
+    init(defaults: UserDefaults = .standard, verifier: PurchaseVerifying? = nil) {
+        self.defaults = defaults
+        self.ledger = EntitlementLedger.load(from: defaults)
+        self.verifier = verifier ?? PurchaseManager.defaultVerifier()
+    }
+
+    private static func defaultVerifier() -> PurchaseVerifying {
+        if FeatureFlags.serverPurchaseVerification, Backend.shared is SupabaseService {
+            return SupabasePurchaseVerifier()
+        }
+        return OnDeviceVerifier()
     }
 
     deinit {
         transactionListener?.cancel()
     }
 
-    // MARK: - Fetch Products
+    // MARK: - Launch
 
-    /// Call on app launch to load available products from App Store Connect.
+    /// Call once at launch: listen for updates, deliver unfinished
+    /// transactions, load products.
+    func start() async {
+        if transactionListener == nil { transactionListener = listenForTransactions() }
+        await processUnfinishedTransactions()
+        await loadProducts()
+    }
+
+    /// Kept for existing callers.
     func loadProducts() async {
-        let allIDs = CoinPackID.allCases.map(\.rawValue) + SpecialProductID.allCases.map(\.rawValue)
+        if transactionListener == nil { transactionListener = listenForTransactions() }
+        let coinIDs = CoinPackID.allCases.map(\.rawValue)
+        let specialIDs = SpecialProductID.allCases.map(\.rawValue)
+        let premiumIDs = ShopItem.premiumProductIDs
         do {
-            let products = try await Product.products(for: Set(allIDs))
-            coinProducts = products
-                .filter { p in CoinPackID.allCases.map(\.rawValue).contains(p.id) }
-                .sorted { $0.price < $1.price }
-            specialProducts = products
-                .filter { p in SpecialProductID.allCases.map(\.rawValue).contains(p.id) }
+            let products = try await Product.products(for: Set(coinIDs + specialIDs + premiumIDs))
+            coinProducts = products.filter { coinIDs.contains($0.id) }.sorted { $0.price < $1.price }
+            specialProducts = products.filter { specialIDs.contains($0.id) }
+            premiumProducts = products.filter { premiumIDs.contains($0.id) }
         } catch {
             lastError = "Failed to load products: \(error.localizedDescription)"
         }
     }
 
+    func product(for item: ShopItem) -> Product? {
+        guard let id = item.premiumProductID else { return nil }
+        return premiumProducts.first { $0.id == id }
+    }
+
     // MARK: - Purchase
 
-    /// Purchase a coin pack.
-    /// - Returns: explicit purchase state + credited coins when completed.
     func purchaseCoinPack(_ packID: CoinPackID) async -> CoinPackPurchaseResult {
+        guard FeatureFlags.iapEnabled else { return .failed(message: "Purchases are not available yet.") }
         guard let product = coinProducts.first(where: { $0.id == packID.rawValue }) else {
-            let message = "Product not found"
-            lastError = message
-            return .failed(message: message)
+            lastError = "Product not found"
+            return .failed(message: "Product not found")
         }
-        let outcome = await purchase(product)
-        switch outcome {
-        case .verified(let transaction):
-            let applyResult = applyTransactionEntitlementsIfNeeded(transaction, origin: .purchaseFlow)
-            await transaction.finish()
-            if let credited = applyResult.coinsCredited, credited > 0 {
-                let delivery: CoinPackPurchaseDelivery = applyResult.status == .appliedNow
-                    ? .creditedNow
-                    : .alreadyCredited
-                return .success(creditedCoins: credited, delivery: delivery)
-            }
-            if let mapped = coinAmount(for: transaction.productID), mapped > 0 {
-                return .success(creditedCoins: mapped, delivery: .alreadyCredited)
-            }
-            let message = "Purchase completed, but coin credit mapping is missing."
-            lastError = message
-            return .failed(message: message)
-        case .pending:
-            lastError = "Purchase pending approval"
+        switch await purchase(product) {
+        case .delivered(let effects, let alreadyDelivered):
+            let credited = effects.reduce(0) { if case .creditCoins(let n) = $1 { return $0 + n } else { return $0 } }
+            if credited > 0 { return .success(creditedCoins: credited, delivery: .creditedNow) }
+            if alreadyDelivered { return .success(creditedCoins: packID.coinAmount, delivery: .alreadyCredited) }
+            return .failed(message: "Purchase completed, but no coins were credited.")
+        case .deferred:
             return .pending
-        case .cancelled:
-            return .cancelled
+        case .pending:   return .pending
+        case .cancelled: return .cancelled
         case .failed(let message):
             lastError = message
             return .failed(message: message)
         }
     }
 
-    /// Purchase the remove-ads product. Returns true on success.
     func purchaseRemoveAds() async -> Bool {
-        guard let product = specialProducts.first(where: { $0.id == SpecialProductID.removeAds.rawValue }) else {
+        guard FeatureFlags.iapEnabled,
+              let product = specialProducts.first(where: { $0.id == SpecialProductID.removeAds.rawValue }) else {
             lastError = "Product not found"
             return false
         }
-        let outcome = await purchase(product)
-        switch outcome {
-        case .verified(let transaction):
-            _ = applyTransactionEntitlementsIfNeeded(transaction, origin: .purchaseFlow)
-            await transaction.finish()
-            return true
-        case .pending:
-            lastError = "Purchase pending approval"
-            return false
-        case .cancelled:
-            return false
-        case .failed(let message):
-            lastError = message
-            return false
+        if case .delivered = await purchase(product) { return true }
+        return false
+    }
+
+    func purchasePremium(_ item: ShopItem) async -> PremiumPurchaseResult {
+        guard FeatureFlags.iapEnabled || FeatureFlags.premiumSkinsVisible else {
+            return .failed(message: "Purchases are not available yet.")
+        }
+        guard let product = product(for: item) else { return .failed(message: "This item is not available right now.") }
+        switch await purchase(product) {
+        case .delivered:           return .success
+        case .deferred:            return .deferred
+        case .pending:             return .pending
+        case .cancelled:           return .cancelled
+        case .failed(let message): return .failed(message: message)
         }
     }
 
-    private enum PurchaseOutcome {
-        case verified(Transaction)
+    private enum PurchaseFlowOutcome {
+        case delivered([EntitlementEffect], alreadyDelivered: Bool)
+        case deferred
         case pending
         case cancelled
         case failed(String)
     }
 
-    private enum EntitlementOrigin {
-        case purchaseFlow
-        case transactionListener
-        case restore
-    }
-
-    private enum EntitlementApplyStatus {
-        case appliedNow
-        case alreadyApplied
-        case notApplicable
-    }
-
-    private struct EntitlementApplyResult {
-        let status: EntitlementApplyStatus
-        let coinsCredited: Int?
-    }
-
-    private func purchase(_ product: Product) async -> PurchaseOutcome {
+    private func purchase(_ product: Product) async -> PurchaseFlowOutcome {
         purchaseInProgress = true
         lastError = nil
         defer { purchaseInProgress = false }
 
+        var options: Set<Product.PurchaseOption> = []
+        // Ties the transaction to the player's account so the server ledger and
+        // App Store Server Notifications can be matched to the right profile.
+        if let uid = Backend.shared.currentUID, let token = UUID(uuidString: uid) {
+            options.insert(.appAccountToken(token))
+        }
         do {
-            let result = try await product.purchase()
+            let result = try await product.purchase(options: options)
             switch result {
             case .success(let verification):
-                let transaction = try checkVerified(verification)
-                return .verified(transaction)
+                guard case .verified(let transaction) = verification else {
+                    return .failed("The purchase could not be verified.")
+                }
+                let wasProcessed = ledger.hasProcessed(transaction.id)
+                switch await deliver(transaction, jws: verification.jwsRepresentation, origin: .purchaseFlow) {
+                case .delivered(let effects): return .delivered(effects, alreadyDelivered: wasProcessed)
+                case .rejected(let reason):   return .failed("The purchase was rejected: \(reason)")
+                case .deferred:               return .deferred
+                }
             case .userCancelled:
                 return .cancelled
             case .pending:
@@ -227,109 +255,93 @@ final class PurchaseManager: ObservableObject {
         }
     }
 
-    // MARK: - Restore Purchases
+    // MARK: - Restore
 
+    /// Re-delivers non-consumables (Remove Ads, premium skins) the Apple ID owns.
     func restorePurchases() async {
-        // Iterate through all current entitlements
+        try? await AppStore.sync()
         for await result in Transaction.currentEntitlements {
-            guard let transaction = try? checkVerified(result) else { continue }
-            _ = applyTransactionEntitlementsIfNeeded(transaction, origin: .restore)
-            await transaction.finish()
+            guard case .verified(let transaction) = result else { continue }
+            _ = await deliver(transaction, jws: result.jwsRepresentation, origin: .restore)
         }
     }
 
-    // MARK: - Transaction Listener
+    // MARK: - Background sources
 
-    private func listenForTransactions() -> Task<Void, Error> {
-        Task.detached {
+    private func processUnfinishedTransactions() async {
+        for await result in Transaction.unfinished {
+            guard case .verified(let transaction) = result else { continue }
+            _ = await deliver(transaction, jws: result.jwsRepresentation, origin: .transactionListener)
+        }
+    }
+
+    private func listenForTransactions() -> Task<Void, Never> {
+        Task { [weak self] in
             for await result in Transaction.updates {
-                let transaction: Transaction
-                switch result {
-                case .verified(let t): transaction = t
-                case .unverified: continue
-                }
-                await MainActor.run {
-                    _ = self.applyTransactionEntitlementsIfNeeded(transaction, origin: .transactionListener)
-                }
-                await transaction.finish()
+                guard case .verified(let transaction) = result else { continue }
+                _ = await self?.deliver(transaction, jws: result.jwsRepresentation, origin: .transactionListener)
             }
         }
     }
 
-    private func applyTransactionEntitlementsIfNeeded(
-        _ transaction: Transaction,
-        origin: EntitlementOrigin
-    ) -> EntitlementApplyResult {
-        let txID = String(transaction.id)
-        if hasProcessedTransaction(txID) {
-            return EntitlementApplyResult(
-                status: .alreadyApplied,
-                coinsCredited: coinAmount(for: transaction.productID)
-            )
-        }
+    // MARK: - Delivery
 
-        if transaction.productID == SpecialProductID.removeAds.rawValue {
-            EconomyManager.shared.grantNoAds()
-            markTransactionProcessed(txID)
-            return EntitlementApplyResult(status: .appliedNow, coinsCredited: nil)
-        }
-
-        if let coins = coinAmount(for: transaction.productID) {
-            EconomyManager.shared.addCoins(coins, source: .purchase)
-            markTransactionProcessed(txID)
-            lastCoinPackCreditEvent = CoinPackCreditEvent(
-                productID: transaction.productID,
-                coins: coins,
-                origin: creditEventOrigin(for: origin)
-            )
-            return EntitlementApplyResult(status: .appliedNow, coinsCredited: coins)
-        }
-
-        return EntitlementApplyResult(status: .notApplicable, coinsCredited: nil)
+    enum DeliveryOutcome: Equatable {
+        case delivered([EntitlementEffect])
+        case rejected(String)
+        case deferred
     }
 
-    private func creditEventOrigin(for origin: EntitlementOrigin) -> CoinPackCreditEventOrigin {
+    private enum Origin { case purchaseFlow, transactionListener, restore }
+
+    private func deliver(_ transaction: Transaction, jws: String, origin: Origin) async -> DeliveryOutcome {
+        let event = PurchaseEvent(transactionID: transaction.id, productID: transaction.productID,
+                                  isRevoked: transaction.revocationDate != nil)
+        let outcome = await deliver(event, jws: jws)
+        if outcome != .deferred { await transaction.finish() }
+        if case .delivered(let effects) = outcome {
+            for case .creditCoins(let coins) in effects {
+                lastCoinPackCreditEvent = CoinPackCreditEvent(productID: event.productID, coins: coins,
+                                                              origin: creditOrigin(origin))
+            }
+        }
+        return outcome
+    }
+
+    /// StoreKit-free core of the pipeline (unit-tested with a fake verifier).
+    func deliver(_ event: PurchaseEvent, jws: String) async -> DeliveryOutcome {
+        // Refunds are applied without asking the server: the server learns
+        // about them from App Store Server Notifications V2.
+        if !event.isRevoked, !ledger.hasProcessed(event.transactionID) {
+            switch await verifier.verify(jws: jws) {
+            case .verified: break
+            case .rejected(let reason): return .rejected(reason)
+            case .unavailable: return .deferred
+            }
+        }
+        let effects = ledger.process(event)
+        ledger.save(to: defaults)
+        effects.forEach(EconomyManager.shared.apply)
+        return .delivered(effects)
+    }
+
+    private func creditOrigin(_ origin: Origin) -> CoinPackCreditEventOrigin {
         switch origin {
-        case .purchaseFlow:
-            return .purchaseFlow
-        case .transactionListener:
-            return .transactionListener
-        case .restore:
-            return .restore
+        case .purchaseFlow:        return .purchaseFlow
+        case .transactionListener: return .transactionListener
+        case .restore:             return .restore
         }
-    }
-
-    private func coinAmount(for productID: String) -> Int? {
-        CoinPackID(rawValue: productID)?.coinAmount
-    }
-
-    private func hasProcessedTransaction(_ transactionID: String) -> Bool {
-        let ids = UserDefaults.standard.stringArray(forKey: processedTransactionIDsKey) ?? []
-        return ids.contains(transactionID)
-    }
-
-    private func markTransactionProcessed(_ transactionID: String) {
-        var ids = UserDefaults.standard.stringArray(forKey: processedTransactionIDsKey) ?? []
-        guard !ids.contains(transactionID) else { return }
-        ids.append(transactionID)
-        if ids.count > 500 {
-            ids.removeFirst(ids.count - 500)
-        }
-        UserDefaults.standard.set(ids, forKey: processedTransactionIDsKey)
     }
 
     func consumeLastCoinPackCreditEvent() {
         lastCoinPackCreditEvent = nil
     }
+}
 
-    // MARK: - Verification
-
-    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
-        switch result {
-        case .unverified(_, let error):
-            throw error
-        case .verified(let safe):
-            return safe
-        }
+/// Production verifier (enabled by FeatureFlags.serverPurchaseVerification).
+struct SupabasePurchaseVerifier: PurchaseVerifying {
+    func verify(jws: String) async -> PurchaseVerification {
+        guard let service = Backend.shared as? SupabaseService else { return .unavailable }
+        return await service.verifyPurchase(jws: jws)
     }
 }

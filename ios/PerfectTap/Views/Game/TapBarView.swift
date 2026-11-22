@@ -46,6 +46,10 @@ struct TapBarView: View {
                 ZStack(alignment: .leading) {
                     // Static zone graphics — does NOT depend on indicatorRelay
                     let dynamicPerfectHalf = max(0.01, min(perfectHalf, perfectHalf * CGFloat(perfectZoneScale)))
+                    if let tint = theme.trackTint {
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(LinearGradient(colors: tint, startPoint: .leading, endPoint: .trailing))
+                    }
                     TapBarZonesView(
                         theme: theme,
                         hideZones: hideZones,
@@ -59,6 +63,7 @@ struct TapBarView: View {
 
                     // Moving indicator — the only view that observes the relay
                     TapBarIndicator(relay: indicatorRelay, glowColor: theme.glowColor,
+                                    fill: theme.indicatorFill,
                                     glowStrength: glowStrength,
                                     barWidth: w, glowPadding: glowPadding)
                 }
@@ -101,13 +106,19 @@ struct TapBarView: View {
 private struct TapBarIndicator: View {
     @ObservedObject var relay: IndicatorRelay
     let glowColor: Color
+    let fill: [Color]?
     let glowStrength: Double
     let barWidth: CGFloat
     let glowPadding: CGFloat
 
+    private var fillStyle: AnyShapeStyle {
+        if let fill { return AnyShapeStyle(LinearGradient(colors: fill, startPoint: .top, endPoint: .bottom)) }
+        return AnyShapeStyle(Color.white)
+    }
+
     var body: some View {
         Capsule()
-            .fill(Color.white)
+            .fill(fillStyle)
             .frame(width: 20, height: 48)
             .shadow(color: Color.white.opacity(0.9 * glowStrength), radius: 6)
             .shadow(color: glowColor.opacity(0.7 * glowStrength), radius: 14)

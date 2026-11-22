@@ -199,6 +199,12 @@ struct AppTheme {
     let glowColor: Color
     let backgroundColor: Color
     let accentColor: Color
+    /// Premium finish for the moving indicator (nil = plain white).
+    var indicatorFill: [Color]? = nil
+    /// Particle colours used when the default Tap FX is equipped.
+    var particleColors: [Color]? = nil
+    /// Track tint drawn under the zones (purely decorative, low opacity).
+    var trackTint: [Color]? = nil
 }
 
 extension AppTheme {
@@ -266,7 +272,52 @@ extension AppTheme {
         backgroundColor: Color(red: 0.010, green: 0.035, blue: 0.010),
         accentColor: Color(red: 0.0, green: 0.800, blue: 0.102))
 
-    static let all: [AppTheme] = [.default, .neon, .fire, .ice, .gold, .galaxy, .midnight, .sunset, .matrix]
+    // MARK: Premium skins (StoreKit). Cheap static gradients only: no per-frame
+    // blur or animation, so frame cost matches the free themes (docs/perf).
+
+    static let neonPulse = AppTheme(name: "neonpulse",
+        barGradient: (Color(red: 0.0, green: 0.95, blue: 1.0), Color(red: 1.0, green: 0.15, blue: 0.75)),
+        indicatorColor: .white, targetColor: Color(red: 0.0, green: 0.95, blue: 1.0),
+        glowColor: Color(red: 1.0, green: 0.15, blue: 0.75),
+        backgroundColor: Color(red: 0.020, green: 0.010, blue: 0.050),
+        accentColor: Color(red: 0.0, green: 0.95, blue: 1.0),
+        indicatorFill: [.white, Color(red: 0.6, green: 1.0, blue: 1.0)],
+        particleColors: [Color(red: 0.0, green: 0.95, blue: 1.0), Color(red: 1.0, green: 0.15, blue: 0.75), .white],
+        trackTint: [Color(red: 0.0, green: 0.95, blue: 1.0).opacity(0.08), Color(red: 1.0, green: 0.15, blue: 0.75).opacity(0.08)])
+
+    static let liquidChrome = AppTheme(name: "chrome",
+        barGradient: (Color(red: 0.85, green: 0.88, blue: 0.92), Color(red: 0.45, green: 0.50, blue: 0.58)),
+        indicatorColor: .white, targetColor: Color(red: 0.80, green: 0.86, blue: 0.95),
+        glowColor: Color(red: 0.70, green: 0.78, blue: 0.90),
+        backgroundColor: Color(red: 0.035, green: 0.040, blue: 0.050),
+        accentColor: Color(red: 0.80, green: 0.86, blue: 0.95),
+        indicatorFill: [.white, Color(red: 0.72, green: 0.76, blue: 0.82), .white],
+        particleColors: [.white, Color(red: 0.75, green: 0.80, blue: 0.88), Color(red: 0.55, green: 0.60, blue: 0.70)],
+        trackTint: [Color.white.opacity(0.06), Color.white.opacity(0.02)])
+
+    static let glitch = AppTheme(name: "glitch",
+        barGradient: (Color(red: 1.0, green: 0.0, blue: 0.45), Color(red: 0.0, green: 1.0, blue: 0.65)),
+        indicatorColor: .white, targetColor: Color(red: 0.0, green: 1.0, blue: 0.65),
+        glowColor: Color(red: 1.0, green: 0.0, blue: 0.45),
+        backgroundColor: Color(red: 0.015, green: 0.020, blue: 0.020),
+        accentColor: Color(red: 0.0, green: 1.0, blue: 0.65),
+        indicatorFill: [Color(red: 1.0, green: 0.75, blue: 0.90), .white, Color(red: 0.75, green: 1.0, blue: 0.92)],
+        particleColors: [Color(red: 1.0, green: 0.0, blue: 0.45), Color(red: 0.0, green: 1.0, blue: 0.65), .white],
+        trackTint: [Color(red: 1.0, green: 0.0, blue: 0.45).opacity(0.07), Color(red: 0.0, green: 1.0, blue: 0.65).opacity(0.07)])
+
+    static let cosmicGold = AppTheme(name: "cosmicgold",
+        barGradient: (Color(red: 1.0, green: 0.82, blue: 0.30), Color(red: 0.45, green: 0.20, blue: 0.85)),
+        indicatorColor: .white, targetColor: Color(red: 1.0, green: 0.82, blue: 0.30),
+        glowColor: Color(red: 1.0, green: 0.70, blue: 0.20),
+        backgroundColor: Color(red: 0.030, green: 0.020, blue: 0.060),
+        accentColor: Color(red: 1.0, green: 0.82, blue: 0.30),
+        indicatorFill: [Color(red: 1.0, green: 0.97, blue: 0.80), Color(red: 1.0, green: 0.85, blue: 0.45)],
+        particleColors: [Color(red: 1.0, green: 0.82, blue: 0.30), Color(red: 0.70, green: 0.45, blue: 1.0), .white],
+        trackTint: [Color(red: 1.0, green: 0.82, blue: 0.30).opacity(0.07), Color(red: 0.45, green: 0.20, blue: 0.85).opacity(0.07)])
+
+    static let premium: [AppTheme] = [.neonPulse, .liquidChrome, .glitch, .cosmicGold]
+
+    static let all: [AppTheme] = [.default, .neon, .fire, .ice, .gold, .galaxy, .midnight, .sunset, .matrix] + premium
 
     static func named(_ name: String) -> AppTheme {
         all.first { $0.name == name } ?? .default

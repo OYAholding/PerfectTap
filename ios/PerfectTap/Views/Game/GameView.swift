@@ -36,7 +36,8 @@ struct GameView: View {
 
             // Particle effects for PERFECT/GREAT (Effects setting: Full only)
             if effects.showsParticles {
-                ParticleEffectView(accuracy: vm.lastTapAccuracy, trigger: feedbackID, equippedFX: equippedTapFX)
+                ParticleEffectView(accuracy: vm.lastTapAccuracy, trigger: feedbackID, equippedFX: equippedTapFX,
+                                   themeColors: themeManager.current.particleColors)
                     .allowsHitTesting(false)
             }
 

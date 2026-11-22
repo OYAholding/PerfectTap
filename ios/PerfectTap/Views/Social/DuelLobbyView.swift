@@ -69,7 +69,7 @@ struct DuelLobbyView: View {
                     if let d = duel, d.status == .inProgress {
                         // Show opponent avatar + name
                         if let guestName = d.guestName {
-                            let guestEmoji = ShopItem.avatars.first(where: { $0.id == (d.guestAvatar ?? "") })?.icon ?? "😊"
+                            let guestEmoji = ShopItem.avatarEmoji(for: d.guestAvatar)
                             HStack(spacing: 8) {
                                 Text(guestEmoji).font(.system(size: 28))
                                 Text(guestName)

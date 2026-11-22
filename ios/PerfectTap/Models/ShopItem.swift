@@ -39,8 +39,28 @@ struct ShopItem: Identifiable {
     let price: Int        // 0 = free/default
     let icon: String      // emoji or SF Symbol
     let rarity: ShopRarity
+    /// StoreKit product ID for skins sold for real money. Premium items are
+    /// never sold for coins and grant no gameplay advantage.
+    var premiumProductID: String? = nil
 
-    var isFree: Bool { price == 0 }
+    var isPremium: Bool { premiumProductID != nil }
+    var isFree: Bool { price == 0 && !isPremium }
+
+    // MARK: Lookups (single place; was duplicated across ~10 views)
+
+    static func themeID(forName name: String) -> String { "theme_\(name)" }
+    static func themeName(forID id: String) -> String {
+        id.hasPrefix("theme_") ? String(id.dropFirst("theme_".count)) : id
+    }
+
+    /// Emoji for an avatar ID ("😊" for unknown / empty).
+    static func avatarEmoji(for id: String?) -> String {
+        let canonical = PlayerProfile.canonicalAvatarID(id ?? "")
+        return avatars.first(where: { $0.id == canonical })?.icon ?? "😊"
+    }
+
+    static func item(id: String) -> ShopItem? { allItems.first { $0.id == id } }
+    static func item(productID: String) -> ShopItem? { premium.first { $0.premiumProductID == productID } }
 }
 
 // MARK: - Full catalog (ported from Shop.jsx)
@@ -58,6 +78,22 @@ extension ShopItem {
         ShopItem(id: "theme_sunset",   name: "Sunset",   category: .themes, price: 350, icon: "🌅", rarity: .epic),
         ShopItem(id: "theme_matrix",   name: "Matrix",   category: .themes, price: 600, icon: "🟢", rarity: .legendary),
     ]
+
+    // --- Premium skins (real money, StoreKit; hidden until FeatureFlags allow) ---
+    // Each is a theme with its own indicator finish and particle colours.
+    // Zones, centre line and indicator size are identical to every other theme.
+    static let premium: [ShopItem] = [
+        ShopItem(id: "theme_neonpulse",  name: "Neon Pulse",    category: .themes, price: 0, icon: "💠", rarity: .legendary,
+                 premiumProductID: "com.perfecttap.skin.neonpulse"),
+        ShopItem(id: "theme_chrome",     name: "Liquid Chrome", category: .themes, price: 0, icon: "🪩", rarity: .legendary,
+                 premiumProductID: "com.perfecttap.skin.liquidchrome"),
+        ShopItem(id: "theme_glitch",     name: "Glitch Mode",   category: .themes, price: 0, icon: "👾", rarity: .legendary,
+                 premiumProductID: "com.perfecttap.skin.glitchmode"),
+        ShopItem(id: "theme_cosmicgold", name: "Cosmic Gold",   category: .themes, price: 0, icon: "🌟", rarity: .legendary,
+                 premiumProductID: "com.perfecttap.skin.cosmicgold"),
+    ]
+
+    static var premiumProductIDs: [String] { premium.compactMap(\.premiumProductID) }
 
     // --- Tap FX --- (prices balanced, now functional — changes particle colors)
     static let tapFX: [ShopItem] = [
@@ -119,8 +155,8 @@ extension ShopItem {
         }
     }
 
-    /// All items across all categories
+    /// All items across all categories (premium included, for ownership lookups)
     static var allItems: [ShopItem] {
-        themes + tapFX + trails + badges + avatars
+        themes + premium + tapFX + trails + badges + avatars
     }
 }

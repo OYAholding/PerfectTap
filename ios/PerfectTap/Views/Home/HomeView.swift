@@ -112,7 +112,7 @@ struct HomeView: View {
         .onAppear {
             if Perf.probeEnabled { FrameMonitor.shared.context = "home" }
             profile = PlayerProfile.load() ?? PlayerProfile()
-            themeManager.current = AppTheme.named(profile.equippedTheme)
+            themeManager.apply(profile: profile)
             startBadgeListeners()
             // Cloud refresh in background; also retry unsent duel scores and
             // count results of duels the opponent finished meanwhile.
@@ -124,7 +124,7 @@ struct HomeView: View {
                 // theme then re-rendered the whole game screen mid-round.
                 guard !Task.isCancelled, let updated else { return }
                 profile = updated
-                themeManager.current = AppTheme.named(profile.equippedTheme)
+                themeManager.apply(profile: profile)
             }
         }
         .onDisappear {
@@ -158,7 +158,7 @@ struct HomeView: View {
                 )
 
             if !profile.username.isEmpty {
-                let avatarEmoji = ShopItem.avatars.first(where: { $0.id == profile.equippedAvatar })?.icon ?? "😊"
+                let avatarEmoji = ShopItem.avatarEmoji(for: profile.equippedAvatar)
                 Text("\(avatarEmoji) \(profile.username) • Lv.\(profile.level)")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.white.opacity(0.4))

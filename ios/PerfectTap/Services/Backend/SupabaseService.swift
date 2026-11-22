@@ -270,6 +270,24 @@ final class SupabaseService: GameBackend {
         let usernameConflict: Bool?
     }
 
+    /// Sends a StoreKit 2 signed transaction to the `verify-purchase` edge
+    /// function, which verifies it with Apple's certificates and records it in
+    /// the purchase ledger idempotently (unique transaction ID).
+    func verifyPurchase(jws: String) async -> PurchaseVerification {
+        struct Body: Encodable { let signedTransaction: String }
+        struct Reply: Decodable { let status: String; let reason: String? }
+        do {
+            let reply: Reply = try await client.functions.invoke(
+                "verify-purchase", options: FunctionInvokeOptions(body: Body(signedTransaction: jws)))
+            return reply.status == "granted" || reply.status == "already_granted" || reply.status == "revoked"
+                ? .verified : .rejected(reply.reason ?? reply.status)
+        } catch FunctionsError.httpError(let code, let data) where (400..<500).contains(code) && code != 401 && code != 429 {
+            return .rejected(String(data: data, encoding: .utf8) ?? "HTTP \(code)")
+        } catch {
+            return .unavailable
+        }
+    }
+
     private func invokeClaim(firebaseToken: String, password: String?) async throws -> ClaimReply {
         struct Body: Encodable { let firebaseIdToken: String; let password: String? }
         do {

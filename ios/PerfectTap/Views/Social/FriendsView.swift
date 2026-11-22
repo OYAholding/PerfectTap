@@ -505,7 +505,7 @@ private struct DuelHistoryItem: Identifiable {
 private struct FriendRow: View {
     let profile: PlayerProfile
     private var avatarEmoji: String {
-        ShopItem.avatars.first(where: { $0.id == profile.equippedAvatar })?.icon ?? "😊"
+        ShopItem.avatarEmoji(for: profile.equippedAvatar)
     }
     var body: some View {
         HStack(spacing: 12) {
@@ -531,7 +531,7 @@ private struct IncomingRequestRow: View {
     let onReject: () -> Void
 
     private var avatarEmoji: String {
-        ShopItem.avatars.first(where: { $0.id == request.fromAvatar })?.icon ?? "😊"
+        ShopItem.avatarEmoji(for: request.fromAvatar)
     }
 
     var body: some View {
@@ -568,7 +568,7 @@ private struct OutgoingRequestRow: View {
     let onCancel: () -> Void
 
     private var avatarEmoji: String {
-        ShopItem.avatars.first(where: { $0.id == request.toAvatar })?.icon ?? "😊"
+        ShopItem.avatarEmoji(for: request.toAvatar)
     }
 
     var body: some View {
@@ -602,7 +602,7 @@ private struct IncomingDuelRow: View {
     let onReject: () -> Void
 
     private var avatarEmoji: String {
-        ShopItem.avatars.first(where: { $0.id == invitation.fromAvatar })?.icon ?? "😊"
+        ShopItem.avatarEmoji(for: invitation.fromAvatar)
     }
 
     var body: some View {
@@ -649,7 +649,7 @@ private struct OutgoingDuelRow: View {
     let onReady: () -> Void
 
     private var avatarEmoji: String {
-        ShopItem.avatars.first(where: { $0.id == invitation.toAvatar })?.icon ?? "😊"
+        ShopItem.avatarEmoji(for: invitation.toAvatar)
     }
 
     var body: some View {
@@ -703,9 +703,9 @@ private struct DuelHistoryRow: View {
     private var avatarEmoji: String {
         switch item.direction {
         case .incoming:
-            return ShopItem.avatars.first(where: { $0.id == item.invitation.fromAvatar })?.icon ?? "😊"
+            return ShopItem.avatarEmoji(for: item.invitation.fromAvatar)
         case .outgoing:
-            return ShopItem.avatars.first(where: { $0.id == item.invitation.toAvatar })?.icon ?? "😊"
+            return ShopItem.avatarEmoji(for: item.invitation.toAvatar)
         }
     }
 

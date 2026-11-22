@@ -59,7 +59,7 @@ struct PerfectTapApp: App {
                     // Load IAP products from App Store Connect on launch.
                     // Without this, coinProducts and specialProducts are empty
                     // and no IAP purchases can be made.
-                    await PurchaseManager.shared.loadProducts()
+                    await PurchaseManager.shared.start()
                 }
                 .onChange(of: router.isGameOnStack) { gameOnStack in
                     guard !gameOnStack, scenePhase == .active else { return }

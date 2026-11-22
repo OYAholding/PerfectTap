@@ -100,7 +100,7 @@ struct GameSettingsView: View {
                         // Theme picker — only shows owned themes
                         settingsSection("THEME") {
                             let ownedThemes = AppTheme.all.filter { theme in
-                                let themeID = "theme_\(theme.name)"
+                                let themeID = ShopItem.themeID(forName: theme.name)
                                 // "default" theme is always owned; check ownership for others
                                 return theme.name == "default" || profile.ownedItems.contains(themeID)
                             }

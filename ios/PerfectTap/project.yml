@@ -42,6 +42,7 @@ targets:
           - SETUP.md
           - PerfectTapUITests/**
           - PerfectTapTests/**
+          - StoreKit/**
           - "*.xcodeproj"
           - "*.xcworkspace"
     dependencies:
@@ -66,8 +67,8 @@ targets:
         PRODUCT_NAME: PerfectTap
         DEVELOPMENT_TEAM: K88C7DPG4C
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.arcade-games"
-        MARKETING_VERSION: "1.1.1"
-        CURRENT_PROJECT_VERSION: "5"
+        MARKETING_VERSION: "1.2.0"
+        CURRENT_PROJECT_VERSION: "6"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
@@ -172,6 +173,9 @@ targets:
     platform: iOS
     sources:
       - path: PerfectTapTests
+      # Local StoreKit configuration (fake money) for StoreKitTest.
+      - path: StoreKit/PerfectTap.storekit
+        buildPhase: resources
     dependencies:
       - target: PerfectTap
     settings:
@@ -203,7 +207,12 @@ schemes:
     build:
       targets:
         PerfectTap: all
+    run:
+      # Fake-money products for simulator testing. Never used by TestFlight /
+      # App Store builds, which talk to the real App Store.
+      storeKitConfiguration: StoreKit/PerfectTap.storekit
     test:
+      storeKitConfiguration: StoreKit/PerfectTap.storekit
       targets:
         - PerfectTapTests
   # Mode-by-mode UI run. Uses the Debug backend (Supabase cloud): it creates one anonymous
