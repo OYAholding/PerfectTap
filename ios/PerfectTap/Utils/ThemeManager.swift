@@ -12,7 +12,18 @@ final class ThemeManager: ObservableObject {
         let profile = PlayerProfile.load()
         let saved = profile?.equippedTheme ?? UserDefaults.standard.string(forKey: Self.legacyKey) ?? "default"
         current = Self.resolve(saved, profile: profile)
+        #if DEBUG
+        // Perf runs with a premium skin (scripts/perf-run.sh PT_PERF_THEME=…).
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-PTForceTheme"), i + 1 < args.count {
+            current = AppTheme.named(args[i + 1])
+            isForced = true
+        }
+        #endif
     }
+
+    /// DEBUG perf override active: profile changes do not replace the theme.
+    private var isForced = false
 
     func apply(_ theme: AppTheme) {
         if current.name != theme.name { current = theme }
@@ -22,6 +33,7 @@ final class ThemeManager: ObservableObject {
     /// Applies the profile's equipped theme (falls back to default when the
     /// theme is no longer owned, e.g. after a refunded premium skin).
     func apply(profile: PlayerProfile) {
+        guard !isForced else { return }
         apply(Self.resolve(profile.equippedTheme, profile: profile))
     }
 

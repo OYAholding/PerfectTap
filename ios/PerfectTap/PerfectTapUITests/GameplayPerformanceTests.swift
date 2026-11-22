@@ -28,6 +28,10 @@ final class GameplayPerformanceTests: XCTestCase {
 
     func test_gameplay_workload() throws {
         app.launchArguments += ["-PTPerfProbe", "-PTUITestNoAds", "-PTUITestOfflineBackend"]
+        // Optional premium skin for the run (TEST_RUNNER_PT_PERF_THEME=glitch).
+        if let theme = ProcessInfo.processInfo.environment["PT_PERF_THEME"], !theme.isEmpty {
+            app.launchArguments += ["-PTForceTheme", theme]
+        }
         app.launch()
         completeOnboardingIfNeeded()
         dismissTutorialIfNeeded()

@@ -367,7 +367,9 @@ final class AuthViewModel: ObservableObject {
         merged.seasonTier = max(local.seasonTier, cloud.seasonTier)
         merged.seasonAdProgress = max(local.seasonAdProgress, cloud.seasonAdProgress)
         merged.seasonPremium = local.seasonPremium || cloud.seasonPremium
-        merged.noAds = local.noAds || cloud.noAds
+        // With server verification the purchase ledger owns Remove Ads (a
+        // refund must be able to turn it off); until then keep the OR merge.
+        merged.noAds = FeatureFlags.serverPurchaseVerification ? cloud.noAds : (local.noAds || cloud.noAds)
 
         // 7) Stats
         merged.stats.totalGames = max(local.stats.totalGames, cloud.stats.totalGames)

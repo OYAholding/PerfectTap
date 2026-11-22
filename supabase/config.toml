@@ -433,3 +433,19 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/delete-account/deno.json"
 entrypoint = "./functions/delete-account/index.ts"
+
+# 1.2.0 purchases — NOT deployed to production (needs owner approval and the
+# Apple secrets listed in docs/PAYMENTS_READINESS.he.md).
+[functions.verify-purchase]
+enabled = true
+verify_jwt = true
+import_map = "./functions/verify-purchase/deno.json"
+entrypoint = "./functions/verify-purchase/index.ts"
+
+[functions.app-store-notifications]
+enabled = true
+# Apple calls this endpoint without a Supabase JWT; the signed payload is
+# verified with Apple's certificate chain inside the function.
+verify_jwt = false
+import_map = "./functions/app-store-notifications/deno.json"
+entrypoint = "./functions/app-store-notifications/index.ts"
