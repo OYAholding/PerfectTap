@@ -46,6 +46,12 @@ Deno.test("passes revocation through and maps unknown products", async () => {
   assertEquals((calls[0] as { p_revoked_at: string }).p_revoked_at, new Date(1_790_000_100_000).toISOString());
 });
 
+Deno.test("maps a replayed transaction of another account to 409", async () => {
+  const { rpc } = fakeRpc({ data: null, error: { message: "owned_by_other_account" } });
+  const out = await recordVerifiedTransaction(base, caller, rpc);
+  assertEquals(out, { status: 409, body: { error: "owned_by_other_account" } });
+});
+
 Deno.test("never leaks raw database errors", async () => {
   const { rpc } = fakeRpc({ data: null, error: { message: "relation \"x\" does not exist" } });
   const out = await recordVerifiedTransaction(base, caller, rpc);

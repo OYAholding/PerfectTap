@@ -61,6 +61,9 @@ create table private.economy (
   no_ads            boolean not null default false,
   premium_items     text[]  not null default '{}',
   pending_iap_coins bigint  not null default 0 check (pending_iap_coins >= 0),
+  -- Rolling one-hour budget for coin increases (cannot be refilled by saving often).
+  coin_window_start timestamptz not null default now(),
+  coin_window_gain  bigint  not null default 0,
   updated_at        timestamptz not null default now()
 );
 alter table private.economy enable row level security;
@@ -82,12 +85,14 @@ from private.profile_data pd
 join auth.users u on u.id = pd.id
 on conflict (user_id) do nothing;
 
--- Coin allowance per save: 10k + 20k per hour since the last stored save,
--- capped at 500k. Generous for real play (incl. long offline streaks), but a
--- tampered "coins: 99 999 999" is clamped.
-create or replace function private.coin_allowance(since timestamptz)
+-- Coin allowance: a rolling budget of 30k per hour, plus 20k per hour of real
+-- time since the previous stored save (offline play), capped at 500k. Saving
+-- often does not refill it: the hourly budget is tracked in private.economy and
+-- the offline bonus is ~0 between back-to-back saves. Generous for real play,
+-- but a tampered "coins: 99 999 999" is clamped.
+create or replace function private.offline_coin_bonus(since timestamptz)
 returns bigint language sql stable set search_path = '' as $$
-  select least(500000, 10000 + floor(greatest(0, extract(epoch from (now() - coalesce(since, now()))) / 3600.0) * 20000))::bigint
+  select least(500000, floor(greatest(0, extract(epoch from (now() - coalesce(since, now()))) / 3600.0) * 20000))::bigint
 $$;
 
 create or replace function private.sanitize_economy(uid uuid, p jsonb)
@@ -100,6 +105,7 @@ declare
   old_coins bigint;
   new_coins bigint;
   allowed bigint;
+  gain bigint;
   premium_ids text[];
   items jsonb;
   stored_sp boolean;
@@ -113,18 +119,26 @@ begin
   -- Coins: decreases (spending) always allowed; increases bounded. Invalid
   -- values (negative, fractional, wrong type) are left for save_profile_for's
   -- validation to reject.
-  if jsonb_typeof(p->'coins') = 'number' and (p->>'coins')::numeric >= 0
+  if jsonb_typeof(p->'coins') = 'number' and (p->>'coins')::numeric between 0 and 100000000
      and (p->>'coins')::numeric = trunc((p->>'coins')::numeric) then
     new_coins := (p->>'coins')::numeric::bigint;
-    old_coins := nullif(stored->>'coins', '')::bigint;
+    old_coins := case when stored->>'coins' ~ '^[0-9]{1,15}$' then (stored->>'coins')::bigint end;
     if old_coins is not null then
-      allowed := old_coins + private.coin_allowance(stored_at) + e.pending_iap_coins;
+      if now() - e.coin_window_start > interval '1 hour' then
+        e.coin_window_start := now();
+        e.coin_window_gain := 0;
+      end if;
+      allowed := old_coins + greatest(0, 30000 - e.coin_window_gain)
+                 + private.offline_coin_bonus(stored_at) + e.pending_iap_coins;
       if new_coins > allowed then
         insert into private.economy_events (user_id, kind, detail)
         values (uid, 'coins_clamped', jsonb_build_object('sent', new_coins, 'kept', allowed, 'previous', old_coins));
         new_coins := allowed;
       end if;
-      e.pending_iap_coins := greatest(0, e.pending_iap_coins - greatest(0, new_coins - old_coins));
+      gain := greatest(0, new_coins - old_coins);
+      -- IAP coins are consumed first; only the rest counts against the hourly budget.
+      e.coin_window_gain := e.coin_window_gain + greatest(0, gain - e.pending_iap_coins);
+      e.pending_iap_coins := greatest(0, e.pending_iap_coins - gain);
     end if;
     p := jsonb_set(p, '{coins}', to_jsonb(new_coins));
   end if;
@@ -156,10 +170,14 @@ begin
   if jsonb_typeof(p->'season_premium') = 'boolean' then
     p := p || jsonb_build_object('season_premium',
       stored_sp or (coalesce((p->>'season_premium')::boolean, false)
-                    and coalesce((p->>'season_ad_progress')::numeric, 0) >= 50));
+                    and jsonb_typeof(p->'season_ad_progress') = 'number'
+                    and (p->>'season_ad_progress')::numeric >= 50));
   end if;
 
-  update private.economy set pending_iap_coins = e.pending_iap_coins, updated_at = now() where user_id = uid;
+  update private.economy
+  set pending_iap_coins = e.pending_iap_coins, coin_window_start = e.coin_window_start,
+      coin_window_gain = e.coin_window_gain, updated_at = now()
+  where user_id = uid;
   return p;
 end $$;
 revoke all on function private.sanitize_economy(uuid, jsonb) from public, anon, authenticated;
@@ -198,7 +216,9 @@ begin
 end $$;
 revoke all on function private.set_profile_item(uuid, text, boolean) from public, anon, authenticated;
 
-create or replace function private.revoke_purchase(p_transaction_id text, p_revoked_at timestamptz)
+create or replace function private.revoke_purchase(
+  p_transaction_id text, p_revoked_at timestamptz,
+  p_product_id text default null, p_original_transaction_id text default null, p_environment text default 'Production')
 returns text
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -209,7 +229,19 @@ declare
   from_pending bigint;
 begin
   select * into l from private.purchase_ledger where transaction_id = p_transaction_id for update;
-  if not found then return 'unknown_transaction'; end if;
+  if not found then
+    -- Refund arrived before the purchase was recorded: leave a tombstone so a
+    -- later delivery of the same transaction is never granted.
+    if p_product_id is null or not exists (select 1 from private.iap_products where product_id = p_product_id) then
+      return 'unknown_transaction';
+    end if;
+    insert into private.purchase_ledger
+      (transaction_id, original_transaction_id, user_id, product_id, environment, purchased_at, revoked_at)
+    values (p_transaction_id, coalesce(nullif(p_original_transaction_id, ''), p_transaction_id), null, p_product_id,
+            coalesce(p_environment, 'Production'), coalesce(p_revoked_at, now()), coalesce(p_revoked_at, now()))
+    on conflict (transaction_id) do nothing;
+    return 'revoked';
+  end if;
   if l.revoked_at is not null then return 'already_revoked'; end if;
   update private.purchase_ledger set revoked_at = coalesce(p_revoked_at, now()) where transaction_id = p_transaction_id;
   if l.user_id is null then return 'revoked'; end if;
@@ -235,7 +267,9 @@ begin
       update private.economy set no_ads = false, updated_at = now() where user_id = l.user_id;
       update private.profile_data set data = data || '{"no_ads": false}'::jsonb where id = l.user_id;
     end if;
-  else
+  elsif not exists (select 1 from private.purchase_ledger
+                    where user_id = l.user_id and product_id = l.product_id and revoked_at is null) then
+    -- Only when no other valid transaction for the same skin remains.
     update private.economy set premium_items = array_remove(premium_items, prod.item_id), updated_at = now()
     where user_id = l.user_id;
     perform private.set_profile_item(l.user_id, prod.item_id, false);
@@ -244,7 +278,7 @@ begin
   values (l.user_id, 'purchase_revoked', jsonb_build_object('transaction_id', p_transaction_id, 'product_id', l.product_id));
   return 'revoked';
 end $$;
-revoke all on function private.revoke_purchase(text, timestamptz) from public, anon, authenticated;
+revoke all on function private.revoke_purchase(text, timestamptz, text, text, text) from public, anon, authenticated;
 
 create or replace function private.record_verified_purchase(
   p_user uuid, p_transaction_id text, p_original_transaction_id text, p_product_id text,
@@ -254,6 +288,7 @@ language plpgsql security definer set search_path = '' as $$
 declare
   prod private.iap_products;
   inserted text;
+  existing private.purchase_ledger;
 begin
   if p_user is null or coalesce(p_transaction_id, '') = '' then perform private.fail('invalid_payload'); end if;
   select * into prod from private.iap_products where product_id = p_product_id;
@@ -267,6 +302,11 @@ begin
   returning transaction_id into inserted;
 
   if inserted is null then
+    select * into existing from private.purchase_ledger where transaction_id = p_transaction_id;
+    if existing.revoked_at is not null then return 'revoked'; end if;   -- incl. refund tombstones
+    -- A transaction belongs to the first account that recorded it: replaying
+    -- another player's signed transaction must not "verify".
+    if existing.user_id is distinct from p_user then perform private.fail('owned_by_other_account'); end if;
     if p_revoked_at is not null then return private.revoke_purchase(p_transaction_id, p_revoked_at); end if;
     return 'already_granted';
   end if;
@@ -295,7 +335,7 @@ end $$;
 revoke all on function private.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz)
   from public, anon, authenticated;
 grant execute on function private.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz) to service_role;
-grant execute on function private.revoke_purchase(text, timestamptz) to service_role;
+grant execute on function private.revoke_purchase(text, timestamptz, text, text, text) to service_role;
 
 -- Public invoker wrappers so edge functions (service role) can reach them via
 -- /rest/v1/rpc. Not executable by anon / authenticated.
@@ -306,13 +346,15 @@ returns text language sql volatile security invoker set search_path = '' as $$
   select private.record_verified_purchase(p_user, p_transaction_id, p_original_transaction_id, p_product_id,
                                           p_environment, p_purchased_at, p_revoked_at)
 $$;
-create or replace function public.revoke_purchase(p_transaction_id text, p_revoked_at timestamptz)
+create or replace function public.revoke_purchase(
+  p_transaction_id text, p_revoked_at timestamptz,
+  p_product_id text default null, p_original_transaction_id text default null, p_environment text default 'Production')
 returns text language sql volatile security invoker set search_path = '' as $$
-  select private.revoke_purchase(p_transaction_id, p_revoked_at)
+  select private.revoke_purchase(p_transaction_id, p_revoked_at, p_product_id, p_original_transaction_id, p_environment)
 $$;
 revoke all on function public.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz)
   from public, anon, authenticated;
-revoke all on function public.revoke_purchase(text, timestamptz) from public, anon, authenticated;
+revoke all on function public.revoke_purchase(text, timestamptz, text, text, text) from public, anon, authenticated;
 grant execute on function public.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz) to service_role;
-grant execute on function public.revoke_purchase(text, timestamptz) to service_role;
+grant execute on function public.revoke_purchase(text, timestamptz, text, text, text) to service_role;
 grant usage on schema private to service_role;

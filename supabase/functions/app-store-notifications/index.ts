@@ -40,6 +40,10 @@ Deno.serve(async (req) => {
   const { data, error } = await admin.rpc("revoke_purchase", {
     p_transaction_id: tx.transactionId,
     p_revoked_at: new Date(tx.revocationDate ?? Date.now()).toISOString(),
+    // Lets the server leave a tombstone if the refund arrives before the purchase.
+    p_product_id: tx.productId ?? null,
+    p_original_transaction_id: tx.originalTransactionId ?? null,
+    p_environment: tx.environment ?? "Production",
   });
   if (error) return fail(500, "internal_error");
   return json(200, { status: data ?? "unknown" });

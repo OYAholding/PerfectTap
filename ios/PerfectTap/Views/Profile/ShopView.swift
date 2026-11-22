@@ -21,7 +21,7 @@ struct ShopView: View {
     @State private var showCoinPacks = false
     @State private var confirmItem: ShopItem?
 
-    private let iapEnabled = FeatureFlags.iapEnabled
+    private let iapEnabled = FeatureFlags.realMoneyPurchasesEnabled
 
     /// Shop tabs: the visible cosmetic categories plus Premium (when allowed).
     enum ShopTab: Hashable {

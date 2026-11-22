@@ -273,16 +273,26 @@ final class SupabaseService: GameBackend {
     /// Sends a StoreKit 2 signed transaction to the `verify-purchase` edge
     /// function, which verifies it with Apple's certificates and records it in
     /// the purchase ledger idempotently (unique transaction ID).
+    static let definitiveRejections: Set<String> = [
+        "invalid_signature", "wrong_bundle", "invalid_transaction", "invalid_environment", "owned_by_other_account",
+    ]
+
     func verifyPurchase(jws: String) async -> PurchaseVerification {
         struct Body: Encodable { let signedTransaction: String }
         struct Reply: Decodable { let status: String; let reason: String? }
+        struct ErrorReply: Decodable { let error: String }
         do {
             let reply: Reply = try await client.functions.invoke(
                 "verify-purchase", options: FunctionInvokeOptions(body: Body(signedTransaction: jws)))
             return reply.status == "granted" || reply.status == "already_granted" || reply.status == "revoked"
                 ? .verified : .rejected(reply.reason ?? reply.status)
-        } catch FunctionsError.httpError(let code, let data) where (400..<500).contains(code) && code != 401 && code != 429 {
-            return .rejected(String(data: data, encoding: .utf8) ?? "HTTP \(code)")
+        } catch FunctionsError.httpError(_, let data) {
+            // Only definitive answers finish the transaction without a grant.
+            // Anything recoverable (wrong game account signed in, product not
+            // yet configured on the server, rate limit, outage) stays unfinished
+            // and is retried, so a paying player is never left with nothing.
+            let code = (try? JSONDecoder().decode(ErrorReply.self, from: data))?.error ?? ""
+            return Self.definitiveRejections.contains(code) ? .rejected(code) : .unavailable
         } catch {
             return .unavailable
         }

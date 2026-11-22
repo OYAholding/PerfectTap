@@ -166,7 +166,7 @@ final class PurchaseManager: ObservableObject {
     // MARK: - Purchase
 
     func purchaseCoinPack(_ packID: CoinPackID) async -> CoinPackPurchaseResult {
-        guard FeatureFlags.iapEnabled else { return .failed(message: "Purchases are not available yet.") }
+        guard FeatureFlags.realMoneyPurchasesEnabled else { return .failed(message: "Purchases are not available yet.") }
         guard let product = coinProducts.first(where: { $0.id == packID.rawValue }) else {
             lastError = "Product not found"
             return .failed(message: "Product not found")
@@ -188,7 +188,7 @@ final class PurchaseManager: ObservableObject {
     }
 
     func purchaseRemoveAds() async -> Bool {
-        guard FeatureFlags.iapEnabled,
+        guard FeatureFlags.realMoneyPurchasesEnabled,
               let product = specialProducts.first(where: { $0.id == SpecialProductID.removeAds.rawValue }) else {
             lastError = "Product not found"
             return false
@@ -198,7 +198,7 @@ final class PurchaseManager: ObservableObject {
     }
 
     func purchasePremium(_ item: ShopItem) async -> PremiumPurchaseResult {
-        guard FeatureFlags.iapEnabled || FeatureFlags.premiumSkinsVisible else {
+        guard FeatureFlags.premiumSkinsVisible else {
             return .failed(message: "Purchases are not available yet.")
         }
         guard let product = product(for: item) else { return .failed(message: "This item is not available right now.") }
@@ -239,7 +239,9 @@ final class PurchaseManager: ObservableObject {
                 }
                 let wasProcessed = ledger.hasProcessed(transaction.id)
                 switch await deliver(transaction, jws: verification.jwsRepresentation, origin: .purchaseFlow) {
-                case .delivered(let effects): return .delivered(effects, alreadyDelivered: wasProcessed)
+                case .delivered(let effects):
+                    // The background listener may have delivered it first.
+                    return .delivered(effects, alreadyDelivered: wasProcessed || effects.isEmpty)
                 case .rejected(let reason):   return .failed("The purchase was rejected: \(reason)")
                 case .deferred:               return .deferred
                 }

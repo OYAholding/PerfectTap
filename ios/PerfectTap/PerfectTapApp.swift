@@ -41,6 +41,9 @@ struct PerfectTapApp: App {
                 .preferredColorScheme(.dark)
                 .task {
                     FrameMonitor.shared.startIfEnabled()
+                    // Load saved timing statistics off the main thread so the
+                    // first round end does not read the file.
+                    Task.detached(priority: .utility) { _ = SessionMetricsStore.shared.all() }
                     // Warm audio + haptics at launch (audio graph setup now runs
                     // off the main thread) instead of inside the first game's
                     // onAppear, where it cost ~330 ms of main-thread time.
@@ -139,12 +142,16 @@ struct RootView: View {
 /// measured ~600–700 ms of main-thread time in the simulator; without this it
 /// landed on the first opening of a game screen. Removed after it has drawn.
 private struct GameRenderWarmupView: View {
+    @EnvironmentObject var themeManager: ThemeManager
     @State private var done = GameRenderWarmupView.hasWarmed
     private static var hasWarmed = false
 
     var body: some View {
         if !done {
-            TapBarView(indicatorRelay: IndicatorRelay(), theme: .default)
+            // The equipped theme: premium skins draw a gradient indicator and a
+            // track tint, whose first render otherwise landed in the first
+            // countdown (measured 519 ms with Glitch Mode, docs/perf).
+            TapBarView(indicatorRelay: IndicatorRelay(), theme: themeManager.current)
                 .frame(width: 300)
                 .opacity(0.01)
                 .allowsHitTesting(false)

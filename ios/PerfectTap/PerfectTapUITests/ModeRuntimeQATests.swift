@@ -32,7 +32,9 @@ final class ModeRuntimeQATests: XCTestCase {
         .init(name: "Rush", cardTitle: "RUSH", expectsScoreHUD: true, expectsTimerHUD: true, hidesHUD: false, expectsZenStatsHUD: false, expectsRevive: true, expectsModeLabel: true, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: "TIME'S UP!"),
         .init(name: "Hardcore Combo", cardTitle: "HARDCORE COMBO", expectsScoreHUD: true, expectsTimerHUD: false, hidesHUD: false, expectsZenStatsHUD: false, expectsRevive: true, expectsModeLabel: true, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil),
         .init(name: "Tiny Window", cardTitle: "TINY WINDOW", expectsScoreHUD: true, expectsTimerHUD: false, hidesHUD: false, expectsZenStatsHUD: false, expectsRevive: true, expectsModeLabel: true, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil),
-        .init(name: "Focus", cardTitle: "FOCUS", expectsScoreHUD: false, expectsTimerHUD: false, hidesHUD: true, expectsZenStatsHUD: false, expectsRevive: false, expectsModeLabel: false, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil)
+        .init(name: "Practice", cardTitle: "PRACTICE SESSION", expectsScoreHUD: false, expectsTimerHUD: true, hidesHUD: false, expectsZenStatsHUD: false, expectsRevive: false, expectsModeLabel: true, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil),
+        // "Focus" is shown as "Minimal" since 1.2.0 (raw value unchanged).
+        .init(name: "Focus", cardTitle: "MINIMAL", expectsScoreHUD: false, expectsTimerHUD: false, hidesHUD: true, expectsZenStatsHUD: false, expectsRevive: false, expectsModeLabel: false, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil)
     ]
 
     override func setUpWithError() throws {
@@ -85,7 +87,7 @@ final class ModeRuntimeQATests: XCTestCase {
             verifyTimedModeRun(failures: &failures)
         } else if mode.expectsRevive {
             verifyLifeModesRevivePolicy(modeName: mode.name, failures: &failures)
-        } else if mode.name == "Zen" || mode.name == "Focus" {
+        } else if mode.name == "Zen" || mode.name == "Focus" || mode.name == "Practice" {
             // No fail pressure modes: quit intentionally to complete run
             if !exitPressureFreeMode() {
                 failures.append("pressure_free_mode_exit_failed")

@@ -148,6 +148,11 @@ final class PurchaseAndCosmeticsTests: XCTestCase {
     func testRealMoneyIsOffByDefault() {
         XCTAssertFalse(FeatureFlags.iapEnabled, "owner approval required before enabling")
         XCTAssertFalse(FeatureFlags.serverPurchaseVerification)
+        XCTAssertFalse(FeatureFlags.realMoneyPurchasesEnabled)
+        // Recoverable server answers must not finish (and lose) a paid transaction.
+        XCTAssertFalse(SupabaseService.definitiveRejections.contains("account_mismatch"))
+        XCTAssertFalse(SupabaseService.definitiveRejections.contains("unknown_product"))
+        XCTAssertTrue(SupabaseService.definitiveRejections.contains("invalid_signature"))
     }
 
     // MARK: StoreKitTest (local configuration, fake money)

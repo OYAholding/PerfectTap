@@ -15,6 +15,11 @@ enum FeatureFlags {
     /// function + purchase ledger migration to be deployed (owner approval).
     static let serverPurchaseVerification = false
 
+    /// Real-money purchases are offered only when BOTH are on: with IAP on but
+    /// server verification off, the hardened save_profile would strip paid
+    /// skins and clamp paid coins on the server copy.
+    static var realMoneyPurchasesEnabled: Bool { iapEnabled && serverPurchaseVerification }
+
     /// Premium skins are listed in the shop. Release: follows `iapEnabled`.
     /// DEBUG: also on with the `-PTPremiumPreview` launch argument, so the
     /// skins can be previewed and tested with the local StoreKit configuration.
@@ -22,6 +27,6 @@ enum FeatureFlags {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-PTPremiumPreview") { return true }
         #endif
-        return iapEnabled
+        return realMoneyPurchasesEnabled
     }
 }

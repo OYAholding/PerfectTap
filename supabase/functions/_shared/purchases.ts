@@ -60,7 +60,8 @@ export async function recordVerifiedTransaction(
   });
   if (error) {
     const code = error.message && /^[a-z_]{3,40}$/.test(error.message) ? error.message : "internal_error";
-    return { status: code === "unknown_product" ? 400 : 500, body: { error: code } };
+    const status = code === "unknown_product" ? 400 : code === "owned_by_other_account" ? 409 : 500;
+    return { status, body: { error: code } };
   }
   return { status: 200, body: { status: data ?? "unknown" } };
 }
