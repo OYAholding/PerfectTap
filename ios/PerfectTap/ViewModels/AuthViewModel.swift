@@ -278,6 +278,8 @@ final class AuthViewModel: ObservableObject {
     func finishDeleteCleanup() {
         // Clear ALL local user data
         PlayerProfile.clearSaved()
+        SessionMetricsStore.shared.clearAll()
+        UserDefaults.standard.removeObject(forKey: EffectsLevel.storageKey)
         UserDefaults.standard.removeObject(forKey: "perfecttap_device_uid")
         UserDefaults.standard.removeObject(forKey: "perfecttap_sound")
         UserDefaults.standard.removeObject(forKey: "perfecttap_music")

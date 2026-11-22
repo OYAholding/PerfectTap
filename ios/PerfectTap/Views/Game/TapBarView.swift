@@ -12,6 +12,8 @@ struct TapBarView: View {
     /// The relay that publishes indicator position at 60fps (NOT observed here).
     let indicatorRelay: IndicatorRelay
     let theme: AppTheme
+    /// Effects setting: 1 = full glow, 0 = none. Never affects zones.
+    var glowStrength: Double = 1
     var hideZones: Bool = false
     var perfectZoneScale: Double = 1.0
     var strictPerfectOnly: Bool = false
@@ -57,6 +59,7 @@ struct TapBarView: View {
 
                     // Moving indicator — the only view that observes the relay
                     TapBarIndicator(relay: indicatorRelay, glowColor: theme.glowColor,
+                                    glowStrength: glowStrength,
                                     barWidth: w, glowPadding: glowPadding)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 18))
@@ -98,6 +101,7 @@ struct TapBarView: View {
 private struct TapBarIndicator: View {
     @ObservedObject var relay: IndicatorRelay
     let glowColor: Color
+    let glowStrength: Double
     let barWidth: CGFloat
     let glowPadding: CGFloat
 
@@ -105,9 +109,9 @@ private struct TapBarIndicator: View {
         Capsule()
             .fill(Color.white)
             .frame(width: 20, height: 48)
-            .shadow(color: Color.white.opacity(0.9), radius: 6)
-            .shadow(color: glowColor.opacity(0.7), radius: 14)
-            .shadow(color: glowColor.opacity(0.3), radius: 24)
+            .shadow(color: Color.white.opacity(0.9 * glowStrength), radius: 6)
+            .shadow(color: glowColor.opacity(0.7 * glowStrength), radius: 14)
+            .shadow(color: glowColor.opacity(0.3 * glowStrength), radius: 24)
             // Give the rasterized layer room for the glow, otherwise
             // drawingGroup clips the shadows to a hard 20×48 box.
             // The negative padding restores the original layout size.

@@ -37,6 +37,7 @@ struct PerfectTapApp: App {
                 .environmentObject(themeManager)
                 .environmentObject(authVM)
                 .environmentObject(duelAutoLaunchCoordinator)
+                .providesEffectsLevel()
                 .preferredColorScheme(.dark)
                 .task {
                     FrameMonitor.shared.startIfEnabled()

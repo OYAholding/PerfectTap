@@ -20,6 +20,7 @@ enum AppRoute: Hashable {
     case friendDetail(String)   // friend UID
     case leaderboard
     case settings
+    case timingProgress
 }
 
 // Make GameResult hashable (used as nav value).
@@ -85,6 +86,7 @@ extension AppRoute {
         case .friendDetail(let uid): FriendDetailView(friendUID: uid)
         case .leaderboard:    LeaderboardView()
         case .settings:       GameSettingsView()
+        case .timingProgress: TimingProgressView()
         }
     }
 }

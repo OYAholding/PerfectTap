@@ -13,7 +13,7 @@ struct TutorialView: View {
         ("🔗", "Build Combos",
          "Hit PERFECT or GREAT to build combos. At 3× you get 1.5× score, at 5× you get 2× score. Miss and the combo resets!"),
         ("🪙", "Earn Coins",
-         "Every mode earns you coins! Spend them in the Shop on themes, particle effects, and avatars to customize your game."),
+         "Classic and Duel earn coins, and quests, challenges and daily rewards add more. Spend them in the Shop on themes, particle effects, and avatars to customize your game."),
         ("🎮", "14 Game Modes",
          "Classic, Endless, Timed, Sudden Death, Combo Frenzy, Zen, Precision, Chaos, Mirror, Invisible Zone, Rush, Hardcore Combo, Tiny Window, and Focus. Each has unique mechanics!"),
     ]

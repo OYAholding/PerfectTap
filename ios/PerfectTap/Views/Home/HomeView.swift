@@ -77,10 +77,17 @@ struct HomeView: View {
 
                     secondaryRow(
                         left:  ("cart.fill",  "SHOP", { router.push(.shop) }),
-                        right: ("questionmark.circle.fill", "HOW TO PLAY", {
-                            showTutorial = true
-                        })
+                        right: ("chart.line.uptrend.xyaxis", "PROGRESS", { router.push(.timingProgress) })
                     )
+                    .padding(.bottom, 10)
+
+                    Button { showTutorial = true } label: {
+                        Label("HOW TO PLAY", systemImage: "questionmark.circle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.5)
+                            .foregroundColor(.white.opacity(0.45))
+                            .padding(.vertical, 8)
+                    }
 
                     // Watch Ad for Coins
                     watchAdForCoinsButton

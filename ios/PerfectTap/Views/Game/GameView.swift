@@ -6,6 +6,7 @@ struct GameView: View {
     @EnvironmentObject var router: AppRouter
     @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.effectsLevel) private var effects
     @StateObject private var vm = GameViewModel()
 
     @State private var feedbackID: UUID = UUID()
@@ -33,9 +34,11 @@ struct GameView: View {
                 countdownOverlay(number: n)
             }
 
-            // Particle effects for PERFECT/GREAT
-            ParticleEffectView(accuracy: vm.lastTapAccuracy, trigger: feedbackID, equippedFX: equippedTapFX)
-                .allowsHitTesting(false)
+            // Particle effects for PERFECT/GREAT (Effects setting: Full only)
+            if effects.showsParticles {
+                ParticleEffectView(accuracy: vm.lastTapAccuracy, trigger: feedbackID, equippedFX: equippedTapFX)
+                    .allowsHitTesting(false)
+            }
 
             if vm.showReviveModal {
                 ReviveModalView(
@@ -83,7 +86,7 @@ struct GameView: View {
         // Keyed on a per-tap counter so repeated identical results
         // (PERFECT → PERFECT) still show the popup and particles.
         .onChange(of: vm.tapSequence) { _ in
-            withAnimation(.easeOut(duration: 0.15)) {
+            withAnimation(effects.animatesFeedback ? .easeOut(duration: 0.15) : nil) {
                 showAccuracy = true
             }
             feedbackID = UUID()
@@ -129,6 +132,8 @@ struct GameView: View {
                     HStack(alignment: .top) {
                         if mode == .zen {
                             zenStatsView
+                        } else if mode == .practice {
+                            practiceHeaderView
                         } else {
                             scoreView
                         }
@@ -142,9 +147,11 @@ struct GameView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 16)
             } else {
-                // Focus mode: minimal — just a quit button
-                HStack {
+                // Minimal mode: no score/combo. Lives stay visible — they
+                // were hidden before, so a run could end without warning.
+                HStack(spacing: 12) {
                     Spacer()
+                    if mode.usesLives { livesView }
                     quitButton
                 }
                 .padding(.horizontal, 24)
@@ -162,6 +169,7 @@ struct GameView: View {
                 TapBarView(
                     indicatorRelay: vm.indicatorRelay,
                     theme: themeManager.current,
+                    glowStrength: effects.glowStrength,
                     hideZones: mode.hidesZones,
                     perfectZoneScale: vm.tapBarPerfectZoneScale,
                     strictPerfectOnly: mode == .precision
@@ -179,7 +187,7 @@ struct GameView: View {
                         Color.clear.frame(height: 40)
                     }
                 }
-                .animation(.easeOut(duration: 0.2), value: showAccuracy)
+                .animation(effects.animatesFeedback ? .easeOut(duration: 0.2) : nil, value: showAccuracy)
             }
 
             Spacer()
@@ -218,6 +226,18 @@ struct GameView: View {
                         .foregroundColor(.white.opacity(0.35))
                 }
             }
+        }
+    }
+
+    private var practiceHeaderView: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("PRACTICE")
+                .font(.system(size: 22, weight: .black))
+                .foregroundColor(.white)
+            Text("\(Int(mode.timerDuration / 60)) MIN • FIXED PACE")
+                .font(.system(size: 9, weight: .bold))
+                .tracking(2)
+                .foregroundColor(.white.opacity(0.35))
         }
     }
 
@@ -266,8 +286,8 @@ struct GameView: View {
                     .foregroundStyle(
                         LinearGradient(colors: [themeManager.current.accentColor, themeManager.current.barGradient.1], startPoint: .leading, endPoint: .trailing)
                     )
-                    .transition(.scale.combined(with: .opacity))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: vm.combo)
+                    .transition(effects.animatesFeedback ? .scale.combined(with: .opacity) : .opacity)
+                    .animation(effects.animatesFeedback ? .spring(response: 0.3, dampingFraction: 0.6) : nil, value: vm.combo)
             } else {
                 Color.clear.frame(height: 56)
             }
@@ -280,7 +300,12 @@ struct GameView: View {
             Text(acc.rawValue)
                 .font(.system(size: 22, weight: .black))
                 .foregroundColor(accuracyColor(acc))
-            if let timing = vm.lastTapTiming {
+            if mode == .practice, let ms = vm.lastTapErrorMs {
+                // Knowledge of results: how far from centre, in milliseconds.
+                Text(Self.formatError(ms))
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+            } else if let timing = vm.lastTapTiming {
                 // Coaching hint: which way to adjust next time.
                 Text(timing.rawValue)
                     .font(.system(size: 11, weight: .heavy))
@@ -294,10 +319,17 @@ struct GameView: View {
             }
         }
         .id(feedbackID)
-        .transition(.asymmetric(
-            insertion: .offset(y: -10).combined(with: .opacity),
-            removal: .offset(y: -20).combined(with: .opacity)
-        ))
+        .transition(effects.animatesFeedback
+            ? .asymmetric(insertion: .offset(y: -10).combined(with: .opacity),
+                          removal: .offset(y: -20).combined(with: .opacity))
+            : .opacity)
+    }
+
+    /// "12 ms LATE" / "8 ms EARLY" / "ON TIME" (|error| < 1 ms).
+    static func formatError(_ ms: Double) -> String {
+        let rounded = Int(abs(ms).rounded())
+        if rounded == 0 { return "ON TIME" }
+        return "\(rounded) ms \(ms < 0 ? "EARLY" : "LATE")"
     }
 
     private func accuracyColor(_ acc: TapAccuracy) -> Color {
@@ -381,6 +413,7 @@ struct GameView: View {
         case .hardcoreCombo: return [Color(red: 0.980, green: 0.100, blue: 0.100), Color(red: 0.980, green: 0.500, blue: 0.100)]
         case .tinyWindow:    return [Color(red: 0.500, green: 0.100, blue: 0.800), Color(red: 0.800, green: 0.200, blue: 0.600)]
         case .focus:         return [Color(red: 0.300, green: 0.300, blue: 0.350), Color(red: 0.500, green: 0.500, blue: 0.550)]
+        case .practice:      return [Color(red: 0.130, green: 0.600, blue: 0.680), Color(red: 0.220, green: 0.480, blue: 0.760)]
         default:             return [themeManager.current.barGradient.0, themeManager.current.barGradient.1]
         }
     }
@@ -395,10 +428,10 @@ struct GameView: View {
                 Text("\(number)")
                     .font(.system(size: 120, weight: .black))
                     .foregroundStyle(modeGradient)
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 2.0).combined(with: .opacity),
-                        removal: .scale(scale: 0.5).combined(with: .opacity)
-                    ))
+                    .transition(effects.animatesFeedback
+                        ? .asymmetric(insertion: .scale(scale: 2.0).combined(with: .opacity),
+                                      removal: .scale(scale: 0.5).combined(with: .opacity))
+                        : .opacity)
                     .id(number)
                     .animation(.easeOut(duration: 0.25), value: number)
 
@@ -424,7 +457,8 @@ struct GameView: View {
         case .rush:          return "30 SECONDS"
         case .hardcoreCombo: return "DON'T BREAK"
         case .tinyWindow:    return "TINY TARGET"
-        case .focus:         return "BREATHE • NO SCORE"
+        case .focus:         return "NO SCORE"
+        case .practice:      return "SAME PACE EVERY TIME"
         default:             return "GET READY"
         }
     }

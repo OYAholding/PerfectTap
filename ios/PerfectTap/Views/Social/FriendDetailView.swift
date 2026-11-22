@@ -152,7 +152,7 @@ struct FriendDetailView: View {
 
     // MARK: - Duel Mode Picker
     /// All competitive modes except zen — available for duel invites
-    private static let duelModes: [GameMode] = GameMode.allCases.filter { $0 != .zen }
+    private static let duelModes: [GameMode] = GameMode.allCases.filter { $0 != .zen && $0 != .practice }
 
     private var duelModePicker: some View {
         VStack(spacing: 8) {

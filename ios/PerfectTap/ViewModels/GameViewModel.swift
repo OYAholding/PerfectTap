@@ -38,6 +38,8 @@ struct GameResult {
     var newAchievements: [Achievement]
     var isNewBest: Bool
     var isDuelSession: Bool = false
+    /// Timing statistics for this round (nil if no taps). On-device only.
+    var metrics: SessionMetrics? = nil
 }
 
 // MARK: - Indicator relay (separate ObservableObject for 60fps updates)
@@ -71,6 +73,8 @@ final class GameViewModel: ObservableObject {
     @Published var zenTotal: Int = 0
     @Published var speedLevel: Int = 1
     @Published var tapBarPerfectZoneScale: Double = 1.0
+    /// Signed error of the last tap in ms (Practice Session only; nil elsewhere).
+    @Published private(set) var lastTapErrorMs: Double? = nil
 
     // MARK: Indicator position — separate observable
     // Updated at 60fps by CADisplayLink. Uses a separate IndicatorRelay object
@@ -94,6 +98,13 @@ final class GameViewModel: ObservableObject {
     /// Game fact (not lifecycle state): at most one revive per session.
     private var hasUsedRevive: Bool = false
     private var perfectsInFirst20Ref: Int = 0
+    /// Signed timing error (ms) of every scored tap, for SessionMetrics.
+    private var tapErrorsMs: [Double] = []
+    private var hitsRef: Int = 0
+    /// The round was ended with QUIT (not by its timer or lives).
+    private var endedByQuit = false
+    /// Mode timer length, captured once at setup (Practice reads it from settings).
+    private var timerDurationRef: Double = 0
     /// Server-issued session (Cloud Function `startGame`), requested at GO.
     private var scoreSessionTask: Task<String?, Never>? = nil
     private var duelSessionTask: Task<String?, Never>? = nil
@@ -163,7 +174,13 @@ final class GameViewModel: ObservableObject {
         self.combo = 0
         self.comboRef = 0
         self.maxComboRef = 0
-        self.timeLeft = mode.hasTimer ? mode.timerDuration : GameConfig.timedDuration
+        self.timerDurationRef = mode.timerDuration
+        self.timeLeft = mode.hasTimer ? timerDurationRef : GameConfig.timedDuration
+        self.tapErrorsMs = []
+        self.tapErrorsMs.reserveCapacity(512)
+        self.hitsRef = 0
+        self.endedByQuit = false
+        self.lastTapErrorMs = nil
         self.positionRef = 0.0
         self.directionRef = 1.0
         self.hasUsedRevive = false
@@ -309,6 +326,7 @@ final class GameViewModel: ObservableObject {
 
     /// any (countdown | playing | revive) → finished. Quit button.
     func quit() {
+        if phase != .finished { endedByQuit = true }
         finish()
     }
 
@@ -422,7 +440,7 @@ final class GameViewModel: ObservableObject {
         // Timed / Rush: count down
         if mode.hasTimer {
             let elapsed = playElapsed - timerBonus
-            let duration = mode.timerDuration
+            let duration = timerDurationRef
             let remaining = max(0, duration - elapsed)
             // Publish only when the displayed whole second changes: the HUD shows
             // ceil(timeLeft), and every publish re-renders the whole GameView
@@ -513,6 +531,9 @@ final class GameViewModel: ObservableObject {
                                              perfectScale: dynamicPerfectScale,
                                              strictPerfectOnly: mode == .precision)
         let points = TimingEngine.basePoints(for: accuracy)
+        let errorMs = SessionMetrics.signedErrorMs(position: pos, direction: dirAtTap, speed: speedRef)
+        tapErrorsMs.append(errorMs)
+        if accuracy != .miss { hitsRef += 1 }
 
         // Combo
         let prevCombo = comboRef
@@ -668,6 +689,7 @@ final class GameViewModel: ObservableObject {
         lastTapAccuracy = accuracy
         lastTapTiming = accuracy == .perfect ? nil : TimingEngine.timing(position: pos, direction: dirAtTap)
         lastTapPoints = finalPoints
+        if mode == .practice { lastTapErrorMs = errorMs }
         tapSequence &+= 1
     }
 
@@ -765,11 +787,13 @@ final class GameViewModel: ObservableObject {
 
         let hasValidDuelContext = duelContext?.mode == mode && !(duelContext?.duelId.isEmpty ?? true)
         let isDuelSession = hasValidDuelContext
+        let metrics = makeSessionMetrics()
+        if let metrics { SessionMetricsStore.shared.record(metrics) }
         let result = GameResult(
             score: scoreRef, maxCombo: maxComboRef, mode: mode,
             coinsEarned: coinsEarned, xpEarned: xpEarned,
             leveledUp: leveledUp, newAchievements: newAchievements, isNewBest: isNewBest,
-            isDuelSession: isDuelSession
+            isDuelSession: isDuelSession, metrics: metrics
         )
 
         Task {
@@ -791,6 +815,16 @@ final class GameViewModel: ObservableObject {
         }
 
         onGameFinished?(result)
+    }
+
+    /// Timing statistics for the round just finished. Internal for tests.
+    func makeSessionMetrics() -> SessionMetrics? {
+        let key = mode == .practice
+            ? PracticeSession.protocolKey(duration: Int(timerDurationRef))
+            : mode.rawValue
+        return SessionMetrics.compute(mode: mode, protocolKey: key, durationSec: playElapsed,
+                                      errorsMs: tapErrorsMs, hits: hitsRef,
+                                      perfects: perfectCountRef, completed: !endedByQuit)
     }
 
     /// True when the clock is not running although the round is unfinished —

@@ -122,6 +122,7 @@ enum GameConfig {
         case .hardcoreCombo: return 80_000
         case .tinyWindow:    return 25_000
         case .focus:         return 0
+        case .practice:      return 0
         }
     }
 

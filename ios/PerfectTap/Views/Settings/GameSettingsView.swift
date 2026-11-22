@@ -11,6 +11,8 @@ struct GameSettingsView: View {
     @State private var soundEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_sound") as? Bool ?? true
     @State private var musicEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_music") as? Bool ?? true
     @State private var hapticsEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_haptics") as? Bool ?? true
+    @AppStorage(EffectsLevel.storageKey) private var effectsLevel: String = EffectsLevel.full.rawValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showLinkAccount = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -75,6 +77,24 @@ struct GameSettingsView: View {
                                     UserDefaults.standard.set(newValue, forKey: "perfecttap_haptics")
                                     HapticsEngine.shared.refreshSettings()
                                 }
+                        }
+
+                        // Visual effects (particles, glow, popup motion, cosmetic effects)
+                        settingsSection("VISUAL EFFECTS") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Picker("Effects", selection: $effectsLevel) {
+                                    ForEach(EffectsLevel.allCases) { level in
+                                        Text(level.label).tag(level.rawValue)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                Text(reduceMotion
+                                     ? "Reduce Motion is on in iOS settings, so effects are limited to Reduced."
+                                     : "Reduced or Off removes particles and motion. Gameplay and scoring stay the same.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.white.opacity(0.4))
+                            }
+                            .padding(14)
                         }
 
                         // Theme picker — only shows owned themes

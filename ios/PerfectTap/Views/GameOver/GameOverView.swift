@@ -141,13 +141,15 @@ struct GameOverView: View {
                         statCard(icon: "dollarsign.circle.fill", label: "EARNED", value: "+\(result.coinsEarned)", color: Color(red: 0.98, green: 0.73, blue: 0.26))
                     }
                 }
+            } else if result.mode == .practice {
+                practiceSummary
             } else {
                 VStack(spacing: 10) {
                     Text("NO SCORE MODE")
                         .font(.system(size: 18, weight: .black))
                         .tracking(2)
                         .foregroundColor(.white.opacity(0.75))
-                    Text("This mode is about consistency and focus, not points.")
+                    Text("This mode is about the feel of timing, not points.")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.45))
                         .multilineTextAlignment(.center)
@@ -161,6 +163,44 @@ struct GameOverView: View {
                 .fill(Color.white.opacity(0.04))
                 .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.08)))
         )
+    }
+
+    // MARK: - Practice Session summary (game statistics, not a medical measure)
+    @ViewBuilder
+    private var practiceSummary: some View {
+        VStack(spacing: 14) {
+            if let m = result.metrics {
+                Text("±\(Int(m.sdErrorMs.rounded())) ms")
+                    .font(.system(size: 56, weight: .black, design: .monospaced))
+                    .foregroundColor(.white)
+                Text("TIMING SPREAD (LOWER = MORE CONSISTENT)")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundColor(.white.opacity(0.4))
+                HStack(spacing: 12) {
+                    statCard(icon: "scope", label: "AVG OFF", value: "\(Int(m.meanAbsErrorMs.rounded())) ms", color: Color(red: 0.22, green: 0.82, blue: 0.98))
+                    statCard(icon: "checkmark.circle.fill", label: "HITS", value: "\(Int((m.hitRate * 100).rounded()))%", color: Color(red: 0.29, green: 0.86, blue: 0.50))
+                    statCard(icon: "hand.tap.fill", label: "TAPS", value: "\(m.taps)", color: .white.opacity(0.7))
+                }
+                Text(PracticeSummary.biasText(m.meanSignedErrorMs))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+            } else {
+                Text("No taps recorded this session.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            Button { router.replaceStack(with: [.timingProgress]) } label: {
+                Label("SEE YOUR TREND", systemImage: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 12, weight: .black))
+                    .tracking(1.5)
+                    .foregroundColor(Color(red: 0.36, green: 0.85, blue: 0.90))
+            }
+            Text(PracticeSummary.disclaimer)
+                .font(.system(size: 10))
+                .foregroundColor(.white.opacity(0.35))
+                .multilineTextAlignment(.center)
+        }
     }
 
     private func statCard(icon: String, label: String, value: String, color: Color) -> some View {
@@ -435,7 +475,8 @@ struct GameOverView: View {
         case .invisibleZone: return "REVEALED"
         case .chaos:         return "CHAOS ENDED"
         case .tinyWindow:    return "WINDOW CLOSED"
-        case .focus:         return "FOCUS SESSION COMPLETE"
+        case .focus:         return "SESSION COMPLETE"
+        case .practice:      return "PRACTICE COMPLETE"
         case .zen:           return "SESSION COMPLETE"
         default:             return "GAME OVER"
         }
