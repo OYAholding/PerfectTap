@@ -279,7 +279,7 @@
 |---|---|---|
 | `hotfix/1.1.1-stability` | יציבות בלבד, 1.1.1 (5) | [#13](https://github.com/OYAholding/PerfectTap/pull/13) |
 | `docs/adhd-attention-research` | מסמכי המחקר | [#12](https://github.com/OYAholding/PerfectTap/pull/12) |
-| `release/1.2.0` | כל האמור למעלה, 1.2.0 (6). מבוסס על 1.1.1, וכולל את מסמכי המחקר | PR_120_PLACEHOLDER |
+| `release/1.2.0` | כל האמור למעלה, 1.2.0 (6). מבוסס על 1.1.1, וכולל את מסמכי המחקר | [#14](https://github.com/OYAholding/PerfectTap/pull/14) |
 
 **סדר מיזוג מומלץ:** ‏#13, אחריו #12, ואז 1.2.0.
 
