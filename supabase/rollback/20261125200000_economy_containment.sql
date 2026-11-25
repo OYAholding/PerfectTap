@@ -15,6 +15,11 @@ revoke execute on function public.record_verified_rewarded_claim(uuid, uuid, tex
   from service_role;
 revoke execute on function public.submit_economy_event(uuid, text, jsonb)
   from authenticated;
+-- The private bodies carry their own grants; revoke them too (defense in depth).
+revoke execute on function private.record_verified_rewarded_claim(uuid, uuid, text, text, uuid, smallint)
+  from service_role;
+revoke execute on function private.submit_economy_event(uuid, text, jsonb)
+  from authenticated;
 
 insert into private.economy_events (user_id, kind, detail)
 values (null, 'economy_backend_contained', jsonb_build_object('at', now()));
