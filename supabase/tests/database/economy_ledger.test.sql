@@ -31,10 +31,10 @@ select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.
   where n.nspname = 'public' and p.prosecdef and has_function_privilege('authenticated', p.oid, 'EXECUTE')), 0,
   'no client-callable SECURITY DEFINER function in public');
 select ok(has_function_privilege('service_role',
-  'public.record_verified_rewarded_claim(uuid,uuid,text,date,smallint,integer)', 'EXECUTE'),
+  'public.record_verified_rewarded_claim(uuid,uuid,text,text,uuid,smallint)', 'EXECUTE'),
   'service role can record verified rewarded claims');
 select ok(not has_function_privilege('authenticated',
-  'public.record_verified_rewarded_claim(uuid,uuid,text,date,smallint,integer)', 'EXECUTE'),
+  'public.record_verified_rewarded_claim(uuid,uuid,text,text,uuid,smallint)', 'EXECUTE'),
   'client cannot self-grant rewarded claims');
 
 select pg_temp.as_user('bbbbbbbb-0000-0000-0000-000000000001');
