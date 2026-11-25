@@ -16,6 +16,39 @@ struct EconomyConfig: Equatable {
     let seasonAdsRequired: Int
     let seasonCoinRewards: [Int]
     let shopPrices: [String: Int]
+    /// Contract key `starter_items`: Common cosmetics a brand-new player may
+    /// claim once (one item) when the authoritative economy is enabled.
+    var starterItems: [String] = []
+    /// Contract key `gameplay_daily_cap` (server enforced; 0 = none).
+    var gameplayDailyCap: Int = 0
+    /// Contract key `active_season` (server season the `season_tier` events name).
+    var activeSeason: SeasonDefinition? = nil
+
+    /// Contract key `combo_bonus`: `(minCombo, bonus)` evaluated highest first.
+    static let comboBonusTable: [(minCombo: Int, bonus: Int)] = [(20, 8), (10, 5), (5, 3), (0, 1)]
+    /// Contract key `mode_bonus`.
+    static let modeBonus: [GameMode: Int] = [.classic: 2, .duel: 6]
+
+    struct SeasonDefinition: Equatable {
+        let id: String
+        let title: String
+        let startsAtISO: String
+        let endsAtISO: String
+        let tiers: Int
+        let maxTiersPerDay: Int
+
+        init(id: String, title: String, startsAt: String, endsAt: String, tiers: Int, maxTiersPerDay: Int) {
+            self.id = id
+            self.title = title
+            self.startsAtISO = startsAt
+            self.endsAtISO = endsAt
+            self.tiers = tiers
+            self.maxTiersPerDay = maxTiersPerDay
+        }
+
+        var startsAt: Date? { ISO8601DateFormatter().date(from: startsAtISO) }
+        var endsAt: Date? { ISO8601DateFormatter().date(from: endsAtISO) }
+    }
 
     /// Shipping behavior while owner approval and rollout remain off.
     static let legacy = EconomyConfig(
@@ -57,7 +90,14 @@ struct EconomyConfig: Equatable {
             "avatar_wizard": 1_200, "avatar_king": 1_350,
             "avatar_devil": 1_250, "avatar_unicorn": 2_400,
             "avatar_dragon": 2_800,
-        ]
+        ],
+        starterItems: ["theme_neon", "fx_ripple", "avatar_cool"],
+        gameplayDailyCap: 1_500,
+        // Placeholder pending the owner's season calendar (seeded by migration
+        // 20261125200000_authoritative_economy_sources.sql).
+        activeSeason: SeasonDefinition(id: "season_1_neon_nights", title: "Neon Nights",
+                                       startsAt: "2026-12-01T00:00:00Z", endsAt: "2027-03-01T00:00:00Z",
+                                       tiers: 30, maxTiersPerDay: 15)
     )
 
     static var current: EconomyConfig {
@@ -80,9 +120,59 @@ struct EconomyConfig: Equatable {
     func gameCoins(score: Int, maxCombo: Int, mode: GameMode) -> Int {
         guard mode.earnCoins else { return 0 }
         let base = max(0, score) / scoreCoinDivisor
-        let comboBonus = maxCombo >= 20 ? 8 : maxCombo >= 10 ? 5 : maxCombo >= 5 ? 3 : 1
-        let modeBonus = mode == .duel ? 6 : 2
+        let comboBonus = Self.comboBonusTable.first { maxCombo >= $0.minCombo }?.bonus ?? 1
+        let modeBonus = Self.modeBonus[mode] ?? 2
         return max(minimumGameCoins, base + comboBonus + modeBonus)
+    }
+
+    func dailyReward(streak: Int) -> Int {
+        guard !dailyRewards.isEmpty else { return 0 }
+        return dailyRewards[max(0, streak) % dailyRewards.count]
+    }
+
+    /// Season coin cycle (`season_coin_cycle`): the repeating unit of the free track.
+    var seasonCoinCycle: [Int] {
+        guard version == Self.balancedPremiumRC1.version else { return seasonCoinRewards }
+        return Array(seasonCoinRewards.prefix(5))
+    }
+
+    /// One-time rewards keyed by id (`achievement_rewards`). Today's catalog
+    /// values are reused for every config version.
+    static var achievementRewards: [String: Int] {
+        Dictionary(uniqueKeysWithValues: Achievement.all.map { ($0.id, $0.reward) })
+    }
+
+    /// `challenge_rewards{id:{coins,item}}` derived from the challenge catalog.
+    static var challengeRewards: [String: (coins: Int, item: String?)] {
+        Dictionary(uniqueKeysWithValues: Challenge.all.map { challenge in
+            let reward = Challenge.parseReward(challenge.rewardLabel)
+            return (challenge.id, (reward.coins, reward.theme))
+        })
+    }
+
+    /// The shared numbers in the contract's `economy_configs.config` key space.
+    /// Pinned by a unit test so the Swift copy and the Supabase seed agree.
+    var contractValues: [String: Any] {
+        [
+            "daily_rewards": dailyRewards,
+            "wheel_rewards": wheelRewards,
+            "quest_rewards": [
+                "easy": questRewards[.easy] ?? 0,
+                "medium": questRewards[.medium] ?? 0,
+                "hard": questRewards[.hard] ?? 0,
+            ],
+            "score_coin_divisor": scoreCoinDivisor,
+            "minimum_game_coins": minimumGameCoins,
+            "home_rewarded_coins": homeRewardedCoins,
+            "season_ads_required": seasonAdsRequired,
+            "season_coin_cycle": seasonCoinCycle,
+            "starter_items": starterItems,
+            "gameplay_daily_cap": gameplayDailyCap,
+            "active_season": activeSeason.map {
+                ["id": $0.id, "starts_at": $0.startsAtISO, "ends_at": $0.endsAtISO,
+                 "tiers": $0.tiers, "max_tiers_per_day": $0.maxTiersPerDay] as [String: Any]
+            } ?? [:],
+        ]
     }
 }
 

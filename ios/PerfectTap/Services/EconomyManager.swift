@@ -31,20 +31,27 @@ final class EconomyManager {
         PlayerProfile.load() ?? PlayerProfile()
     }
 
+    // MARK: - Economy service seam
+
+    /// The single coin source/sink seam. Tests inject a fake or a
+    /// `LedgerEconomyService` with an in-memory remote.
+    var service: EconomyService = LedgerEconomyService.shared
+
     // MARK: - Currency
 
-    /// Add coins to player profile (from gameplay, quests, purchases, etc.)
+    /// Add coins from a legacy entry point. Flag OFF: unchanged local credit.
+    /// Flag ON: no local mutation (each source has its own server path).
     func addCoins(_ amount: Int, source: CoinSource) {
-        guard amount > 0 else { return }
+        guard amount > 0, !service.isAuthoritative else { return }
         _ = updateProfile { profile in
-            profile.coins += amount
-            profile.stats.totalCoinsEarned += amount
+            self.service.recordGrant(.legacy(source), legacyCoins: amount,
+                                     countsTowardTotalEarned: true, profile: &profile)
         }
     }
 
-    /// Spend coins (for shop purchases). Returns true if successful.
+    /// Spend coins locally. Flag ON: refused — spending is server-side only.
     func spendCoins(_ amount: Int) -> Bool {
-        guard amount > 0 else { return false }
+        guard amount > 0, !service.isAuthoritative else { return false }
         var didSpend = false
         _ = updateProfile { profile in
             guard profile.coins >= amount else { return }
@@ -54,9 +61,9 @@ final class EconomyManager {
         return didSpend
     }
 
-    /// Current coin balance
+    /// Current coin balance (flag ON: the server-confirmed balance).
     var coinBalance: Int {
-        currentProfile().coins
+        service.spendableBalance(profile: currentProfile())
     }
 
     // MARK: - Item Ownership
@@ -68,6 +75,10 @@ final class EconomyManager {
     }
 
     func isOwned(_ itemID: String, in profile: PlayerProfile) -> Bool {
+        Self.isOwned(itemID, in: profile)
+    }
+
+    nonisolated static func isOwned(_ itemID: String, in profile: PlayerProfile) -> Bool {
         // Free items are always owned
         if let item = ShopItem.item(id: itemID), item.isFree {
             return true
@@ -94,10 +105,10 @@ final class EconomyManager {
         }
     }
 
-    /// Buy an item with coins. Returns true if purchase succeeded.
-    /// Premium skins are only sold through StoreKit.
+    /// Buy an item with coins locally (legacy path). Returns true if purchase
+    /// succeeded. Premium skins are only sold through StoreKit. Flag ON: refused.
     func buyItem(_ item: ShopItem) -> Bool {
-        guard !item.isFree, !item.isPremium else { return false }
+        guard !item.isFree, !item.isPremium, !service.isAuthoritative else { return false }
         var purchased = false
         _ = updateProfile { profile in
             guard !self.isOwned(item.id, in: profile) else { return }
@@ -111,43 +122,9 @@ final class EconomyManager {
         return purchased
     }
 
-    /// Uses the server ledger once the owner-approved rollout flag is enabled.
-    /// Until then the existing local path remains intact for non-monetized RCs.
+    /// Shop entry point for both rollout paths.
     func buyItemForCurrentRollout(_ item: ShopItem) async -> Bool {
-        guard FeatureFlags.authoritativeEconomyEnabled else { return buyItem(item) }
-        guard !item.isFree, !item.isPremium,
-              let service = Backend.shared as? SupabaseService else { return false }
-        do {
-            let result = try await service.purchaseEconomyItem(item.id, eventID: UUID())
-            if let balance = result.balance {
-                _ = updateProfile { profile in
-                    profile.coins = balance
-                    if result.status == "applied", !profile.ownedItems.contains(item.id) {
-                        profile.ownedItems.append(item.id)
-                    }
-                }
-            }
-            return result.status == "applied" || result.status == "already_owned"
-        } catch {
-            return false
-        }
-    }
-
-    func claimDailyRewardForCurrentRollout() async -> Bool {
-        guard FeatureFlags.authoritativeEconomyEnabled else { return false }
-        guard let service = Backend.shared as? SupabaseService else { return false }
-        do {
-            let result = try await service.claimDailyEconomyReward(eventID: UUID())
-            guard let balance = result.balance else { return false }
-            if let serverProfile = await service.loadProfile() {
-                persistProfile(serverProfile, syncCloud: false)
-            } else {
-                _ = updateProfile(syncCloud: false) { $0.coins = balance }
-            }
-            return result.status == "applied" || result.status == "duplicate"
-        } catch {
-            return false
-        }
+        await service.purchaseItem(item)
     }
 
     // MARK: - Equip
@@ -228,14 +205,14 @@ final class EconomyManager {
     /// Refunded coin pack: remove the credited coins, never below zero.
     func debitCoins(_ amount: Int) {
         guard amount > 0 else { return }
-        _ = updateProfile { profile in
-            profile.coins = max(0, profile.coins - amount)
-        }
+        service.applyPurchasedCoins(-amount)
     }
 
+    /// StoreKit entry point used by PurchaseManager. Coin effects go through
+    /// the economy service (flag ON: the server ledger credits/debits them).
     func apply(_ effect: EntitlementEffect) {
         switch effect {
-        case .creditCoins(let n): addCoins(n, source: .purchase)
+        case .creditCoins(let n): if n > 0 { service.applyPurchasedCoins(n) }
         case .debitCoins(let n):  debitCoins(n)
         case .grantNoAds:         grantNoAds()
         case .revokeNoAds:        revokeNoAds()

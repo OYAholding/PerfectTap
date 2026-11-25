@@ -177,7 +177,37 @@ struct LuckyWheelView: View {
         canSpin = false
         result = nil
 
-        let winIndex = Int.random(in: 0..<segments.count)
+        let winIndex: Int
+        let economy = EconomyManager.shared.service
+        if economy.isAuthoritative {
+            // The server picks the segment; the animation lands on it.
+            switch await economy.spinWheel() {
+            case .landed(let index, _) where segments.indices.contains(index):
+                winIndex = index
+            case .alreadyClaimed:
+                setLastConsumedSpinDay(day)
+                isSpinning = false
+                availabilityMessage = "Today's spin was already used."
+                return
+            case .queued:
+                setLastConsumedSpinDay(day)
+                isSpinning = false
+                availabilityMessage = "Spin saved. Your coins will be added when the server confirms it."
+                return
+            case .failed(let code):
+                isSpinning = false
+                canSpin = code != "legacy_review_required"
+                availabilityMessage = EconomyErrorPolicy.userMessage(for: code)
+                return
+            case .landed:
+                // Index outside the displayed wheel: config mismatch, nothing shown.
+                isSpinning = false
+                availabilityMessage = "The server could not confirm this spin. Please try again."
+                return
+            }
+        } else {
+            winIndex = Int.random(in: 0..<segments.count)
+        }
         let spinID = UUID().uuidString
         persistPendingSpin(id: spinID, day: day, index: winIndex)
         setLastConsumedSpinDay(day)

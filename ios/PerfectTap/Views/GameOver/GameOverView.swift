@@ -139,7 +139,7 @@ struct GameOverView: View {
                     statCard(icon: "trophy.fill", label: "BEST", value: "\(profile.bestScore(for: result.mode))", color: .yellow)
                     statCard(icon: "bolt.fill",  label: "COMBO", value: "×\(result.maxCombo)",                   color: Color(red: 0.22, green: 0.82, blue: 0.98))
                     if result.coinsEarned > 0 {
-                        statCard(icon: "dollarsign.circle.fill", label: "EARNED", value: "+\(result.coinsEarned)", color: Color(red: 0.98, green: 0.73, blue: 0.26))
+                        statCard(icon: "dollarsign.circle.fill", label: result.economyEventKey == nil ? "EARNED" : "PENDING", value: "+\(result.coinsEarned)", color: Color(red: 0.98, green: 0.73, blue: 0.26))
                     }
                 }
             } else if result.mode == .practice {
@@ -320,11 +320,18 @@ struct GameOverView: View {
                             doubleCoinsUnavailableToday = true
                             return
                         }
-                        let watched = await AdManager.shared.showRewardedAd(placement: .doubleCoins)
+                        let economy = EconomyManager.shared.service
+                        let claimIndex = RewardClaimLimiter.shared.nextClaimIndex(
+                            for: .doubleCoins, day: day, userID: Backend.shared.currentUID)
+                        // SSV grant = the referenced gameplay grant, once (contract).
+                        let ssv = economy.rewardedVerification(
+                            for: .doubleCoins, claimIndex: claimIndex, referenceEventKey: result.economyEventKey)
+                        let watched = await AdManager.shared.showRewardedAd(placement: .doubleCoins,
+                                                                            verification: ssv)
                         isWatchingAd = false
                         if watched, RewardClaimLimiter.shared.record(.doubleCoins, day: day, userID: Backend.shared.currentUID) {
                             didDoubleCoins = true
-                            EconomyManager.shared.addCoins(result.coinsEarned, source: .gameplay)
+                            economy.rewardedAdCompleted(.doubleCoins, legacyCoins: result.coinsEarned)
                             profile = PlayerProfile.load() ?? PlayerProfile()
                         }
                     }

@@ -78,6 +78,7 @@ final class AuthViewModel: ObservableObject {
                     currentUID = firebaseUID ?? profile.uid
                 }
                 authState = profile.username.isEmpty ? .needsUsername : .authenticated
+                EconomyManager.shared.service.accountDidChange()
             } else if firebaseUID != nil,
                       let cloudProfile = await Backend.shared.loadProfile(),
                       !cloudProfile.username.isEmpty {
@@ -206,6 +207,7 @@ final class AuthViewModel: ObservableObject {
             profile.save()
             currentUID = result.uid
             await Backend.shared.saveProfile(profile)
+            EconomyManager.shared.service.accountDidChange()
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -272,6 +274,7 @@ final class AuthViewModel: ObservableObject {
                 merged.save()
                 currentUID = firebaseUID
                 await Backend.shared.saveProfile(merged)
+                EconomyManager.shared.service.accountDidChange()
             } else {
                 // No cloud profile — just update UID
                 var local = localProfile
@@ -279,6 +282,7 @@ final class AuthViewModel: ObservableObject {
                 local.save()
                 currentUID = firebaseUID
                 await Backend.shared.saveProfile(local)
+                EconomyManager.shared.service.accountDidChange()
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -296,6 +300,7 @@ final class AuthViewModel: ObservableObject {
             var profile = PlayerProfile.load() ?? PlayerProfile()
             profile.uid = uid
             profile.save()
+            EconomyManager.shared.service.accountDidChange()
             // Stay authenticated — user still has their username
         }
     }
@@ -433,9 +438,8 @@ final class AuthViewModel: ObservableObject {
         // Once the authoritative ledger is owner-enabled, only the server
         // balance may cross an identity merge. The legacy rollout keeps the
         // historical max merge until reconciliation is approved.
-        merged.coins = FeatureFlags.authoritativeEconomyEnabled
-            ? cloud.coins
-            : max(local.coins, cloud.coins)
+        let authoritative = EconomyManager.shared.service.isAuthoritative
+        merged.coins = Self.mergedCoins(local: local.coins, cloud: cloud.coins, authoritative: authoritative)
         if cloud.level > local.level || (cloud.level == local.level && cloud.xp > local.xp) {
             merged.level = cloud.level
             merged.xp = cloud.xp
@@ -460,7 +464,8 @@ final class AuthViewModel: ObservableObject {
         merged.bestScoresExtra = mergedExtra
 
         // 5) Set-like unions
-        merged.ownedItems = unionPreservingOrder(local.ownedItems, cloud.ownedItems)
+        merged.ownedItems = Self.mergedOwnedItems(local: local.ownedItems, cloud: cloud.ownedItems,
+                                                  authoritative: authoritative)
         merged.friends = unionPreservingOrder(local.friends, cloud.friends)
         merged.achievements = unionPreservingOrder(local.achievements, cloud.achievements)
         merged.completedChallenges = unionPreservingOrder(local.completedChallenges, cloud.completedChallenges)
@@ -549,6 +554,28 @@ final class AuthViewModel: ObservableObject {
 
         merged.normalizeAndMigrate()
         return merged
+    }
+
+    /// Coins across an identity merge. Authoritative economy: only the server
+    /// balance crosses (never `max(local, cloud)`, which minted coins).
+    nonisolated static func mergedCoins(local: Int, cloud: Int, authoritative: Bool) -> Int {
+        authoritative ? cloud : max(local, cloud)
+    }
+
+    /// Owned items across an identity merge. Legacy: plain union. Authoritative
+    /// economy: the server list plus only local items with StoreKit evidence
+    /// (premium skins, re-verified from Apple's signed entitlements). Coin-sold
+    /// items owned only locally have no server evidence and are not merged in.
+    nonisolated static func mergedOwnedItems(local: [String], cloud: [String], authoritative: Bool) -> [String] {
+        let candidates = authoritative
+            ? local.filter { ShopItem.item(id: $0)?.isPremium == true }
+            : local
+        var out: [String] = []
+        var seen = Set<String>()
+        for value in candidates + cloud where seen.insert(value).inserted {
+            out.append(value)
+        }
+        return out
     }
 
     private func unionPreservingOrder<T: Hashable>(_ local: [T], _ cloud: [T]) -> [T] {

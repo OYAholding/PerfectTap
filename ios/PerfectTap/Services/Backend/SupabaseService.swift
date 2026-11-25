@@ -419,6 +419,8 @@ final class SupabaseService: GameBackend {
         let balance: Int?
         let coinDebt: Int?
         let itemID: String?
+        var granted: Int? = nil
+        var segmentIndex: Int? = nil
     }
 
     func loadEconomyState() async throws -> EconomyState {
@@ -441,6 +443,34 @@ final class SupabaseService: GameBackend {
             "purchase_economy_item",
             params: Params(p_event_key: eventID.uuidString.lowercased(), p_item_id: itemID)
         ).execute().value
+    }
+
+    /// Contract v1 `submit_economy_event`: the client reports what happened;
+    /// the server computes the grant. Never sends an amount.
+    func submitEconomyEvent(eventKey: UUID, source: String,
+                            payload: [String: EconomyJSONValue]) async throws -> EconomyMutation {
+        struct Params: Encodable {
+            let p_event_key: String
+            let p_source: String
+            let p_payload: [String: EconomyJSONValue]
+        }
+        return try await client.rpc(
+            "submit_economy_event",
+            params: Params(p_event_key: eventKey.uuidString.lowercased(), p_source: source, p_payload: payload)
+        ).execute().value
+    }
+
+    /// Maps an economy RPC failure to the contract's error code
+    /// (`private.fail(code)` raises P0001 with the code as message), or
+    /// `nil` when the request did not reach the server (retry later).
+    func economyFailure(_ error: Error) -> EconomyRemoteFailure {
+        if isNetworkError(error) { return .network }
+        if let postgrest = error as? PostgrestError {
+            return .server(postgrest.message.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if error is DecodingError { return .server("invalid_response") }
+        if (error as NSError).domain == NSURLErrorDomain { return .network }
+        return .network
     }
 
     func saveProfile(_ profile: PlayerProfile) async {
