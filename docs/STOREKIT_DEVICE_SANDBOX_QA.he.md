@@ -7,7 +7,8 @@
 1. ב-App Store Connect: הסכמי Paid Apps, מס ובנק תקינים; תשעת מוצרי ה-IAP קיימים עם IDs זהים ל-`PerfectTap.storekit`; משתמש Sandbox Tester נפרד מחשבון Apple אישי.
 2. ב-Identifiers: capability של Sign in with Apple פעיל ל-`com.perfecttap.app`; ספק Apple ב-Supabase מוגדר ו-manual identity linking פעיל.
 3. בשרת Sandbox מאושר בלבד: מיגרציה ו-Edge Functions פרוסים, Apple App ID ו-root CAs מוגדרים, וקטלוג השרת מכיל את תשעת המוצרים. אין להפעיל Production בלי אישור נוסף.
-4. ב-iPhone: Developer Mode פעיל; ב-Settings → Developer → Sandbox Apple Account נכנסים עם ה-Sandbox Tester. מתקינים build חתום חדש מ-Xcode או TestFlight.
+4. ב-iPhone: Developer Mode פעיל; ב-Settings → Developer → Sandbox Apple Account נכנסים עם ה-Sandbox Tester. מתקינים build של תצורת `Release-IAP` מ-TestFlight (build של `Release` לא ימכור לעולם — זו התנהגות מכוונת).
+5. בשרת: `private.iap_sales_control` — `Sandbox` פתוח, `Production` סגור; המוצרים הנבדקים `enabled` ב-`private.iap_products`.
 
 ## תרחישי חובה
 
@@ -21,6 +22,11 @@
 8. **מכשיר שני:** היכנס עם אותו Sign in with Apple. ודא שיתרת המטבעות מגיעה מהשרת וש-non-consumables חוזרים דרך Restore Purchases.
 9. **Ask to Buy / cancel / pending:** ודא שאין grant לפני `verified`, וש-pending נשמר בלי הודעת הצלחה כוזבת.
 10. **החזרים:** הפעל refund/revoke/refund reversal ב-Sandbox. ודא audit, סדר אירועים, הסרת entitlement והגנת יתרה מאפס.
+
+11. **kill switch:** סגור את `Sandbox` בשרת, חזור לאפליקציה (foreground) — כפתורי הקנייה נעלמים תוך רענון אחד, אבל Restore Purchases ומסירת עסקאות פתוחות ממשיכים לעבוד. פתח שוב וודא שהחנות חוזרת.
+12. **שרת לא זמין:** במצב טיסה, נסה לקנות — אסור שיופיע sheet של StoreKit (המתג נכשל סגור). Restore של Remove Forced Ads וסקינים חייב לעבוד גם בלי שרת.
+13. **refund reversal:** אחרי refund של סקין ב-Sandbox, בצע reversal (אם זמין) וודא שהסקין חוזר פעם אחת בלבד.
+14. **Production סגור:** ודא באותו build שהקוד קורא `AppTransaction.environment = sandbox`; build מ-App Store (Production) לא יציג חנות עד שהבעלים פותח את `Production`.
 
 ## ראיות לשמור
 

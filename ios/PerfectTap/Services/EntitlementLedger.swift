@@ -14,6 +14,10 @@ import Foundation
 //  * A revoked (refunded / Family-Sharing-removed) transaction removes what it
 //    granted. Coins are debited down to a floor of 0 (never negative).
 //  * A revocation that arrives before its purchase blocks the later grant.
+//  * A refund reversal (same transaction re-signed later without
+//    revocationDate) reinstates what the refund removed, exactly once.
+//  * A non-consumable may be granted before the server acknowledged it (server
+//    unreachable); it stays flagged until acknowledged. Coins never are.
 
 enum PurchaseProductKind: Equatable {
     case coins(Int)
@@ -26,6 +30,11 @@ enum PurchaseProductKind: Equatable {
         if let item = ShopItem.item(productID: productID) { return .premiumItem(item.id) }
         return nil
     }
+
+    var isConsumable: Bool {
+        if case .coins = self { return true }
+        return false
+    }
 }
 
 struct PurchaseEvent: Equatable {
@@ -33,12 +42,16 @@ struct PurchaseEvent: Equatable {
     let productID: String
     let isRevoked: Bool
     let appAccountToken: UUID?
+    /// JWS `signedDate`: orders a refund against a later refund reversal.
+    let signedDate: Date?
 
-    init(transactionID: UInt64, productID: String, isRevoked: Bool, appAccountToken: UUID? = nil) {
+    init(transactionID: UInt64, productID: String, isRevoked: Bool, appAccountToken: UUID? = nil,
+         signedDate: Date? = nil) {
         self.transactionID = transactionID
         self.productID = productID
         self.isRevoked = isRevoked
         self.appAccountToken = appAccountToken
+        self.signedDate = signedDate
     }
 }
 
@@ -55,6 +68,28 @@ struct EntitlementLedger: Codable, Equatable {
     struct Record: Codable, Equatable {
         let productID: String
         var isRevoked: Bool
+        /// Newest Apple `signedDate` applied to this record (refund / reversal ordering).
+        var lastSignedDate: Date?
+        /// False while a non-consumable is granted locally from Apple's signed
+        /// StoreKit history but the server has not acknowledged it yet. Coins
+        /// are never recorded unacknowledged.
+        var serverAcknowledged: Bool
+
+        init(productID: String, isRevoked: Bool, lastSignedDate: Date? = nil, serverAcknowledged: Bool = true) {
+            self.productID = productID
+            self.isRevoked = isRevoked
+            self.lastSignedDate = lastSignedDate
+            self.serverAcknowledged = serverAcknowledged
+        }
+
+        // v2 records (1.2.0 candidates) predate the last two fields.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            productID = try c.decode(String.self, forKey: .productID)
+            isRevoked = try c.decode(Bool.self, forKey: .isRevoked)
+            lastSignedDate = try c.decodeIfPresent(Date.self, forKey: .lastSignedDate)
+            serverAcknowledged = try c.decodeIfPresent(Bool.self, forKey: .serverAcknowledged) ?? true
+        }
     }
 
     private(set) var records: [UInt64: Record] = [:]
@@ -62,30 +97,92 @@ struct EntitlementLedger: Codable, Equatable {
     /// they remain immutable dedupe markers rather than guessed entitlements.
     private(set) var legacyProcessed: Set<UInt64> = []
 
-    mutating func process(_ event: PurchaseEvent) -> [EntitlementEffect] {
+    /// Applies a signed StoreKit state exactly once per transaction ID.
+    /// `serverAcknowledged: false` is only used for non-consumables delivered
+    /// while the server could not be reached (see PurchaseManager).
+    mutating func process(_ event: PurchaseEvent, serverAcknowledged: Bool = true) -> [EntitlementEffect] {
         guard let kind = PurchaseProductKind.kind(for: event.productID) else { return [] }
         let id = event.transactionID
         if legacyProcessed.contains(id) { return [] }
         if event.isRevoked {
             guard var record = records[id] else {
                 // Refund before delivery: a tombstone blocks a late grant.
-                records[id] = Record(productID: event.productID, isRevoked: true)
+                records[id] = Record(productID: event.productID, isRevoked: true, lastSignedDate: event.signedDate)
                 return []
             }
             guard !record.isRevoked else { return [] }
-            record.isRevoked = true
-            records[id] = record
-            switch kind {
-            case .coins(let n):          return [.debitCoins(n)]
-            case .removeAds:
-                return hasActiveGrant(for: event.productID) ? [] : [.revokeNoAds]
-            case .premiumItem(let item):
-                return hasActiveGrant(for: event.productID) ? [] : [.revokeItem(item)]
+            if let applied = record.lastSignedDate, let signed = event.signedDate, signed < applied {
+                return []   // stale refund older than an applied reversal
             }
+            record.isRevoked = true
+            record.lastSignedDate = event.signedDate ?? record.lastSignedDate
+            records[id] = record
+            return revocationEffects(kind, productID: event.productID)
         }
-        guard records[id] == nil else { return [] }
+        if var record = records[id] {
+            // Refund reversal (REFUND_REVERSED): Apple re-signs the same
+            // transaction without revocationDate and with a newer signedDate.
+            // An undated or older non-revoked copy stays blocked by the tombstone.
+            guard isReinstatement(event) else { return [] }
+            record.isRevoked = false
+            record.lastSignedDate = event.signedDate
+            let alreadyEntitled = hasActiveGrant(for: event.productID)
+            records[id] = record
+            return grantEffects(kind, alreadyEntitled: alreadyEntitled)
+        }
+        let acknowledged: Bool
+        if case .coins = kind { acknowledged = true } else { acknowledged = serverAcknowledged }
         let alreadyEntitled = hasActiveGrant(for: event.productID)
-        records[id] = Record(productID: event.productID, isRevoked: false)
+        records[id] = Record(productID: event.productID, isRevoked: false, lastSignedDate: event.signedDate,
+                             serverAcknowledged: acknowledged)
+        return grantEffects(kind, alreadyEntitled: alreadyEntitled)
+    }
+
+    /// A non-revoked, newer-signed copy of a transaction this ledger revoked.
+    func isReinstatement(_ event: PurchaseEvent) -> Bool {
+        guard !event.isRevoked, let record = records[event.transactionID], record.isRevoked,
+              let signed = event.signedDate, let revokedAt = record.lastSignedDate else { return false }
+        return signed > revokedAt
+    }
+
+    func hasProcessed(_ transactionID: UInt64) -> Bool {
+        records[transactionID] != nil || legacyProcessed.contains(transactionID)
+    }
+
+    func needsServerAcknowledgement(_ transactionID: UInt64) -> Bool {
+        guard let record = records[transactionID] else { return false }
+        return !record.isRevoked && !record.serverAcknowledged
+    }
+
+    mutating func markServerAcknowledged(_ transactionID: UInt64) {
+        records[transactionID]?.serverAcknowledged = true
+    }
+
+    /// The server definitively rejected a provisionally granted non-consumable:
+    /// remove the local grant (fail closed) and keep a tombstone.
+    mutating func rejectProvisional(_ transactionID: UInt64) -> [EntitlementEffect] {
+        guard var record = records[transactionID], !record.isRevoked, !record.serverAcknowledged,
+              let kind = PurchaseProductKind.kind(for: record.productID) else { return [] }
+        record.isRevoked = true
+        record.serverAcknowledged = true
+        records[transactionID] = record
+        return revocationEffects(kind, productID: record.productID)
+    }
+
+    /// Idempotent re-application of an active non-consumable for whichever
+    /// account is signed in now (Restore Purchases / launch reconcile). Coins
+    /// are never re-applied: a consumable is credited once, to its own account.
+    func restoreEffects(for event: PurchaseEvent) -> [EntitlementEffect] {
+        guard !event.isRevoked, let record = records[event.transactionID], !record.isRevoked,
+              let kind = PurchaseProductKind.kind(for: event.productID) else { return [] }
+        switch kind {
+        case .coins:                 return []
+        case .removeAds:             return [.grantNoAds]
+        case .premiumItem(let item): return [.grantItem(item)]
+        }
+    }
+
+    private func grantEffects(_ kind: PurchaseProductKind, alreadyEntitled: Bool) -> [EntitlementEffect] {
         switch kind {
         case .coins(let n):          return [.creditCoins(n)]
         case .removeAds:             return alreadyEntitled ? [] : [.grantNoAds]
@@ -93,8 +190,12 @@ struct EntitlementLedger: Codable, Equatable {
         }
     }
 
-    func hasProcessed(_ transactionID: UInt64) -> Bool {
-        records[transactionID] != nil || legacyProcessed.contains(transactionID)
+    private func revocationEffects(_ kind: PurchaseProductKind, productID: String) -> [EntitlementEffect] {
+        switch kind {
+        case .coins(let n):          return [.debitCoins(n)]
+        case .removeAds:             return hasActiveGrant(for: productID) ? [] : [.revokeNoAds]
+        case .premiumItem(let item): return hasActiveGrant(for: productID) ? [] : [.revokeItem(item)]
+        }
     }
 
     private func hasActiveGrant(for productID: String) -> Bool {

@@ -14,8 +14,8 @@ StoreKit 2 הוא מסלול התשלום היחיד לפריטים דיגיטל
 
 | רכיב | מצב נוכחי |
 |---|---|
-| מתגי הפעלה | שישה Info.plist flags נפרדים לקטלוג, אימות שרת, חבילות מטבעות, Remove Forced Ads, סקינים וכלכלה סמכותית. כולם `NO` גם ב-Debug וגם ב-Release ונכשלים סגור אם חסרים |
-| StoreKit 2 | טעינת מוצרים, רכישה עם `appAccountToken`, listener, סריקת `Transaction.unfinished`, שחזור, reconcile של זכאויות וריטריי מדורג לאימות שרת |
+| מתגי הפעלה | שתי שכבות שנכשלות סגור: (1) תקרת יכולת בזמן build מקובצי `Config/Monetization.*.xcconfig` — `Debug` ו-`Release` כבויים לגמרי, `Debug-StoreKit` לבדיקה מקומית בלבד, `Release-IAP` מותר למכור; (2) מתג שרת לכל סביבת StoreKit (Sandbox / Production) דרך `get_iap_sales_status`, שסוגר מכירה אם אינו זמין. מסירה ושחזור אינם תלויים במתגים. פירוט: `docs/MONETIZATION_ACTIVATION_STRATEGY.md` |
+| StoreKit 2 | טעינת מוצרים, רכישה עם `appAccountToken`, listener שמחובר כבר בהפעלה, סריקת `Transaction.unfinished`, בדיקת bundle/מוצר/סוג מוצר, שחזור לאורחים, reconcile של זכאויות והחזרים, refund reversal, וריטריי מדורג לאימות שרת. מטבעות מסתיימים רק אחרי אישור שרת; non-consumable נפתח מהיסטוריית Apple גם כשהשרת לא זמין |
 | זהות ושחזור | Sign in with Apple עם nonce, קישור identity לחשבון האנונימי הקיים ושימור UID/נתונים; אם ה-Apple identity כבר קיים, כניסה לחשבון הקיים ומיזוג פרופיל שמרני |
 | מסירה מקומית | ledger v2 שומר מוצר לכל transaction, מונע זיכוי כפול, תומך בכמה עסקאות פעילות לאותו non-consumable ושומר מזהי 1.1.x כסמני dedupe קבועים |
 | שרת | ledger רכישות וכלכלה סמכותית ב-Postgres, config/catalog שמתחילים disabled, reconciliation ליתרות legacy, אימות JWS ב-Production וב-Sandbox ו-App Store Server Notifications V2 |
@@ -28,14 +28,13 @@ StoreKit 2 הוא מסלול התשלום היחיד לפריטים דיגיטל
 
 ## הגנות הפעלה
 
-- `PT_IAP_CATALOG_ENABLED`
-- `PT_IAP_SERVER_VERIFICATION_ENABLED`
-- `PT_IAP_COIN_PACKS_ENABLED`
-- `PT_IAP_REMOVE_ADS_ENABLED`
-- `PT_IAP_PREMIUM_SKINS_ENABLED`
-- `PT_AUTHORITATIVE_ECONOMY_ENABLED`
+| שכבה | מקור | ברירת מחדל |
+|---|---|---|
+| תקרת build | `PT_IAP_CATALOG_ENABLED`, `PT_IAP_SERVER_VERIFICATION_ENABLED`, `PT_IAP_COIN_PACKS_ENABLED`, `PT_IAP_REMOVE_ADS_ENABLED`, `PT_IAP_PREMIUM_SKINS_ENABLED` מתוך xcconfig | `NO` ב-`Debug` וב-`Release`; `YES` רק ב-`Release-IAP` (וב-`Debug-StoreKit` מול קובץ StoreKit מקומי בלבד) |
+| מתג שרת | `private.iap_sales_control` לכל סביבה + `private.iap_products.enabled` לכל מוצר, דרך `public.get_iap_sales_status()` | שתי הסביבות סגורות; שגיאה/חוסר תשובה/תשובה ישנה מ-10 דקות ⇒ סגור |
+| כלכלה סמכותית | `PT_AUTHORITATIVE_ECONOMY_ENABLED` + שורת `economy_configs` פעילה | `NO` בכל התצורות |
 
-רכישה אפשרית רק כשמתגי הקטלוג, אימות השרת והקטגוריה דולקים ויש UUID תקין. non-consumables זמינים גם לחשבון אנונימי; consumables דורשים זהות קבועה. `-PTIAPPreview` מציג UI ב-Debug בלבד ואינו נותן הרשאת רכישה.
+רכישה חדשה אפשרית רק כששתי השכבות פתוחות ויש UUID תקין. non-consumables זמינים גם לחשבון אנונימי; consumables דורשים זהות קבועה. App Review בודק ב-Sandbox באותו binary בזמן ש-Production נשאר סגור עד הפעלת הבעלים. `-PTIAPPreview` מציג UI ב-Debug בלבד ואינו נותן הרשאת רכישה.
 
 ## מצב בדיקות
 
@@ -51,23 +50,25 @@ StoreKit 2 הוא מסלול התשלום היחיד לפריטים דיגיטל
 | UI gameplay/consent | workload, מטריצת 15 מצבים ושתי בדיקות ATT האחרות עברו; `Allow` וצילום IAP עברו בריצה ממוקדת אחרי תיקון יציבות האוטומציה |
 | Release build | עבר ל-iOS Simulator; נשארו אזהרות קיימות על XcodeGen groups כפולים ו-`Perf.swift` לקראת Swift 6 |
 | Secret scan | היסטוריית Git ועץ העבודה הנקי עברו; התאמות allowlisted בלבד |
-| App Store Connect read-only | 0 מוצרים קיימים; כל תשעת המוצרים ב-manifest עדיין `MISSING` |
+| App Store Connect read-only | נבדק שוב 25.11.2026 עם `iap_reconcile` (dry-run): API תקין, 0 מוצרים קיימים, כל תשעת המוצרים `MISSING`; כל מחירי הטיוטה ($0.99/$1.99/$3.99/$9.99, $2.99, $1.99) קיימים בטבלת המחירים של USA; 175 טריטוריות |
 
 ## חסמי שחרור
 
 1. Xcode 26.6 דורש התקנת רכיב iOS 26.5 לפני בדיקת GUI. אחרי ההתקנה יש להריץ שוב את lifecycle ב-GUI; iOS 26.2 ו-18.5 כבר מספקים ראיית StoreKit תקינה.
 2. להשלים ב-App Store Connect את Paid Apps Agreement, פרטי מס ובנק.
-3. ליצור את תשעת מוצרי ה-IAP, ולשלוח לפחות consumable ראשון ו-non-consumable ראשון יחד עם 1.2.0.
+3. ליצור את תשעת מוצרי ה-IAP רק אחרי אישור: `PT_CONFIRM=yes bundle exec fastlane iap_reconcile confirm_create:true` (יצירה, לוקליזציה, מחיר, זמינות, צילום Review והערות, ואימות read-back), ולצרף אותם לגרסת 1.2.0 בעמוד הגרסה ב-ASC.
 4. להפעיל Sign in with Apple ל-App ID ול-Supabase, כולל manual identity linking. SMTP נדרש רק לחלופת אימייל/Cloud Backup, לא לרכישת non-consumable.
 5. אחרי גיבוי ואישור מפורש בלבד: לפרוס את המיגרציה וה-Edge Functions, להגדיר Apple root CAs ו-App Apple ID, ולהשאיר את קטלוג השרת disabled עד סוף QA.
 6. לבצע על iPhone פיזי וב-Sandbox/TestFlight: רכישה, duplicate delivery, restore, מעבר מכשיר, offline באמצע אימות, Ask to Buy, refund, revoke ו-refund reversal.
-7. רק אחרי שכל השלבים עוברים: להפעיל flags לפי קטגוריה, קודם ב-TestFlight ולבסוף ב-build ל-App Review.
+7. לפרוס את `get_iap_sales_status` (מפרט בסעיף 4 של `docs/MONETIZATION_ACTIVATION_STRATEGY.md`), לפתוח מכירה ב-Sandbox בלבד, לבנות `Release-IAP` ל-TestFlight ול-App Review. Production נפתח רק אחרי אישור הגרסה והחלטת הבעלים.
 
 ## קבצי תפעול
 
 - קטלוג מוצרים: `fastlane/iap/catalog.json`
 - הערות Review: `fastlane/iap/review-notes.en-US.txt`
 - בדיקת ASC ללא כתיבה: `bundle exec fastlane iap_check`
+- reconciler אידמפוטנטי (dry-run כברירת מחדל): `bundle exec fastlane iap_reconcile`; כתיבה רק עם `confirm_create:true` וגם `PT_CONFIRM=yes`
+- אסטרטגיית הפעלה לפי סביבה: `docs/MONETIZATION_ACTIVATION_STRATEGY.md`
 - הכנת טיוטה מקומית ללא כתיבה או תלות במוצרי ASC: `bundle exec fastlane iap_prepare`
 - שער הגשה סופי, read-only, שדורש תשעה מוצרי ASC וצילומי Review תקינים: `bundle exec fastlane iap_submission_validate`
 - נוהל Sandbox במכשיר: `docs/STOREKIT_DEVICE_SANDBOX_QA.he.md`
