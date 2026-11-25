@@ -205,12 +205,19 @@ final class ModeRuntimeQATests: XCTestCase {
             if !desc.exists {
                 failures.append("rush_revive_copy_missing_no_time_bonus")
             }
-            let continueButton = app.buttons["CONTINUE — FREE"].exists ? app.buttons["CONTINUE — FREE"] : app.buttons["WATCH AD TO CONTINUE"]
-            if continueButton.exists {
+            // ReviveModalView: "WATCH OPTIONAL AD TO CONTINUE". UI tests run with
+            // -PTUITestNoAds, so the ad has no inventory and the modal stays;
+            // "Give Up" then ends the round instead of hanging the matrix.
+            let continueButton = app.buttons["WATCH OPTIONAL AD TO CONTINUE"]
+            if continueButton.waitForExistence(timeout: 3) {
                 continueButton.tap()
-                _ = app.buttons["TAP!"].waitForExistence(timeout: 6)
+                if !app.buttons["TAP!"].waitForExistence(timeout: 6),
+                   app.staticTexts["CONTINUE?"].exists, app.buttons["Give Up"].exists {
+                    app.buttons["Give Up"].tap()
+                }
             } else {
                 failures.append("rush_revive_continue_button_missing")
+                if app.buttons["Give Up"].exists { app.buttons["Give Up"].tap() }
             }
 
             if let before = timerBefore, let after = currentTimerSeconds(), after > before + 2 {
@@ -361,5 +368,9 @@ final class ModeRuntimeQATests: XCTestCase {
         let status = pass ? "PASS" : "FAIL"
         let detail = notes.isEmpty ? "ok" : notes.joined(separator: ",")
         print("QA_RESULT|\(mode)|\(status)|\(detail)")
+        // Make the matrix fail when a mode fails (it used to print FAIL and pass).
+        if !pass {
+            XCTFail("Mode runtime QA failed for \(mode): \(detail)")
+        }
     }
 }

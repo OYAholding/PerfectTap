@@ -40,6 +40,9 @@ struct GameResult {
     var isDuelSession: Bool = false
     /// Timing statistics for this round (nil if no taps). On-device only.
     var metrics: SessionMetrics? = nil
+    /// Authoritative economy only: outbox key of this round's gameplay/duel
+    /// event (coins are pending until the server confirms). Nil on the legacy path.
+    var economyEventKey: UUID? = nil
 }
 
 // MARK: - Indicator relay (separate ObservableObject for 60fps updates)
@@ -700,9 +703,27 @@ final class GameViewModel: ObservableObject {
         let isNewBest = scoreRef > profile.bestScore(for: mode) && scoreRef > 0
         profile.updateBestScore(scoreRef, for: mode)
 
+        // Every coin grant below goes through the economy seam: flag OFF it is
+        // the unchanged local arithmetic; flag ON it only enqueues outbox events
+        // (in memory + one small file write, at round end — never per tap).
+        let economy = EconomyManager.shared.service
+        let hasValidDuelContext = duelContext?.mode == mode && !(duelContext?.duelId.isEmpty ?? true)
         var coinsEarned = 0
         coinsEarned = GameConfig.calcGameCoins(score: scoreRef, maxCombo: maxComboRef, mode: mode)
-        if coinsEarned > 0 { profile.coins += coinsEarned }
+        var gameplayEventKey: UUID? = nil
+        if mode.earnCoins {
+            let grant: EconomyGrant
+            if hasValidDuelContext, let duelID = duelContext?.duelId {
+                grant = .duel(duelID: duelID)
+            } else {
+                grant = .gameplay(GameplayFacts(
+                    mode: mode, score: scoreRef, maxCombo: maxComboRef, perfects: perfectCountRef,
+                    taps: totalTapsRef, durationMs: Int(playElapsed * 1_000), playedAt: Date(),
+                    sessionID: UUID().uuidString.lowercased()))
+            }
+            gameplayEventKey = economy.recordGrant(grant, legacyCoins: coinsEarned,
+                                                   countsTowardTotalEarned: false, profile: &profile)
+        }
 
         profile.stats.totalGames += 1
         if maxComboRef > profile.stats.highestCombo { profile.stats.highestCombo = maxComboRef }
@@ -745,7 +766,8 @@ final class GameViewModel: ObservableObject {
         let newAchievements = Achievement.check(gameData: gameData, profile: profile)
         for ach in newAchievements {
             profile.achievements.append(ach.id)
-            profile.coins += ach.reward
+            economy.recordGrant(.achievement(id: ach.id), legacyCoins: ach.reward,
+                                countsTowardTotalEarned: false, profile: &profile)
         }
 
         if !profile.activeChallenge.isEmpty,
@@ -760,9 +782,10 @@ final class GameViewModel: ObservableObject {
             ) {
                 profile.completedChallenges.append(challenge.id)
                 let reward = Challenge.parseReward(challenge.rewardLabel)
-                profile.coins += reward.coins
-                profile.stats.totalCoinsEarned += reward.coins
-                if let theme = reward.theme, !profile.ownedItems.contains(theme) {
+                economy.recordGrant(.challenge(id: challenge.id), legacyCoins: reward.coins,
+                                    countsTowardTotalEarned: true, profile: &profile)
+                // Flag ON: the server adds the theme with the challenge grant.
+                if !economy.isAuthoritative, let theme = reward.theme, !profile.ownedItems.contains(theme) {
                     profile.ownedItems.append(theme)
                 }
                 profile.activeChallenge = ""
@@ -772,8 +795,10 @@ final class GameViewModel: ObservableObject {
         var quests = DailyQuest.loadSaved() ?? DailyQuest.generateForToday()
         DailyQuest.updateProgress(quests: &quests, score: scoreRef, maxCombo: maxComboRef,
                                   mode: mode, coinsEarned: coinsEarned, perfects: perfectCountRef)
+        let questDay = EconomyDates.utcDay()
         for i in quests.indices where quests[i].completed && !quests[i].rewardClaimed {
-            profile.coins += quests[i].reward
+            economy.recordGrant(.quest(id: quests[i].id, difficulty: quests[i].difficulty, serverDay: questDay),
+                                legacyCoins: quests[i].reward, countsTowardTotalEarned: false, profile: &profile)
             quests[i].rewardClaimed = true
         }
         DailyQuest.save(quests: quests)
@@ -785,7 +810,6 @@ final class GameViewModel: ObservableObject {
         if let lvl = leveledUp { AnalyticsService.logLevelUp(newLevel: lvl) }
         for ach in newAchievements { AnalyticsService.logAchievementUnlocked(achievementId: ach.id) }
 
-        let hasValidDuelContext = duelContext?.mode == mode && !(duelContext?.duelId.isEmpty ?? true)
         let isDuelSession = hasValidDuelContext
         let metrics = makeSessionMetrics()
         if let metrics { SessionMetricsStore.shared.record(metrics) }
@@ -793,7 +817,8 @@ final class GameViewModel: ObservableObject {
             score: scoreRef, maxCombo: maxComboRef, mode: mode,
             coinsEarned: coinsEarned, xpEarned: xpEarned,
             leveledUp: leveledUp, newAchievements: newAchievements, isNewBest: isNewBest,
-            isDuelSession: isDuelSession, metrics: metrics
+            isDuelSession: isDuelSession, metrics: metrics,
+            economyEventKey: economy.isAuthoritative ? gameplayEventKey : nil
         )
 
         Task {
@@ -815,6 +840,8 @@ final class GameViewModel: ObservableObject {
         }
 
         onGameFinished?(result)
+        // Off the render path: the flush starts after the Game Over transition.
+        economy.scheduleFlush(reason: .gameOver)
     }
 
     /// Timing statistics for the round just finished. Internal for tests.

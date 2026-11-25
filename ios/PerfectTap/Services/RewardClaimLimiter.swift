@@ -4,6 +4,8 @@ import Foundation
 ///
 /// The Supabase ledger remains the launch authority. This guard prevents the
 /// existing unlimited local loop while server claims are disabled/offline.
+/// With the authoritative economy ON it is only a UX pre-check: the server
+/// (`record_verified_rewarded_claim`) enforces the real cap.
 /// Callers must pass a day obtained from `authoritativeDayVerification`.
 @MainActor
 final class RewardClaimLimiter {
@@ -35,6 +37,11 @@ final class RewardClaimLimiter {
 
     func canClaim(_ placement: Placement, day: String, userID: String?) -> Bool {
         remaining(for: placement, day: day, userID: userID) > 0
+    }
+
+    /// 1-based index of the next claim today (`claim_index` in the SSV payload).
+    func nextClaimIndex(for placement: RewardClaimLimiter.Placement, day: String, userID: String?) -> Int {
+        min(placement.dailyLimit, count(for: placement, day: day, userID: userID) + 1)
     }
 
     @discardableResult

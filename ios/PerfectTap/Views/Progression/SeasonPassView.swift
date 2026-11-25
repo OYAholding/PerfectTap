@@ -9,6 +9,8 @@ struct SeasonPassView: View {
     @State private var rewardUnavailableMessage = ""
 
     private static let adsRequired = EconomyConfig.current.seasonAdsRequired
+    /// Current season cycle, computed from the date (earned tiers are kept).
+    private let season = SeasonSchedule.current()
 
     private var currentTier: Int { profile.seasonTier }
     private var tierProgress: Double {
@@ -83,11 +85,11 @@ struct SeasonPassView: View {
         VStack(spacing: 8) {
             HStack {
                 Text("⚡")
-                Text("Season 1: Neon Nights")
+                Text(season.title)
                     .font(.system(size: 16, weight: .black))
                     .foregroundColor(.white)
             }
-            Text("Mar 1 – May 31, 2026")
+            Text(season.displayRange)
                 .font(.system(size: 11)).tracking(2)
                 .foregroundColor(.white.opacity(0.4))
             Text("Tier \(max(1, currentTier)) / 30")
@@ -195,7 +197,12 @@ struct SeasonPassView: View {
                         isWatchingAd = false
                         return
                     }
-                    let success = await AdManager.shared.showRewardedAd(placement: .seasonPassUnlock)
+                    let claimIndex = RewardClaimLimiter.shared.nextClaimIndex(
+                        for: .seasonProgress, day: day, userID: Backend.shared.currentUID)
+                    let ssv = EconomyManager.shared.service.rewardedVerification(
+                        for: .seasonProgress, claimIndex: claimIndex, referenceEventKey: nil)
+                    let success = await AdManager.shared.showRewardedAd(placement: .seasonPassUnlock,
+                                                                        verification: ssv)
                     if success, RewardClaimLimiter.shared.record(.seasonProgress, day: day, userID: Backend.shared.currentUID) {
                         profile = EconomyManager.shared.updateProfile { profile in
                             profile.seasonAdProgress += 1
@@ -255,7 +262,13 @@ struct SeasonPassView: View {
                 // Already claimed free, but user unlocked premium later —
                 // grant the premium reward if not already granted
                 let marker = "sp_prem_\(tier.id)"
-                if !profile.ownedItems.contains(marker) {
+                if !profile.ownedItems.contains(marker), EconomyManager.shared.service.isAuthoritative {
+                    // Replaying the tier after the unlock pays only the item (server).
+                    EconomyManager.shared.service.recordGrant(
+                        .seasonTier(seasonID: season.id, tier: tier.id), legacyCoins: 0,
+                        countsTowardTotalEarned: false, profile: &profile)
+                    profile.ownedItems.append(marker)
+                } else if !profile.ownedItems.contains(marker) {
                     let granted = grantReward(reward, tierID: tier.id, profile: &profile)
                     if granted {
                         profile.ownedItems.append(marker)
@@ -268,8 +281,14 @@ struct SeasonPassView: View {
     private func grantReward(_ reward: SeasonReward, tierID: Int, profile: inout PlayerProfile) -> Bool {
         switch reward.type {
         case .coins(let amount):
-            profile.coins += amount
-            profile.stats.totalCoinsEarned += amount
+            // Flag OFF: local credit as before. Flag ON: `season_tier` event.
+            EconomyManager.shared.service.recordGrant(
+                .seasonTier(seasonID: season.id, tier: tierID), legacyCoins: amount,
+                countsTowardTotalEarned: true, profile: &profile)
+            return true
+        case .avatar, .theme, .badge where EconomyManager.shared.service.isAuthoritative:
+            // Flag ON: `season_tier` grants the premium item server side when
+            // the profile has season_premium; the outbox result adds it locally.
             return true
         case .avatar(let id):
             guard knownAvatarRewardIDs.contains(id) else {

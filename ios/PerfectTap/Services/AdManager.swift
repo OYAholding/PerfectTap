@@ -290,12 +290,23 @@ final class AdManager: ObservableObject {
     /// let success = await AdManager.shared.showRewardedAd(placement: .reviveReward)
     /// if success { gameVM.acceptRevive() }
     /// ```
-    func showRewardedAd(placement: AdPlacement) async -> Bool {
+    ///
+    /// `verification` (authoritative economy only) is attached as AdMob
+    /// server-side verification: Google calls the `admob-ssv` Edge Function,
+    /// which grants the reward. The client never grants it itself.
+    func showRewardedAd(placement: AdPlacement, verification: RewardedAdVerification? = nil) async -> Bool {
         if Self.uiTestAdsDisabled { return false }
 
         guard let rewardedAd, isRewardedAdReady else {
             adLog("Rewarded ad not ready for placement: \(placement.rawValue)")
             return false
+        }
+
+        if let verification {
+            let options = ServerSideVerificationOptions()
+            options.userIdentifier = verification.userIdentifier
+            options.customRewardText = verification.customData
+            rewardedAd.serverSideVerificationOptions = options
         }
 
         guard let rootVC = getRootViewController() else {

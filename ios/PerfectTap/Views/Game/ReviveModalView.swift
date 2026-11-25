@@ -110,7 +110,13 @@ struct ReviveModalView: View {
                 adUnavailableMessage = "No optional ad is available right now."
                 return
             }
-            let watched = await AdManager.shared.showRewardedAd(placement: .reviveReward)
+            // Revive grants no coins; with the authoritative economy the claim is
+            // recorded server side through AdMob SSV (cap 3/day).
+            let claimIndex = RewardClaimLimiter.shared.nextClaimIndex(
+                for: .revive, day: day, userID: Backend.shared.currentUID)
+            let ssv = EconomyManager.shared.service.rewardedVerification(
+                for: .revive, claimIndex: claimIndex, referenceEventKey: nil)
+            let watched = await AdManager.shared.showRewardedAd(placement: .reviveReward, verification: ssv)
             isLoadingAd = false
 
             if watched {

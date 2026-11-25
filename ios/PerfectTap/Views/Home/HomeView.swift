@@ -19,6 +19,7 @@ struct HomeView: View {
     @State private var outgoingInviteListener: Any? = nil
     @State private var badgeRefreshTask: Task<Void, Never>? = nil
     @State private var cloudRefreshTask: Task<Void, Never>? = nil
+    @ObservedObject private var economyStatus = EconomyManager.shared.service.status
 
     var body: some View {
         ZStack {
@@ -126,6 +127,14 @@ struct HomeView: View {
                 guard !Task.isCancelled, let updated else { return }
                 profile = updated
                 themeManager.apply(profile: profile)
+                // Flag ON only (no network with the legacy economy): show the
+                // server-confirmed balance, never a local one.
+                let economy = EconomyManager.shared.service
+                if economy.isAuthoritative {
+                    await economy.flush(reason: .foreground)
+                    guard !Task.isCancelled else { return }
+                    profile = PlayerProfile.load() ?? profile
+                }
             }
         }
         .onDisappear {
@@ -189,6 +198,12 @@ struct HomeView: View {
                 Text("\(profile.coins)")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
+                if economyStatus.pendingCoins > 0 {
+                    Text("+\(economyStatus.pendingCoins) pending")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                        .accessibilityLabel("\(economyStatus.pendingCoins) coins pending server confirmation")
+                }
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Color(red: 0.98, green: 0.73, blue: 0.26).opacity(0.1))
@@ -267,11 +282,17 @@ struct HomeView: View {
                     homeRewardClaimedToday = true
                     return
                 }
-                let watched = await AdManager.shared.showRewardedAd(placement: .homeCoins)
+                let economy = EconomyManager.shared.service
+                let claimIndex = RewardClaimLimiter.shared.nextClaimIndex(
+                    for: .homeCoins, day: day, userID: Backend.shared.currentUID)
+                let ssv = economy.rewardedVerification(for: .homeCoins, claimIndex: claimIndex,
+                                                                 referenceEventKey: nil)
+                let watched = await AdManager.shared.showRewardedAd(placement: .homeCoins, verification: ssv)
                 isWatchingAd = false
                 if watched, RewardClaimLimiter.shared.record(.homeCoins, day: day, userID: Backend.shared.currentUID) {
-                    let reward = EconomyConfig.current.homeRewardedCoins
-                    EconomyManager.shared.addCoins(reward, source: .rewardedAd)
+                    // Flag OFF: local credit. Flag ON: the SSV callback credits
+                    // the ledger; the amount shows as pending until confirmed.
+                    economy.rewardedAdCompleted(.homeCoins, legacyCoins: EconomyConfig.current.homeRewardedCoins)
                     profile = PlayerProfile.load() ?? PlayerProfile()
                     homeRewardClaimedToday = true
                     showAdReward = true

@@ -22,6 +22,14 @@ struct ShopView: View {
     @State private var showCoinPacks = false
     @State private var confirmItem: ShopItem?
     @State private var offerAppleSignIn = false
+    @State private var claimingStarter = false
+    @ObservedObject private var economyStatus = EconomyManager.shared.service.status
+
+    /// Coins the player may spend (flag ON: server-confirmed balance only;
+    /// pending coins are never spendable).
+    private var spendable: Int { EconomyManager.shared.service.spendableBalance(profile: profile) }
+    /// Flag ON, brand-new players only: free Common starter choices.
+    private var starterChoices: [ShopItem] { EconomyManager.shared.service.starterItemChoices(profile: profile) }
 
     private var iapEnabled: Bool { FeatureFlags.coinPacksVisible || FeatureFlags.removeAdsVisible }
 
@@ -71,6 +79,12 @@ struct ShopView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 10)
 
+                if !starterChoices.isEmpty {
+                    starterBanner
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+                }
+
                 if iapEnabled && showCoinPacks {
                     coinPacksSection
                         .transition(.opacity)
@@ -92,7 +106,7 @@ struct ShopView: View {
                                 isOwned: !FeatureFlags.iapPreview && EconomyManager.shared.isOwned(item.id, in: profile),
                                 isEquipped: !FeatureFlags.iapPreview && EconomyManager.shared.isEquipped(item, in: profile),
                                 isSelected: selectedItem?.id == item.id,
-                                canAfford: profile.coins >= item.price,
+                                canAfford: spendable >= item.price,
                                 priceLabel: priceLabel(for: item)
                             ) {
                                 selectedItem = item
@@ -147,6 +161,13 @@ struct ShopView: View {
         }
         .onAppear {
             profile = EconomyManager.shared.currentProfile()
+            let economy = EconomyManager.shared.service
+            if economy.isAuthoritative {
+                Task {
+                    await economy.refreshConfirmedBalance()
+                    profile = EconomyManager.shared.currentProfile()
+                }
+            }
         }
     }
 
@@ -161,9 +182,14 @@ struct ShopView: View {
             HStack(spacing: 8) {
                 Image(systemName: "dollarsign.circle.fill")
                     .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
-                Text("\(profile.coins) coins")
+                Text("\(spendable) coins")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
+                if economyStatus.pendingCoins > 0 {
+                    Text("+\(economyStatus.pendingCoins) pending")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                }
             }
             .accessibilityElement(children: .combine)
             Spacer()
@@ -267,13 +293,18 @@ struct ShopView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.white.opacity(0.4))
                 }
+            } else if starterChoices.contains(where: { $0.id == item.id }) {
+                actionButton("CLAIM FREE", color: Color(red: 0.22, green: 0.82, blue: 0.49)) {
+                    Task { await claimStarter(item) }
+                }
+                .disabled(claimingStarter)
             } else {
                 actionButton("BUY \(item.price) \u{1FA99}",
-                             color: profile.coins >= item.price ? Color(red: 0.98, green: 0.73, blue: 0.26) : .gray) {
-                    if profile.coins >= item.price {
+                             color: spendable >= item.price ? Color(red: 0.98, green: 0.73, blue: 0.26) : .gray) {
+                    if spendable >= item.price {
                         confirmItem = item
                     } else {
-                        alertMessage = "Not enough coins. You need \(item.price - profile.coins) more."
+                        alertMessage = "Not enough coins. You need \(item.price - spendable) more."
                         showPurchaseAlert = true
                     }
                 }
@@ -316,6 +347,36 @@ struct ShopView: View {
         AnalyticsService.logShopItemBought(itemId: item.id, price: item.price)
         profile = EconomyManager.shared.currentProfile()
         alertMessage = "\(item.name) is yours. Tap EQUIP to use it."
+        showPurchaseAlert = true
+    }
+
+    private var starterBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "gift.fill")
+                .foregroundColor(Color(red: 0.22, green: 0.82, blue: 0.49))
+            Text("Welcome gift: pick one free starter item — \(starterChoices.map(\.name).joined(separator: ", ")).")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white.opacity(0.8))
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(Color(red: 0.22, green: 0.82, blue: 0.49).opacity(0.08))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.22, green: 0.82, blue: 0.49).opacity(0.25)))
+        .cornerRadius(12)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func claimStarter(_ item: ShopItem) async {
+        guard !claimingStarter else { return }
+        claimingStarter = true
+        defer { claimingStarter = false }
+        if await EconomyManager.shared.service.claimStarterItem(item.id) {
+            profile = EconomyManager.shared.currentProfile()
+            alertMessage = "\(item.name) is yours. Tap EQUIP to use it."
+        } else {
+            profile = EconomyManager.shared.currentProfile()
+            alertMessage = "The starter gift could not be confirmed. Please try again later."
+        }
         showPurchaseAlert = true
     }
 
