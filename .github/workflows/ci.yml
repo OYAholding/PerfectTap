@@ -1,13 +1,40 @@
 name: CI
+# Every job is offline with respect to production: no Apple credentials, no Supabase
+# cloud project, no App Store Connect, no deploys. Supabase runs as a local Docker
+# stack inside the runner; iOS runs on the runner's simulators with signing disabled.
 on:
   push:
-    branches: [main]
+    branches: [main, "release/**", "hotfix/**"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ---------------------------------------------------------------- release guards
+  release-guards:
+    # Fast, blocking safety rails. Fails the PR if a monetization / economy flag is
+    # turned on outside Debug, or if a credential file / service-role key is tracked.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard self-tests (prove the guards detect violations)
+        run: |
+          scripts/security/check-monetization-flags.sh --self-test
+          scripts/security/check-secret-files.sh --self-test
+      - name: Monetization flags are NO in Release (project.yml / pbxproj / xcconfig / plist)
+        run: scripts/security/check-monetization-flags.sh
+      - name: No credential files (.p8, asc.env, ...) or service-role keys tracked
+        run: scripts/security/check-secret-files.sh
+      - name: App Supabase target is consistent (project.yml == supabase/.perfecttap-ref, publishable key only)
+        run: scripts/security/check-backend-target.sh
+
   secret-scan:
     runs-on: ubuntu-latest
     steps:
@@ -20,7 +47,22 @@ jobs:
           ./gitleaks git . --config .gitleaks.toml --redact --no-banner
           ./gitleaks dir . --config .gitleaks.toml --redact --no-banner
 
+  # ---------------------------------------------------------------- backend
+  edge-functions:
+    # deno fmt --check / lint / check / test for EVERY supabase/functions/<fn> (+ _shared).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+      - name: Deno fmt / lint / check / test (all functions)
+        run: scripts/qa/deno-functions.sh
+
   backend:
+    # pgTAP (schema, RLS, purchase + economy ledgers) and end-to-end tests against a
+    # local Supabase stack started inside the runner. Never --linked.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -30,17 +72,21 @@ jobs:
           version: 2.119.0
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version: v2.9.7
       - name: Start local Supabase (no cloud access)
         run: supabase start -x studio,imgproxy,vector,logflare,storage-api,supavisor
-      - name: pgTAP
+      - name: pgTAP (supabase test db)
         run: supabase test db --local
       - name: End-to-end (local stack)
         run: ./supabase/tests/integration/run.sh
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup || true
 
+  # ---------------------------------------------------------------- iOS
   ios-unit-tests:
-    # Offline unit tests (consent flow, timing engine, duel settlement, codecs, legacy claim).
-    # Free on public repos. No Apple credentials are used or needed.
+    # Offline unit tests (PerfectTapTests: consent, timing, duels, codecs, legacy claim,
+    # economy, purchases/cosmetics, stability regressions). No Apple credentials.
     runs-on: macos-15
     timeout-minutes: 40
     steps:
@@ -50,11 +96,82 @@ jobs:
       - name: Generate project
         working-directory: ios/PerfectTap
         run: xcodegen generate
-      - name: Unit tests
+      - name: Pick simulator
+        id: sim
+        run: echo "udid=$(.github/scripts/pick-simulator.sh)" >> "$GITHUB_OUTPUT"
+      - name: Unit tests (PerfectTapTests)
         working-directory: ios/PerfectTap
         run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for r,l in d.items() if "iOS" in r for x in l if x["name"].startswith("iPhone")))')
+          set -o pipefail
           xcodebuild test -project PerfectTap.xcodeproj -scheme PerfectTap \
-            -destination "platform=iOS Simulator,id=$UDID" \
-            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation | tail -40
-          test ${PIPESTATUS[0]} -eq 0
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -only-testing:PerfectTapTests \
+            -resultBundlePath "$RUNNER_TEMP/unit.xcresult" \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation | tail -60
+      - name: Upload result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-xcresult
+          path: ${{ runner.temp }}/unit.xcresult
+
+  ios-storekit-tests:
+    # StoreKitTest lifecycle against StoreKit/PerfectTap.storekit (bundled as a test
+    # resource; SKTestSession loads it explicitly). Local fake-money only.
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: ios/PerfectTap
+        run: xcodegen generate
+      - name: StoreKit configuration is valid JSON with the 9 product IDs
+        run: |
+          python3 - <<'PY'
+          import json
+          d = json.load(open("ios/PerfectTap/StoreKit/PerfectTap.storekit"))
+          ids = sorted(p["productID"] for p in d.get("products", []))
+          print(len(ids), "products:", ids)
+          assert len(ids) == 9, "expected 9 StoreKit products"
+          PY
+      - name: Pick simulator
+        id: sim
+        run: echo "udid=$(.github/scripts/pick-simulator.sh)" >> "$GITHUB_OUTPUT"
+      - name: StoreKit tests (PerfectTapStoreKitTests)
+        working-directory: ios/PerfectTap
+        run: |
+          set -o pipefail
+          xcodebuild test -project PerfectTap.xcodeproj -scheme PerfectTapStoreKitTests \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath "$RUNNER_TEMP/storekit.xcresult" \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation | tail -60
+      - name: Upload result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storekit-tests-xcresult
+          path: ${{ runner.temp }}/storekit.xcresult
+
+  ios-release-build:
+    # Release configuration compiles for the simulator, and the BUILT Info.plist proves
+    # every monetization/economy flag resolved to NO (defence in depth for release-guards).
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: ios/PerfectTap
+        run: xcodegen generate
+      - name: Release build (iOS Simulator, unsigned)
+        working-directory: ios/PerfectTap
+        run: |
+          set -o pipefail
+          xcodebuild build -project PerfectTap.xcodeproj -scheme PerfectTap -configuration Release \
+            -destination "generic/platform=iOS Simulator" -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation | tail -40
+      - name: Built Release Info.plist has every monetization flag = NO
+        run: scripts/qa/assert-built-flags.sh "$RUNNER_TEMP/dd/Build/Products/Release-iphonesimulator/PerfectTap.app"
