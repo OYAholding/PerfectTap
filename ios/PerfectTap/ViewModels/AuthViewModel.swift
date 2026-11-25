@@ -51,8 +51,26 @@ final class AuthViewModel: ObservableObject {
 
     var isPermanentAccount: Bool { Backend.shared.isPermanentAccount }
 
+    /// Re-applies Apple-owned non-consumables (Remove Forced Ads, premium
+    /// skins) after a profile merge replaced `noAds`/items with the cloud
+    /// copy. Seam for tests.
+    var reconcileOwnedEntitlements: () async -> Void = {
+        await PurchaseManager.shared.reconcileOwnedEntitlements()
+    }
+
     private init() {
         bootstrapIdentity()
+    }
+
+    /// Adopts a profile produced by a sign-in / identity merge: local save,
+    /// cloud save, then StoreKit reconciliation so the merge never wipes an
+    /// entitlement the Apple ID owns, then the economy account switch.
+    func adoptMergedProfile(_ profile: PlayerProfile, uid: String) async {
+        profile.save()
+        currentUID = uid
+        await Backend.shared.saveProfile(profile)
+        await reconcileOwnedEntitlements()
+        EconomyManager.shared.service.accountDidChange()
     }
 
     // MARK: - Identity bootstrap (Anonymous Auth)
@@ -93,6 +111,8 @@ final class AuthViewModel: ObservableObject {
                 restored.save()
                 currentUID = restored.uid
                 authState = .authenticated
+                // The cloud copy replaced local entitlements: re-apply StoreKit.
+                await reconcileOwnedEntitlements()
             } else {
                 // First launch — create guest profile with Firebase UID
                 let uid = firebaseUID ?? getOrCreateDeviceUID()
@@ -204,10 +224,7 @@ final class AuthViewModel: ObservableObject {
                 migrated.uid = result.uid
                 profile = migrated
             }
-            profile.save()
-            currentUID = result.uid
-            await Backend.shared.saveProfile(profile)
-            EconomyManager.shared.service.accountDidChange()
+            await adoptMergedProfile(profile, uid: result.uid)
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -271,10 +288,7 @@ final class AuthViewModel: ObservableObject {
             // Load cloud profile and apply explicit field-by-field deterministic merge.
             if let cloudProfile = await Backend.shared.loadProfile() {
                 let merged = mergeProfiles(local: localProfile, cloud: cloudProfile, firebaseUID: firebaseUID)
-                merged.save()
-                currentUID = firebaseUID
-                await Backend.shared.saveProfile(merged)
-                EconomyManager.shared.service.accountDidChange()
+                await adoptMergedProfile(merged, uid: firebaseUID)
             } else {
                 // No cloud profile — just update UID
                 var local = localProfile

@@ -21,6 +21,10 @@ final class EconomyStatus: ObservableObject {
     @Published fileprivate(set) var pendingCoins: Int = 0
     @Published fileprivate(set) var confirmedBalance: Int? = nil
     @Published fileprivate(set) var legacyStatus: String? = nil
+    /// The server answered `economy_disabled` (no active config): events stay
+    /// queued, nothing is self-granted, paid coins wait server side
+    /// (`pending_iap_coins`). Cleared when the server accepts an event again.
+    @Published fileprivate(set) var serverEconomyDisabled: Bool = false
 }
 
 enum DailyClaimOutcome: Equatable {
@@ -436,8 +440,13 @@ final class LedgerEconomyService: EconomyService {
             return
         }
         // `record_verified_purchase` / `revoke_purchase` move the ledger
-        // server side; the client only refreshes the confirmed balance.
-        Task { await refreshConfirmedBalance() }
+        // server side (or hold the coins as `pending_iap_coins` while no
+        // config is active). Never credit locally — that would double credit.
+        // Show a purchase as pending until the confirmed balance catches up.
+        let token = UUID()
+        if delta > 0 { awaitingVerification[token] = delta }
+        refreshPending()
+        pollAfterReward(token: token)
     }
 
     // MARK: Delivery
@@ -459,6 +468,7 @@ final class LedgerEconomyService: EconomyService {
         switch outcome {
         case .success(let result) where EconomyErrorPolicy.acceptedStatuses.contains(result.status):
             outbox.remove(event.eventKey)
+            if stillSameUser { status.serverEconomyDisabled = false }
             if stillSameUser { applyServerResult(result, forUser: outbox.userID, grantedItem: result.itemID) }
             refreshPending()
             // Duplicates return the original granted/segmentIndex/itemID.
@@ -469,6 +479,7 @@ final class LedgerEconomyService: EconomyService {
             logDrop(source: event.source.rawValue, failure: .server(result.status))
             return .dropped(result.status)
         case .failure(let failure):
+            if failure == .server("economy_disabled"), stillSameUser { status.serverEconomyDisabled = true }
             switch EconomyErrorPolicy.disposition(for: failure) {
             case .success:
                 outbox.remove(event.eventKey)
@@ -568,8 +579,11 @@ final class LedgerEconomyService: EconomyService {
         guard isAuthoritative, let uid = currentUserID()?.lowercased() else { return }
         guard case .success(let state) = await remote.loadState() else { return }
         guard currentUserID()?.lowercased() == uid else { return }
-        status.confirmedBalance = state.confirmedBalance
         status.legacyStatus = state.legacyStatus
+        // No active config: the ledger mirror is not authoritative yet (paid
+        // coins sit in pending_iap_coins). Keep the legacy-safe local balance.
+        guard !status.serverEconomyDisabled else { return }
+        status.confirmedBalance = state.confirmedBalance
         var profile = loadProfile()
         if profile.coins != state.confirmedBalance {
             profile.coins = state.confirmedBalance
