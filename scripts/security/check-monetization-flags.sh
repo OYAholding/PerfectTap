@@ -104,16 +104,54 @@ def check_pbxproj(path, rel):
         body = m.group(3)
         nm = re.search(r"\n\s*name = \"?([^\";]+)\"?;", body)
         name = nm.group(1) if nm else m.group(2)
-        if name.lower() == "debug":
+        if is_debug_config(name):
             continue
         line_no = text.count("\n", 0, m.start()) + 1
         for flag in FLAGS:
+            if name in IAP_CEILING_CONFIGS and flag in IAP_CEILING_FLAGS:
+                continue
             for fm in re.finditer(r"\b" + flag + r"\s*=\s*([^;\n]+);", body):
                 judge(f"{rel}:{line_no} [XCBuildConfiguration {m.group(1)} '{name}']", flag, fm.group(1))
 
+# Opt-in App Store purchase ceiling (docs/MONETIZATION_ACTIVATION_STRATEGY.md):
+# a configuration named here may compile PT_IAP_* = YES because sales are still
+# gated at runtime by the server sales switch (fails closed). The shipping
+# `Release` configuration and the authoritative-economy flag are never exempt.
+IAP_CEILING_CONFIGS = {"Release-IAP"}
+IAP_CEILING_FLAGS = {f for f in FLAGS if f.startswith("PT_IAP_")}
+
+def is_debug_config(name):
+    return name.lower() == "debug" or name.lower().startswith("debug-")
+
+def xcconfig_users():
+    """Map xcconfig basename -> set of build configurations using it (XcodeGen configFiles)."""
+    users = {}
+    for rel in files():
+        if os.path.basename(rel) != "project.yml":
+            continue
+        in_block, block_indent = False, 0
+        for raw in open(os.path.join(root, rel), encoding="utf-8", errors="replace"):
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            indent = len(raw) - len(raw.lstrip())
+            if re.match(r"\s*configFiles\s*:\s*$", raw):
+                in_block, block_indent = True, indent
+                continue
+            if in_block and indent <= block_indent:
+                in_block = False
+            if in_block:
+                m = re.match(r"\s*([\w.\-]+)\s*:\s*(\S+\.xcconfig)", raw)
+                if m:
+                    users.setdefault(os.path.basename(m.group(2)), set()).add(m.group(1))
+    return users
+
 def check_xcconfig(path, rel):
-    if "debug" in os.path.basename(rel).lower():
+    configs = XCCONFIG_USERS.get(os.path.basename(rel))
+    if configs and all(is_debug_config(c) for c in configs):
         return
+    if not configs and "debug" in os.path.basename(rel).lower():
+        return
+    ceiling = bool(configs) and all(is_debug_config(c) or c in IAP_CEILING_CONFIGS for c in configs)
     checked["xcconfig"] += 1
     for n, raw in enumerate(open(path, encoding="utf-8", errors="replace"), 1):
         line = raw.split("//", 1)[0]
@@ -123,7 +161,9 @@ def check_xcconfig(path, rel):
                 cond = m.group(1) or ""
                 if "config=debug" in cond.lower().replace(" ", ""):
                     continue
-                judge(f"{rel}:{n}", flag, m.group(2))
+                if ceiling and flag in IAP_CEILING_FLAGS:
+                    continue
+                judge(f"{rel}:{n} [used by {', '.join(sorted(configs or {'<unmapped>'}))}]", flag, m.group(2))
 
 def check_plist(path, rel):
     try:
@@ -136,6 +176,7 @@ def check_plist(path, rel):
             n = text.count("\n", 0, m.start()) + 1
             bad(f"{rel}:{n}", flag, m.group(0).split(">", 1)[1], "hard-coded ON in plist (must be $(FLAG) or NO)")
 
+XCCONFIG_USERS = xcconfig_users()
 for rel in files():
     p = os.path.join(root, rel)
     if not os.path.isfile(p):
@@ -162,7 +203,7 @@ if violations:
     print("These flags may only be turned on through the owner-approved activation gate "
           "(docs/RELEASE_1.2.0_RUNBOOK.he.md).", file=sys.stderr)
     sys.exit(1)
-print("PASS: all monetization/economy flags are NO outside Debug.")
+print("PASS: shipping Release has every monetization/economy flag NO; only the opt-in Release-IAP ceiling may compile PT_IAP_* (server-gated); PT_AUTHORITATIVE_ECONOMY_ENABLED is NO everywhere outside Debug.")
 PY
 }
 
@@ -253,6 +294,40 @@ name: X
 Y
   printf '<plist><dict><key>PT_IAP_CATALOG_ENABLED</key><true/></dict></plist>\n' > "$tmp/plist/Info.plist"
   expect 1 plist
+
+  mk ceiling project.yml <<'Y'
+targets:
+  App:
+    configFiles:
+      Debug: Config/Off.xcconfig
+      Release: Config/Off.xcconfig
+      Release-IAP: Config/IAP.xcconfig
+Y
+  mkdir -p "$tmp/ceiling/Config"
+  printf 'PT_IAP_CATALOG_ENABLED = NO\nPT_AUTHORITATIVE_ECONOMY_ENABLED = NO\n' > "$tmp/ceiling/Config/Off.xcconfig"
+  printf 'PT_IAP_CATALOG_ENABLED = YES\nPT_AUTHORITATIVE_ECONOMY_ENABLED = NO\n' > "$tmp/ceiling/Config/IAP.xcconfig"
+  expect 0 ceiling
+
+  mk ceiling-economy project.yml <<'Y'
+targets:
+  App:
+    configFiles:
+      Release-IAP: Config/IAP.xcconfig
+Y
+  mkdir -p "$tmp/ceiling-economy/Config"
+  printf 'PT_IAP_CATALOG_ENABLED = YES\nPT_AUTHORITATIVE_ECONOMY_ENABLED = YES\n' > "$tmp/ceiling-economy/Config/IAP.xcconfig"
+  expect 1 ceiling-economy
+
+  mk ceiling-shared project.yml <<'Y'
+targets:
+  App:
+    configFiles:
+      Release: Config/IAP.xcconfig
+      Release-IAP: Config/IAP.xcconfig
+Y
+  mkdir -p "$tmp/ceiling-shared/Config"
+  printf 'PT_IAP_COIN_PACKS_ENABLED = YES\n' > "$tmp/ceiling-shared/Config/IAP.xcconfig"
+  expect 1 ceiling-shared
 
   mkdir -p "$tmp/empty"
   expect 1 empty
