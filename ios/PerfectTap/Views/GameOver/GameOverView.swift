@@ -15,6 +15,7 @@ struct GameOverView: View {
     @State private var xpBarProgress: Double = 0
     @State private var isWatchingAd = false
     @State private var didDoubleCoins = false
+    @State private var doubleCoinsUnavailableToday = false
     /// Blocks double taps on PLAY AGAIN / HOME while the (async) post-game
     /// interstitial check runs — otherwise two GameViews could be pushed.
     @State private var isNavigating = false
@@ -307,14 +308,21 @@ struct GameOverView: View {
     private var actionButtons: some View {
         VStack(spacing: 12) {
             // Double Coins (watch ad)
-            if result.coinsEarned > 0 && !didDoubleCoins {
+            if result.coinsEarned > 0 && !didDoubleCoins && !doubleCoinsUnavailableToday {
                 Button {
                     guard !isWatchingAd else { return }
                     isWatchingAd = true
                     Task {
+                        let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: true)
+                        guard let day = verification.dayKey,
+                              RewardClaimLimiter.shared.canClaim(.doubleCoins, day: day, userID: Backend.shared.currentUID) else {
+                            isWatchingAd = false
+                            doubleCoinsUnavailableToday = true
+                            return
+                        }
                         let watched = await AdManager.shared.showRewardedAd(placement: .doubleCoins)
                         isWatchingAd = false
-                        if watched {
+                        if watched, RewardClaimLimiter.shared.record(.doubleCoins, day: day, userID: Backend.shared.currentUID) {
                             didDoubleCoins = true
                             EconomyManager.shared.addCoins(result.coinsEarned, source: .gameplay)
                             profile = PlayerProfile.load() ?? PlayerProfile()
@@ -327,7 +335,7 @@ struct GameOverView: View {
                         } else {
                             Image(systemName: "play.rectangle.fill")
                                 .font(.system(size: 16))
-                            Text("DOUBLE COINS (+\(result.coinsEarned))")
+                            Text("WATCH OPTIONAL AD — DOUBLE COINS (+\(result.coinsEarned))")
                                 .font(.system(size: 15, weight: .black))
                                 .tracking(1)
                         }

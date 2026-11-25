@@ -68,13 +68,13 @@
       "internalID": "6740000004",
       "localizations": [
         {
-          "description": "Removes interstitial and banner ads",
-          "displayName": "Remove Ads",
+          "description": "Removes automatic interstitial ads. Optional rewarded ads remain available when you choose them.",
+          "displayName": "Remove Forced Ads",
           "locale": "en_US"
         }
       ],
       "productID": "com.perfecttap.removeads",
-      "referenceName": "Remove Ads",
+      "referenceName": "Remove Forced Ads",
       "type": "NonConsumable"
     },
     {

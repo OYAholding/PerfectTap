@@ -19,6 +19,7 @@ private func adErrorDetails(_ error: Error) -> String {
 // MARK: - Ad Placement Types
 enum AdPlacement: String {
     case reviveReward       = "revive_reward"
+    case homeCoins          = "home_coins"
     case doubleCoins        = "double_coins"
     case freeSpinReward     = "free_spin_reward"
     case seasonPassUnlock   = "season_pass_unlock"
@@ -196,13 +197,10 @@ final class AdManager: ObservableObject {
     }
 
     // MARK: - Preload Ads
-    /// Preload both rewarded and interstitial ads so they're ready instantly.
+    /// Rewarded ads remain optional for Remove Forced Ads owners. Only automatic
+    /// interstitial inventory is suppressed by that entitlement.
     func preloadAds() {
         guard sdkStarted else { return }
-        guard !noAdsPurchased else {
-            adLog("preloadAds skipped: noAdsPurchased=true")
-            return
-        }
         adLog(
             """
             preloadAds start: interstitialConfigured=\(AdConfig.isInterstitialConfigured), useTestAds=\(AdConfig.useTestAds), \
@@ -210,7 +208,11 @@ final class AdManager: ObservableObject {
             """
         )
         loadRewardedAd()
-        if AdConfig.isInterstitialConfigured {
+        if noAdsPurchased {
+            interstitialAd = nil
+            isInterstitialReady = false
+            adLog("preloadAds: automatic ads disabled; rewarded remains available")
+        } else if AdConfig.isInterstitialConfigured {
             loadInterstitialAd(reason: "preload_ads_startup")
         } else {
             adLog("preloadAds: interstitial not configured")
@@ -290,11 +292,6 @@ final class AdManager: ObservableObject {
     /// ```
     func showRewardedAd(placement: AdPlacement) async -> Bool {
         if Self.uiTestAdsDisabled { return false }
-        // No-ads users get the reward for free
-        guard !noAdsPurchased else {
-            adLog("showRewardedAd shortcut: noAdsPurchased=true placement=\(placement.rawValue)")
-            return true
-        }
 
         guard let rewardedAd, isRewardedAdReady else {
             adLog("Rewarded ad not ready for placement: \(placement.rawValue)")
@@ -541,10 +538,9 @@ final class AdManager: ObservableObject {
 
     // MARK: - Convenience Checks
     func isAdReady(for placement: AdPlacement) -> Bool {
-        if noAdsPurchased { return true }
         if Self.uiTestAdsDisabled { return false }
         switch placement {
-        case .reviveReward, .doubleCoins, .freeSpinReward, .seasonPassUnlock:
+        case .reviveReward, .homeCoins, .doubleCoins, .freeSpinReward, .seasonPassUnlock:
             return isRewardedAdReady
         case .interstitialPost:
             return isInterstitialReady

@@ -12,16 +12,21 @@ struct LuckyWheelView: View {
     @State private var authoritativeDay: String? = nil
     @State private var spinRequestReserved = false
 
-    private let segments: [(label: String, color: Color, coins: Int)] = [
-        ("25 🪙",  Color(red: 0.59, green: 0.28, blue: 0.98), 25),
-        ("50 🪙",  Color(red: 0.22, green: 0.82, blue: 0.98), 50),
-        ("10 🪙",  Color(red: 0.85, green: 0.28, blue: 0.94), 10),
-        ("100 🪙", Color(red: 0.98, green: 0.73, blue: 0.26), 100),
-        ("35 🪙",  Color(red: 0.22, green: 0.82, blue: 0.49), 35),
-        ("5 🪙",   Color(red: 0.95, green: 0.24, blue: 0.37), 5),
-        ("250 🪙", Color(red: 0.98, green: 0.45, blue: 0.10), 250),
-        ("75 🪙",  Color(red: 0.47, green: 0.18, blue: 0.85), 75),
-    ]
+    private var segments: [(label: String, color: Color, coins: Int)] {
+        let colors = [
+            Color(red: 0.59, green: 0.28, blue: 0.98),
+            Color(red: 0.22, green: 0.82, blue: 0.98),
+            Color(red: 0.85, green: 0.28, blue: 0.94),
+            Color(red: 0.98, green: 0.73, blue: 0.26),
+            Color(red: 0.22, green: 0.82, blue: 0.49),
+            Color(red: 0.95, green: 0.24, blue: 0.37),
+            Color(red: 0.98, green: 0.45, blue: 0.10),
+            Color(red: 0.47, green: 0.18, blue: 0.85),
+        ]
+        return zip(EconomyConfig.current.wheelRewards, colors).map { coins, color in
+            ("\(coins) 🪙", color, coins)
+        }
+    }
     private let wheelLastSpinDayKey = "perfecttap_wheel_last_spin_server_day"
     private let wheelLegacyLastSpinKey = "perfecttap_last_spin"
     private let wheelPendingSpinIDKey = "perfecttap_wheel_pending_spin_id"

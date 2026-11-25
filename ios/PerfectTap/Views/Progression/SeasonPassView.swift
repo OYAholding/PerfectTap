@@ -8,7 +8,7 @@ struct SeasonPassView: View {
     @State private var showRewardUnavailableAlert = false
     @State private var rewardUnavailableMessage = ""
 
-    private static let adsRequired = 50
+    private static let adsRequired = EconomyConfig.current.seasonAdsRequired
 
     private var currentTier: Int { profile.seasonTier }
     private var tierProgress: Double {
@@ -182,8 +182,21 @@ struct SeasonPassView: View {
                 guard !isWatchingAd else { return }
                 isWatchingAd = true
                 Task {
+                    let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: true)
+                    guard let day = verification.dayKey else {
+                        rewardUnavailableMessage = "Connect to verify today's optional reward limit."
+                        showRewardUnavailableAlert = true
+                        isWatchingAd = false
+                        return
+                    }
+                    guard RewardClaimLimiter.shared.canClaim(.seasonProgress, day: day, userID: Backend.shared.currentUID) else {
+                        rewardUnavailableMessage = "Today's season ad progress has already been claimed."
+                        showRewardUnavailableAlert = true
+                        isWatchingAd = false
+                        return
+                    }
                     let success = await AdManager.shared.showRewardedAd(placement: .seasonPassUnlock)
-                    if success {
+                    if success, RewardClaimLimiter.shared.record(.seasonProgress, day: day, userID: Backend.shared.currentUID) {
                         profile = EconomyManager.shared.updateProfile { profile in
                             profile.seasonAdProgress += 1
                             if profile.seasonAdProgress >= Self.adsRequired {

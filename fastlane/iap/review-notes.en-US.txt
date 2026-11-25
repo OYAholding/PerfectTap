@@ -1,7 +1,7 @@
-PerfectTap offers four consumable coin packs and five non-consumables (Remove Ads and four cosmetic skins).
+PerfectTap offers four consumable coin packs and five non-consumables (Remove Forced Ads and four cosmetic skins).
 
 To find them: launch the app, finish the short username setup if shown, tap SHOP, then tap BUY COINS. Premium skins are under the PREMIUM tab. Restore Purchases is available in the Premium section and Settings.
 
-Remove Ads and cosmetic skins can be purchased by a guest and restore from Apple's signed StoreKit history after reinstall. Cloud Backup remains optional. Coin packs require a recoverable Sign in with Apple or verified-email account because consumable balances are not restored by StoreKit. Cosmetic skins change colors and effects only; timing zones, indicator geometry, scoring, and difficulty are unchanged.
+Remove Forced Ads and cosmetic skins can be purchased by a guest and restore from Apple's signed StoreKit history after reinstall. Remove Forced Ads permanently removes automatic interstitial and banner ads; clearly labeled, optional rewarded ads remain available, have placement limits, and never grant unlimited rewards. Cloud Backup remains optional. Coin packs require a recoverable Sign in with Apple or verified-email account because consumable balances are not restored by StoreKit. Cosmetic skins change colors and effects only; timing zones, indicator geometry, scoring, and difficulty are unchanged.
 
 The attached review screenshot shows the complete purchase surface. No subscription or loot-box product is offered.

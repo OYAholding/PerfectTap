@@ -18,7 +18,7 @@ final class IAPReviewScreenshotTests: XCTestCase {
         app.buttons["SHOP"].tap()
         XCTAssertTrue(app.buttons["BUY COINS"].waitForExistence(timeout: 5))
         app.buttons["BUY COINS"].tap()
-        XCTAssertTrue(app.staticTexts["Remove Ads Forever"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Remove Forced Ads"].waitForExistence(timeout: 8))
 
         let priceIdentifiers = [
             "iap.com.perfecttap.coins.500.price",

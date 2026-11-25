@@ -132,7 +132,7 @@ struct ShopView: View {
             titleVisibility: .visible
         ) {
             if let item = confirmItem {
-                Button("Buy for \(item.price) coins") { buyWithCoins(item) }
+                Button("Buy for \(item.price) coins") { Task { await buyWithCoins(item) } }
             }
             Button("Cancel", role: .cancel) { confirmItem = nil }
         }
@@ -306,9 +306,13 @@ struct ShopView: View {
         if item.category == .themes { themeManager.apply(profile: profile) }
     }
 
-    private func buyWithCoins(_ item: ShopItem) {
+    private func buyWithCoins(_ item: ShopItem) async {
         confirmItem = nil
-        guard EconomyManager.shared.buyItem(item) else { return }
+        guard await EconomyManager.shared.buyItemForCurrentRollout(item) else {
+            alertMessage = "Purchase could not be confirmed. Your coins were not changed."
+            showPurchaseAlert = true
+            return
+        }
         AnalyticsService.logShopItemBought(itemId: item.id, price: item.price)
         profile = EconomyManager.shared.currentProfile()
         alertMessage = "\(item.name) is yours. Tap EQUIP to use it."
@@ -353,7 +357,7 @@ struct ShopView: View {
                         let result = await purchaseManager.purchaseRemoveAds()
                         switch result {
                         case .success:
-                            alertMessage = "Ads removed! Enjoy ad-free gameplay."
+                            alertMessage = "Automatic interstitial ads removed. Optional rewarded ads remain available when you choose them."
                             profile = PlayerProfile.load() ?? PlayerProfile()
                         case .pending:
                             alertMessage = "Purchase is waiting for approval. Remove Ads will activate automatically."
@@ -372,9 +376,14 @@ struct ShopView: View {
                     HStack {
                         Image(systemName: "xmark.circle.fill").font(.system(size: 16))
                             .foregroundColor(.green)
-                        Text("Remove Ads Forever")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Remove Forced Ads")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("Removes automatic interstitials. Optional rewarded ads remain.")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.45))
+                        }
                         Spacer()
                         if let product = purchaseManager.specialProducts.first(where: { $0.id == SpecialProductID.removeAds.rawValue }) {
                             Text(product.displayPrice)

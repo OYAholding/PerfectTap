@@ -4,7 +4,7 @@
     "jsr:@std/assert@1.0.13": "1.0.13",
     "jsr:@std/internal@^1.0.6": "1.0.14",
     "npm:@apple/app-store-server-library@3.1.0": "3.1.0",
-    "npm:@supabase/server@1.9.2": "1.9.2_@supabase+supabase-js@2.119.0"
+    "npm:@supabase/supabase-js@2.119.0": "2.119.0"
   },
   "jsr": {
     "@std/assert@1.0.13": {
@@ -43,12 +43,6 @@
         "tslib"
       ]
     },
-    "@supabase/middleware@1.0.0": {
-      "integrity": "sha512-ecA+z/o5E9sB+quuupGt8d7QjrnD4BBwZr+Qthm0uj6CtL/+yvAUTDlknhGuTbUidvx5CxBHJ1R3H96UjDpgyg==",
-      "dependencies": [
-        "std-env"
-      ]
-    },
     "@supabase/phoenix@0.4.5": {
       "integrity": "sha512-aAn9H9ovVyeApKy11OWOrrOGq8DV68yWeH4ud2lN9fzn4aO8Zb5GLL9m1pUg9nLqIcT+ZDfAcsZe0E/nqdv2lw=="
     },
@@ -63,14 +57,6 @@
       "dependencies": [
         "@supabase/phoenix",
         "tslib"
-      ]
-    },
-    "@supabase/server@1.9.2_@supabase+supabase-js@2.119.0": {
-      "integrity": "sha512-zkvU157ivZ268Ffs+2aEaYvavfchZ8IiB/Rt5tW4JTfew2JeX0TN46Do3XD5U8ganGhfAJr3BUsMHswY56+iLA==",
-      "dependencies": [
-        "@supabase/middleware",
-        "@supabase/supabase-js",
-        "jose"
       ]
     },
     "@supabase/storage-js@2.119.0": {
@@ -232,9 +218,6 @@
     "iceberg-js@0.8.1": {
       "integrity": "sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA=="
     },
-    "jose@6.2.17": {
-      "integrity": "sha512-wOuK9V1yujQFH5S0ZWmLcDZN7+IKh9bUCC2ZPCf2HDlol3WWHy+PPyNjEI75FXRLMp3vDKQcupP59xhVU95hcg=="
-    },
     "jsonwebtoken@9.0.3": {
       "integrity": "sha512-MT/xP0CrubFRNLNKvxJ2BYfy53Zkm++5bX9dtuPbqAeQpTVe0MQTFhao8+Cp//EmJp244xt6Drw/GVEGCUj40g==",
       "dependencies": [
@@ -318,9 +301,6 @@
       "integrity": "sha512-9lpSSU4Mly3mrtruwLs1eLK6+gzbzqeBFwRNjIjE+9LuDpWdYctrQlQ3ej1Ilgi7gknpsTRnPoLP8DpCHqHIJw==",
       "bin": true
     },
-    "std-env@4.3.0": {
-      "integrity": "sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag=="
-    },
     "tr46@0.0.3": {
       "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
     },
@@ -344,7 +324,7 @@
   "workspace": {
     "dependencies": [
       "npm:@apple/app-store-server-library@3.1.0",
-      "npm:@supabase/server@1.9.2"
+      "npm:@supabase/supabase-js@2.119.0"
     ]
   }
 }
