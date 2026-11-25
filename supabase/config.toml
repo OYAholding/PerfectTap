@@ -423,7 +423,7 @@ enabled = true
 
 [functions.claim-legacy-account]
 enabled = true
-# Gateway JWT check on top of the in-function withSupabase({ auth: "user" }) check.
+# Gateway JWT check on top of the in-function requireUser() (_shared/auth.ts) check.
 verify_jwt = true
 import_map = "./functions/claim-legacy-account/deno.json"
 entrypoint = "./functions/claim-legacy-account/index.ts"
@@ -449,3 +449,11 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/app-store-notifications/deno.json"
 entrypoint = "./functions/app-store-notifications/index.ts"
+
+# 1.2.0 rewarded ads — NOT deployed. Google's AdMob SSV callback carries no
+# Supabase JWT; its ECDSA signature is verified inside the function.
+[functions.admob-ssv]
+enabled = true
+verify_jwt = false
+import_map = "./functions/admob-ssv/deno.json"
+entrypoint = "./functions/admob-ssv/index.ts"

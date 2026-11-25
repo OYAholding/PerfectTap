@@ -52,7 +52,10 @@ Deno.test("allows only a local restore for a non-consumable bound to an old anon
     caller,
     rpc,
   );
-  assertEquals(out, { status: 200, body: { status: "verified_local_restore" } });
+  assertEquals(out, {
+    status: 200,
+    body: { status: "verified_local_restore" },
+  });
   assertEquals(calls.length, 0);
 });
 
@@ -63,28 +66,39 @@ Deno.test("allows only a local restore for an unbound non-consumable", async () 
     caller,
     rpc,
   );
-  assertEquals(out, { status: 200, body: { status: "verified_local_restore" } });
+  assertEquals(out, {
+    status: 200,
+    body: { status: "verified_local_restore" },
+  });
   assertEquals(calls.length, 0);
 });
 
 Deno.test("rejects a consumable bound to a different account", async () => {
   const { rpc, calls } = fakeRpc({ data: "granted", error: null });
-  const out = await recordVerifiedTransaction({
-    ...base,
-    productId: "com.perfecttap.coins.500",
-    appAccountToken: "bbbbbbbb-0000-0000-0000-000000000009",
-  }, caller, rpc);
+  const out = await recordVerifiedTransaction(
+    {
+      ...base,
+      productId: "com.perfecttap.coins.500",
+      appAccountToken: "bbbbbbbb-0000-0000-0000-000000000009",
+    },
+    caller,
+    rpc,
+  );
   assertEquals(out, { status: 403, body: { error: "account_mismatch" } });
   assertEquals(calls.length, 0);
 });
 
 Deno.test("rejects an unbound consumable", async () => {
   const { rpc, calls } = fakeRpc({ data: "granted", error: null });
-  const out = await recordVerifiedTransaction({
-    ...base,
-    productId: "com.perfecttap.coins.500",
-    appAccountToken: undefined,
-  }, caller, rpc);
+  const out = await recordVerifiedTransaction(
+    {
+      ...base,
+      productId: "com.perfecttap.coins.500",
+      appAccountToken: undefined,
+    },
+    caller,
+    rpc,
+  );
   assertEquals(out, { status: 403, body: { error: "missing_account_token" } });
   assertEquals(calls.length, 0);
 });
@@ -111,14 +125,24 @@ Deno.test("maps a replayed consumable transaction of another account to 409", as
     data: null,
     error: { message: "owned_by_other_account" },
   });
-  const out = await recordVerifiedTransaction({ ...base, productId: "com.perfecttap.coins.500" }, caller, rpc);
+  const out = await recordVerifiedTransaction(
+    { ...base, productId: "com.perfecttap.coins.500" },
+    caller,
+    rpc,
+  );
   assertEquals(out, { status: 409, body: { error: "owned_by_other_account" } });
 });
 
 Deno.test("keeps a replayed non-consumable out of the new server account", async () => {
-  const { rpc } = fakeRpc({ data: null, error: { message: "owned_by_other_account" } });
+  const { rpc } = fakeRpc({
+    data: null,
+    error: { message: "owned_by_other_account" },
+  });
   const out = await recordVerifiedTransaction(base, caller, rpc);
-  assertEquals(out, { status: 200, body: { status: "verified_local_restore" } });
+  assertEquals(out, {
+    status: 200,
+    body: { status: "verified_local_restore" },
+  });
 });
 
 Deno.test("never leaks raw database errors", async () => {

@@ -3,7 +3,7 @@
 // JWT: authenticity comes from verifying the signed payload with Apple's
 // certificate chain. Notifications are durably deduplicated by notificationUUID;
 // REFUND / REVOKE remove and REFUND_REVERSED reinstates the entitlement.
-import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { serviceClient } from "../_shared/auth.ts";
 import { fail, json, readJson } from "../_shared/http.ts";
 import { makeVerifierSet } from "../_shared/apple.ts";
 import {
@@ -13,6 +13,7 @@ import {
 } from "../_shared/purchases.ts";
 
 Deno.serve(async (req) => {
+  if (req.method !== "POST") return fail(405, "method_not_allowed");
   const body = await readJson(req, 64_000);
   const signedPayload = typeof body?.signedPayload === "string"
     ? body.signedPayload
@@ -52,12 +53,8 @@ Deno.serve(async (req) => {
     if (!tx.transactionId) return fail(400, "invalid_transaction");
   }
 
-  const secret = Deno.env.get("SUPABASE_SECRET_KEY") ??
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!secret) return fail(503, "server_not_configured");
-  const admin = createClient(Deno.env.get("SUPABASE_URL")!, secret, {
-    auth: { persistSession: false },
-  });
+  const admin = serviceClient();
+  if (admin instanceof Response) return admin;
   const token =
     tx?.appAccountToken && /^[0-9a-f-]{36}$/i.test(tx.appAccountToken)
       ? tx.appAccountToken

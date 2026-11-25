@@ -7,9 +7,11 @@ const PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID") ?? "perfecttap-48a08";
 // Overridable for local integration tests only.
 const JWKS_URL = Deno.env.get("FIREBASE_JWKS_URL") ??
   "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
-const IDENTITY_URL = Deno.env.get("FIREBASE_IDENTITY_URL") ?? "https://identitytoolkit.googleapis.com";
+const IDENTITY_URL = Deno.env.get("FIREBASE_IDENTITY_URL") ??
+  "https://identitytoolkit.googleapis.com";
 const WEB_API_KEY = Deno.env.get("FIREBASE_WEB_API_KEY") ?? "";
-const IOS_BUNDLE_ID = Deno.env.get("FIREBASE_IOS_BUNDLE_ID") ?? "com.perfecttap.app";
+const IOS_BUNDLE_ID = Deno.env.get("FIREBASE_IOS_BUNDLE_ID") ??
+  "com.perfecttap.app";
 
 const jwks = createRemoteJWKSet(new URL(JWKS_URL));
 
@@ -21,7 +23,9 @@ export interface FirebaseIdentity {
   provider: string | null;
 }
 
-export async function verifyFirebaseIdToken(token: string): Promise<FirebaseIdentity | null> {
+export async function verifyFirebaseIdToken(
+  token: string,
+): Promise<FirebaseIdentity | null> {
   if (typeof token !== "string" || token.length > 4096) return null;
   try {
     const { payload } = await jwtVerify(token, jwks, {
@@ -31,12 +35,21 @@ export async function verifyFirebaseIdToken(token: string): Promise<FirebaseIden
       clockTolerance: 30,
     });
     const now = Math.floor(Date.now() / 1000);
-    if (typeof payload.sub !== "string" || payload.sub.length === 0 || payload.sub.length > 128) return null;
-    if (typeof payload.auth_time !== "number" || payload.auth_time > now + 30) return null;
-    const firebase = payload.firebase as { sign_in_provider?: string } | undefined;
+    if (
+      typeof payload.sub !== "string" || payload.sub.length === 0 ||
+      payload.sub.length > 128
+    ) return null;
+    if (typeof payload.auth_time !== "number" || payload.auth_time > now + 30) {
+      return null;
+    }
+    const firebase = payload.firebase as
+      | { sign_in_provider?: string }
+      | undefined;
     return {
       uid: payload.sub,
-      email: typeof payload.email === "string" ? payload.email.toLowerCase() : null,
+      email: typeof payload.email === "string"
+        ? payload.email.toLowerCase()
+        : null,
       emailVerified: payload.email_verified === true,
       provider: firebase?.sign_in_provider ?? null,
     };
@@ -46,16 +59,27 @@ export async function verifyFirebaseIdToken(token: string): Promise<FirebaseIden
 }
 
 /** True only if Firebase accepts these credentials for exactly `uid`. */
-export async function verifyFirebasePassword(uid: string, email: string, password: string): Promise<boolean> {
-  if (!WEB_API_KEY || password.length < 6 || password.length > 128) return false;
+export async function verifyFirebasePassword(
+  uid: string,
+  email: string,
+  password: string,
+): Promise<boolean> {
+  if (!WEB_API_KEY || password.length < 6 || password.length > 128) {
+    return false;
+  }
   try {
     const res = await fetch(
-      `${IDENTITY_URL}/v1/accounts:signInWithPassword?key=${encodeURIComponent(WEB_API_KEY)}`,
+      `${IDENTITY_URL}/v1/accounts:signInWithPassword?key=${
+        encodeURIComponent(WEB_API_KEY)
+      }`,
       {
         method: "POST",
         // Lets the (public) Firebase key be restricted to the iOS app in Google
         // Cloud Console → Credentials without breaking this server-side check.
-        headers: { "Content-Type": "application/json", "X-Ios-Bundle-Identifier": IOS_BUNDLE_ID },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ios-Bundle-Identifier": IOS_BUNDLE_ID,
+        },
         body: JSON.stringify({ email, password, returnSecureToken: false }),
       },
     );
