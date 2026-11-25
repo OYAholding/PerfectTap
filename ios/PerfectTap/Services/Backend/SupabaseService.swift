@@ -302,6 +302,19 @@ final class SupabaseService: GameBackend {
         "invalid_signature", "wrong_bundle", "invalid_transaction", "invalid_environment", "missing_account_token",
     ]
 
+    /// Maps a `verify-purchase` reply. A refunded/revoked transaction must
+    /// never count as verified (it would be granted on device).
+    nonisolated static func purchaseVerification(status: String, reason: String?) -> PurchaseVerification {
+        switch status {
+        case "granted", "already_granted", "verified_local_restore":
+            return .verified
+        case "revoked", "already_revoked":
+            return .rejected("revoked")
+        default:
+            return .rejected(reason ?? status)
+        }
+    }
+
     func verifyPurchase(jws: String) async -> PurchaseVerification {
         struct Body: Encodable { let signedTransaction: String }
         struct Reply: Decodable { let status: String; let reason: String? }
@@ -309,9 +322,7 @@ final class SupabaseService: GameBackend {
         do {
             let reply: Reply = try await client.functions.invoke(
                 "verify-purchase", options: FunctionInvokeOptions(body: Body(signedTransaction: jws)))
-            return reply.status == "granted" || reply.status == "already_granted"
-                || reply.status == "revoked" || reply.status == "verified_local_restore"
-                ? .verified : .rejected(reply.reason ?? reply.status)
+            return Self.purchaseVerification(status: reply.status, reason: reply.reason)
         } catch FunctionsError.httpError(_, let data) {
             // Only definitive answers finish the transaction without a grant.
             // Anything recoverable (wrong game account signed in, product not

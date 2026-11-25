@@ -63,6 +63,7 @@
 		86EDEF6DAE6DD3824817865A /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = F8D34DE89F5474E7084826B1 /* Supabase */; };
 		8BCEDE682A1B6403CD772825 /* PurchaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 050C2104A055D21F4EE6480D /* PurchaseManager.swift */; };
 		8CD9DBD658A65AD00875905F /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854CD79F2CC57FC0F1622D1A /* FriendsView.swift */; };
+		8CE3C180DC9A47B9E0ED0EC8 /* EconomyFollowupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 729B65091672749BC9495B84 /* EconomyFollowupTests.swift */; };
 		9173E644DF38392B606F71E3 /* ParticleEffectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF05286A4FD96F6397E237D4 /* ParticleEffectView.swift */; };
 		91F1F87F741F32E7EEE588D9 /* Achievement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0699019BFFE748789531F6AD /* Achievement.swift */; };
 		92FF4B3C87CB10436B806A39 /* DailyQuestsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4B2816CAD0C998342B1B70 /* DailyQuestsView.swift */; };
@@ -179,6 +180,7 @@
 		6DF9866D162166E062901CE4 /* TouchDownTapArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchDownTapArea.swift; sourceTree = "<group>"; };
 		716EF1065F00762E2BE9ABB0 /* EconomyOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconomyOutbox.swift; sourceTree = "<group>"; };
 		71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelSettlementTests.swift; sourceTree = "<group>"; };
+		729B65091672749BC9495B84 /* EconomyFollowupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconomyFollowupTests.swift; sourceTree = "<group>"; };
 		7952A5493EC9D1FE66767438 /* GameplayPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameplayPerformanceTests.swift; sourceTree = "<group>"; };
 		7A8E72E9E3F5EF07C92F8288 /* BackendCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendCodec.swift; sourceTree = "<group>"; };
 		819F65D2B43049DE9107EB83 /* EconomyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconomyConfig.swift; sourceTree = "<group>"; };
@@ -279,6 +281,7 @@
 				443E680D3FDA294FEE80B8F3 /* BalancedEconomyTests.swift */,
 				69354A2F4E975FB7571BF152 /* ConsentFlowTests.swift */,
 				71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */,
+				729B65091672749BC9495B84 /* EconomyFollowupTests.swift */,
 				B1681D690134602552F8B7EB /* EconomyServiceTests.swift */,
 				D92D1BBD138A68DD9C441579 /* EconomySimulationTests.swift */,
 				8C21B66226905092B4B80C1B /* GamePhaseTests.swift */,
@@ -819,6 +822,7 @@
 				F85622C6DD74A09BD1E9B723 /* BalancedEconomyTests.swift in Sources */,
 				4EB36449BD47BD8F7DF1D7BD /* ConsentFlowTests.swift in Sources */,
 				9E49A3DC43AFFC7EB2C389B0 /* DuelSettlementTests.swift in Sources */,
+				8CE3C180DC9A47B9E0ED0EC8 /* EconomyFollowupTests.swift in Sources */,
 				C86EB5AD69D27144DBFA128D /* EconomyServiceTests.swift in Sources */,
 				938C047C2D8B16EA46BF6845 /* EconomySimulationTests.swift in Sources */,
 				62021B5EB2283FEECE31FD1E /* GamePhaseTests.swift in Sources */,
