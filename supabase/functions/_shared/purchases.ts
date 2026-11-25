@@ -98,8 +98,10 @@ export async function recordVerifiedTransaction(
     const code = error.message && /^[a-z_]{3,40}$/.test(error.message)
       ? error.message
       : "internal_error";
-    if (code === "owned_by_other_account" &&
-      isRestorableNonConsumable(tx.productId)) {
+    if (
+      code === "owned_by_other_account" &&
+      isRestorableNonConsumable(tx.productId)
+    ) {
       return { status: 200, body: { status: "verified_local_restore" } };
     }
     const status = code === "unknown_product" || code === "disabled_product"
