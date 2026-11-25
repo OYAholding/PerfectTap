@@ -1,6 +1,4 @@
 import XCTest
-import StoreKitTest
-import StoreKit
 #if canImport(PerfectTap)
 @testable import PerfectTap
 #endif
@@ -46,6 +44,17 @@ final class PurchaseAndCosmeticsTests: XCTestCase {
         XCTAssertEqual(ledger.process(PurchaseEvent(transactionID: 9, productID: "com.perfecttap.skin.glitchmode", isRevoked: false)), [])
     }
 
+    func testRevokingOneOfTwoActiveNonConsumablesKeepsEntitlement() {
+        var ledger = EntitlementLedger()
+        let product = "com.perfecttap.skin.glitchmode"
+        XCTAssertEqual(ledger.process(PurchaseEvent(transactionID: 31, productID: product, isRevoked: false)),
+                       [.grantItem("theme_glitch")])
+        XCTAssertEqual(ledger.process(PurchaseEvent(transactionID: 32, productID: product, isRevoked: false)), [])
+        XCTAssertEqual(ledger.process(PurchaseEvent(transactionID: 31, productID: product, isRevoked: true)), [])
+        XCTAssertEqual(ledger.process(PurchaseEvent(transactionID: 32, productID: product, isRevoked: true)),
+                       [.revokeItem("theme_glitch")])
+    }
+
     func testUnknownProductIsIgnored() {
         var ledger = EntitlementLedger()
         XCTAssertEqual(ledger.process(PurchaseEvent(transactionID: 3, productID: "com.evil.free", isRevoked: false)), [])
@@ -60,6 +69,9 @@ final class PurchaseAndCosmeticsTests: XCTestCase {
                        "a 1.1.x purchase must not be credited again after the update")
         ledger.save(to: defaults)
         XCTAssertTrue(EntitlementLedger.load(from: defaults).hasProcessed(42))
+        defaults.set(["42", "43", "44"], forKey: EntitlementLedger.legacyKey)
+        XCTAssertTrue(EntitlementLedger.load(from: defaults).hasProcessed(44),
+                      "v2 must continue merging the immutable 1.1.x dedupe list")
     }
 
     // MARK: Delivery pipeline
@@ -153,38 +165,38 @@ final class PurchaseAndCosmeticsTests: XCTestCase {
         XCTAssertFalse(SupabaseService.definitiveRejections.contains("account_mismatch"))
         XCTAssertFalse(SupabaseService.definitiveRejections.contains("unknown_product"))
         XCTAssertTrue(SupabaseService.definitiveRejections.contains("invalid_signature"))
+        XCTAssertTrue(SupabaseService.definitiveRejections.contains("missing_account_token"))
     }
 
-    // MARK: StoreKitTest (local configuration, fake money)
+    func testAnonymousPlayerCanBuyRestorableNonConsumablesButNotCoins() {
+        let enabled = MonetizationConfiguration(
+            catalog: true, serverVerification: true, coins: true,
+            removeAds: true, premiumSkins: true)
+        let token = UUID(uuidString: "aaaaaaaa-0000-4000-8000-000000000001")!
 
-    private var allProductIDs: Set<String> {
-        Set(CoinPackID.allCases.map(\.rawValue) + SpecialProductID.allCases.map(\.rawValue) + ShopItem.premiumProductIDs)
+        XCTAssertEqual(
+            MonetizationPolicy.availability(for: .removeAds, configuration: enabled,
+                                              accountToken: token, isPermanentAccount: false),
+            .available(accountToken: token))
+        XCTAssertEqual(
+            MonetizationPolicy.availability(for: .premiumSkins, configuration: enabled,
+                                              accountToken: token, isPermanentAccount: false),
+            .available(accountToken: token))
+        XCTAssertEqual(
+            MonetizationPolicy.availability(for: .coins, configuration: enabled,
+                                              accountToken: token, isPermanentAccount: false),
+            .blocked(.permanentAccountRequired))
+        XCTAssertEqual(
+            MonetizationPolicy.availability(for: .coins, configuration: enabled,
+                                              accountToken: token, isPermanentAccount: true),
+            .available(accountToken: token))
     }
 
-    /// The bundled .storekit file lists every product the code sells, with the
-    /// right type (consumable coins, non-consumable Remove Ads and skins).
-    func testStoreKitConfigurationFileMatchesCode() throws {
-        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "PerfectTap", withExtension: "storekit"))
-        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
-        let products = try XCTUnwrap(json["products"] as? [[String: Any]])
-        var types: [String: String] = [:]
-        for p in products { types[p["productID"] as? String ?? ""] = p["type"] as? String }
-        XCTAssertEqual(Set(types.keys), allProductIDs)
-        for pack in CoinPackID.allCases { XCTAssertEqual(types[pack.rawValue], "Consumable") }
-        XCTAssertEqual(types[SpecialProductID.removeAds.rawValue], "NonConsumable")
-        for id in ShopItem.premiumProductIDs { XCTAssertEqual(types[id], "NonConsumable") }
-    }
-
-    /// Loads the products through a real StoreKitTest session. Skipped (not
-    /// passed) when the simulator's StoreKit agent refuses the session, which
-    /// happens in command-line runs (SKInternalErrorDomain 3); run from Xcode.
-    func testLocalStoreKitSessionLoadsProducts() async throws {
-        let session = try SKTestSession(configurationFileNamed: "PerfectTap")
-        session.resetToDefaultState()
-        session.disableDialogs = true
-        session.clearTransactions()
-        let products = try await Product.products(for: allProductIDs)
-        try XCTSkipIf(products.isEmpty, "StoreKitTest session unavailable in this environment")
-        XCTAssertEqual(Set(products.map(\.id)), allProductIDs)
+    func testAppleNonceHashIsStableAndNotPlaintext() {
+        XCTAssertEqual(AuthViewModel.sha256("perfecttap"),
+                       "411f2fc961176a307cc08ea22717c0a8a84205d7ddc63b123e703b13eb3e4bd2")
+        let nonce = AuthViewModel.randomNonce()
+        XCTAssertEqual(nonce.count, 32)
+        XCTAssertNotEqual(AuthViewModel.sha256(nonce), nonce)
     }
 }

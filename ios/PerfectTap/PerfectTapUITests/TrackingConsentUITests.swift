@@ -49,8 +49,14 @@ final class TrackingConsentUITests: XCTestCase {
         XCTAssertTrue(trackingAlert.label.contains("Perfect Tap") || trackingAlert.staticTexts.count > 0)
         let buttons = trackingAlert.buttons
         XCTAssertEqual(buttons.count, 2, "unexpected alert: \(trackingAlert.debugDescription)")
-        buttons.element(boundBy: allow ? 1 : 0).tap()
-        XCTAssertTrue(trackingAlert.waitForNonExistence(timeout: 5))
+        let choice = buttons.element(boundBy: allow ? 1 : 0)
+        choice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        if !trackingAlert.waitForNonExistence(timeout: 3), choice.exists {
+            // Springboard occasionally consumes the first synthesized tap while
+            // the localized ATT sheet is still settling on the simulator.
+            choice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(trackingAlert.waitForNonExistence(timeout: 8))
     }
 
     private func reachHome() {

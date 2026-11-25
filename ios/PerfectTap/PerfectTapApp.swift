@@ -58,10 +58,9 @@ struct PerfectTapApp: App {
                     try? await Task.sleep(nanoseconds: 800_000_000)
                     await ConsentManager.shared.gatherConsentIfNeeded()
                 }
-                .task {
-                    // Load IAP products from App Store Connect on launch.
-                    // Without this, coinProducts and specialProducts are empty
-                    // and no IAP purchases can be made.
+                .task(id: authVM.currentUID) {
+                    // The catalog can load before sign-in. Transaction handling
+                    // waits inside start() for the UUID used as appAccountToken.
                     await PurchaseManager.shared.start()
                 }
                 .onChange(of: router.isGameOnStack) { gameOnStack in
@@ -69,6 +68,7 @@ struct PerfectTapApp: App {
                     Task {
                         await ConsentManager.shared.gatherConsentIfNeeded()
                         ConsentManager.shared.refreshTrackingStatus()
+                        await PurchaseManager.shared.resume()
                     }
                 }
                 .onChange(of: scenePhase) { phase in

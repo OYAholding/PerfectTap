@@ -1,77 +1,77 @@
 # מוכנות לתשלומים אמיתיים — PerfectTap 1.2.0
 
-**תאריך:** 22.11.2026 · **מצב:** הקוד מוכן ונבדק מקומית. **שום מוצר אמיתי לא הופעל ושום לקוח לא חויב.**
+**תאריך:** 25.11.2026 · **מצב:** ההטמעה מוכנה מקומית, אבל השחרור עדיין חסום. **לא בוצעה פריסה לפרודקשן, לא נוצרו מוצרי IAP ב-App Store Connect ולא הופעלה רכישה בכסף אמיתי.**
 
-## ההחלטה: StoreKit 2 בלבד
+## ההחלטה
 
-- פריטים קוסמטיים שנמכרים בתוך האפליקציה חייבים לעבור דרך IAP של אפל (הנחיה 3.1.1). ראו [COMPLIANCE.md](research/COMPLIANCE.md).
-- **Lemon Squeezy לא נבחר.** ההרשמה נסגרה ב־16.11.2026, ועיבוד התשלומים מסתיים ב־31.3.2027 בלי הארכה.
-- אם בעתיד תיבנה חנות אינטרנט (ארה"ב בלבד, קישור החוצה), החלופה המומלצת היא Stripe Managed Payments, ורק אחרי אישור של Stripe.
+StoreKit 2 הוא מסלול התשלום היחיד לפריטים דיגיטליים באפליקציה. המשחק ו-Cloud Backup נשארים זמינים בלי הרשמה כפויה:
 
-## מה בנוי בקוד (ענף `release/1.2.0`)
+- אורח אנונימי רשאי לקנות `Remove Ads` וסקינים. השחזור מתבסס על היסטוריית StoreKit החתומה של Apple, ולכן אינו תלוי באימייל או בחשבון PerfectTap.
+- חבילות מטבעות הן consumable ואינן נכללות ב-StoreKit `currentEntitlements`. לכן הן חסומות לאורח עד קישור חד-פעמי לחשבון בר-שחזור, בעדיפות ל-Sign in with Apple ובחלופה חשבון אימייל מאומת.
+- `appAccountToken` הוא UUID של חשבון Supabase. עסקת מטבעות עם token חסר/שונה אינה מזוכה ואינה מסתיימת, כדי שניתן יהיה לנסות שוב אחרי כניסה לחשבון הנכון. עסקת non-consumable מאומתת יכולה להחזיר הרשאה מקומית בלבד, בלי להעביר בעלות בשרת ובלי ליצור זיכוי כפול.
 
-| רכיב | קובץ | מה הוא עושה |
-|---|---|---|
-| מתגים | `ios/PerfectTap/Utils/FeatureFlags.swift` | `iapEnabled = false`, `serverPurchaseVerification = false`. כל עוד הם כבויים, אי אפשר לקנות בכסף אמיתי |
-| מסירה פעם אחת בדיוק | `Services/EntitlementLedger.swift` | כל עסקה מזוכה פעם אחת לפי מזהה. החזר כספי מבטל את מה שניתן. מטבעות לא יורדים מתחת לאפס. עסקאות שזוכו ב־1.1.x נשמרות ולא יזוכו שוב |
-| צינור הרכישה | `Services/PurchaseManager.swift` | אימות StoreKit על המכשיר, ואז אימות שרת (כשמופעל), ואז זיכוי, ורק אז `finish()`. עסקאות שלא הסתיימו נמסרות בהפעלה הבאה (`Transaction.unfinished`). כל רכישה נקשרת לשחקן עם `appAccountToken`. יש שחזור רכישות |
-| שני המתגים יחד | `FeatureFlags.realMoneyPurchasesEnabled` | רכישות בכסף אמיתי זמינות רק כששני המתגים דולקים. בלי אימות שרת, השרת היה מוריד סקינים ששולמו |
-| סקינים פרימיום | `Models/ShopItem.swift`, `Utils/GameConfig.swift` | Neon Pulse, ‏Liquid Chrome, ‏Glitch Mode, ‏Cosmic Gold. אי אפשר לקנות אותם במטבעות, והם מוסתרים בחנות עד שהמתג מופעל |
-| הגדרת StoreKit מקומית | `ios/PerfectTap/StoreKit/PerfectTap.storekit` | כל 9 המוצרים עם כסף מדומה, לבדיקה בסימולטור (סכמת PerfectTap › Run) |
-| ספר עסקאות בשרת | `supabase/migrations/20261122120000_purchase_ledger_and_economy_guard.sql` | `purchase_ledger` (מזהה עסקה ייחודי), `economy` (no_ads, סקינים, מטבעות IAP שממתינים לסנכרון), יומן אירועים |
-| הקשחת `save_profile` | אותה מיגרציה | הלקוח כבר לא יכול: להפעיל no_ads, להוסיף סקין שלא שולם, להפעיל season premium בלי 50 פרסומות, או לקפוץ במטבעות מעבר לתקרה נדיבה שתלויה בזמן. חריגה נחתכת ונרשמת ביומן, והשמירה לא נכשלת |
-| אימות עסקה | `supabase/functions/verify-purchase` | מאמת את ה־JWS מול שרשרת התעודות של אפל (App Store Server Library 3.1.0), בודק bundle ו־appAccountToken, ורושם בספר |
-| החזרים | `supabase/functions/app-store-notifications` | App Store Server Notifications V2: ‏REFUND/REVOKE מבטלים את הזכאות בספר |
+## מה הוטמע
 
-### שמירת נתוני שחקנים קיימים
-- המיגרציה **לא משנה אף ערך קיים**. היא יוצרת שורת `economy` לכל שחקן לפי דגל ה־no_ads הנוכחי שלו, וזהו.
-- מטבעות, פריטים והתקדמות נשארים כפי שהם.
-- נתיב התביעה של חשבונות Firebase הישנים (`save_profile_for` ישירות) לא עובר דרך המגבלה החדשה, כך שייבוא יתרות ישנות לא ייחתך.
+| רכיב | מצב נוכחי |
+|---|---|
+| מתגי הפעלה | חמישה Info.plist flags נפרדים לקטלוג, אימות שרת, חבילות מטבעות, Remove Ads וסקינים. כולם `NO` גם ב-Debug וגם ב-Release ונכשלים סגור אם חסרים |
+| StoreKit 2 | טעינת מוצרים, רכישה עם `appAccountToken`, listener, סריקת `Transaction.unfinished`, שחזור, reconcile של זכאויות וריטריי מדורג לאימות שרת |
+| זהות ושחזור | Sign in with Apple עם nonce, קישור identity לחשבון האנונימי הקיים ושימור UID/נתונים; אם ה-Apple identity כבר קיים, כניסה לחשבון הקיים ומיזוג פרופיל שמרני |
+| מסירה מקומית | ledger v2 שומר מוצר לכל transaction, מונע זיכוי כפול, תומך בכמה עסקאות פעילות לאותו non-consumable ושומר מזהי 1.1.x כסמני dedupe קבועים |
+| שרת | ledger וכלכלה ב-Postgres, קטלוג שרת שמתחיל `enabled = false`, אימות JWS ב-Production וב-Sandbox, ו-App Store Server Notifications V2 |
+| החזרים | `REFUND`, `REVOKE` ו-`REFUND_REVERSED`, עם UUID dedupe, סדר לפי signed date ויומן audit |
+| Leaderboard | ה-RPC הציבורי מחזיר רק שורות leaderboard שאומתו בשרת; אין fallback הנשלט על ידי הלקוח |
+| פרטיות | Privacy Manifest והצהרת App Privacy כוללים Purchase History לצורך App Functionality |
+| הכנת IAP | manifest מקומי לתשעת המוצרים, מחירים מוצעים, metadata, review notes, בדיקת ASC read-only ו-lane מקומי להכנה בלבד |
+| פריסה | Supabase CLI נעול ל-`2.119.0`; פריסת רכישות דורשת `--apply-purchases` וגם `PT_CONFIRM_PRODUCTION=yes`. SQL containment קיים לביטול מכירות בלי למחוק ledger |
 
-## בדיקות שהורצו
+## הגנות הפעלה
+
+- `PT_IAP_CATALOG_ENABLED`
+- `PT_IAP_SERVER_VERIFICATION_ENABLED`
+- `PT_IAP_COIN_PACKS_ENABLED`
+- `PT_IAP_REMOVE_ADS_ENABLED`
+- `PT_IAP_PREMIUM_SKINS_ENABLED`
+
+רכישה אפשרית רק כשמתגי הקטלוג, אימות השרת והקטגוריה דולקים ויש UUID תקין. non-consumables זמינים גם לחשבון אנונימי; consumables דורשים זהות קבועה. `-PTIAPPreview` מציג UI ב-Debug בלבד ואינו נותן הרשאת רכישה.
+
+## מצב בדיקות
 
 | בדיקה | תוצאה |
 |---|---|
-| בדיקות יחידה ב־iOS (`xcodebuild test`, סכמת PerfectTap) | 91 בדיקות: ‏90 עברו, 0 נכשלו, 1 דולגה (ראו למטה) |
-| בדיקות מסד נתונים pgTAP (`supabase test db --local`) | 104/104 עברו (70 קיימות ו־34 חדשות של ספר העסקאות, כולל שימוש חוזר בעסקה של שחקן אחר, החזר לפני רישום, ועקיפת התקרה בשמירות חוזרות) |
-| בדיקות Deno ללוגיקת האימות | 6/6 עברו, ושתי הפונקציות עוברות `deno check` |
+| iOS unit tests — סכמת `PerfectTap`, ‏iOS 26.2 | 92/92 עברו, 0 דילוגים |
+| Postgres pgTAP | 112/112 עברו לאחר restart נקי של ה-stack המקומי |
+| Supabase integration | 10/10 עברו מול ה-stack המקומי |
+| Deno | 10/10 בדיקות purchase עברו; `deno check` עבר לשתי פונקציות ה-Edge עם ה-config הייעודי שלהן |
+| StoreKit catalog structure | עבר: בדיוק תשעה מוצרים, מזהים, סוגים, reference names, מחירי בדיקה ולוקליזציית `en_US` תקינים |
+| StoreKit lifecycle | עבר ב-CLI על iOS 26.2 ו-iOS 18.5. הכשל `SKInternalErrorDomain Code=3` משתחזר ב-runtime של iOS 26.5 ולכן אינו ייחודי להרצה משורת הפקודה |
+| UI review screenshot | עבר על iOS 26.2: נוצרו חמישה צילומים עם מחירי StoreKit המקומיים. הם חומרי בדיקה, לא הוכחה למחירי ASC חיים |
+| UI gameplay/consent | workload, מטריצת 15 מצבים ושתי בדיקות ATT האחרות עברו; `Allow` וצילום IAP עברו בריצה ממוקדת אחרי תיקון יציבות האוטומציה |
+| Release build | עבר ל-iOS Simulator; נשארו אזהרות קיימות על XcodeGen groups כפולים ו-`Perf.swift` לקראת Swift 6 |
+| Secret scan | היסטוריית Git ועץ העבודה הנקי עברו; התאמות allowlisted בלבד |
+| App Store Connect read-only | 0 מוצרים קיימים; כל תשעת המוצרים ב-manifest עדיין `MISSING` |
 
-**הבדיקה שדולגה:** טעינת המוצרים דרך `SKTestSession`. סוכן ה־StoreKit בסימולטור החזיר `SKInternalErrorDomain 3` בהרצה משורת הפקודה. הבדיקה מסומנת "דולגה" ולא "עברה". קובץ ההגדרה עצמו נבדק בבדיקה נפרדת: כל 9 המוצרים קיימים, עם הסוג הנכון. כדאי להריץ את הבדיקה פעם אחת מתוך Xcode.
+## חסמי שחרור
 
-**לא נבדק:**
-- רכישה אמיתית ב־Sandbox או ב־TestFlight. אין עדיין מוצרים ב־App Store Connect.
-- אימות JWS אמיתי מול תעודות אפל. נדרשת עסקה חתומה.
-- קבלת התראה אמיתית מאפל.
-- המיגרציה הורצה רק על ה־DB המקומי: האובייקטים שלה נמחקו והקובץ הורץ מחדש כולו. לא הורץ `db reset` מלא, כדי לא למחוק נתונים מקומיים אחרים.
+1. Xcode 26.6 דורש התקנת רכיב iOS 26.5 לפני בדיקת GUI. אחרי ההתקנה יש להריץ שוב את lifecycle ב-GUI; iOS 26.2 ו-18.5 כבר מספקים ראיית StoreKit תקינה.
+2. להשלים ב-App Store Connect את Paid Apps Agreement, פרטי מס ובנק.
+3. ליצור את תשעת מוצרי ה-IAP, ולשלוח לפחות consumable ראשון ו-non-consumable ראשון יחד עם 1.2.0.
+4. להפעיל Sign in with Apple ל-App ID ול-Supabase, כולל manual identity linking. SMTP נדרש רק לחלופת אימייל/Cloud Backup, לא לרכישת non-consumable.
+5. אחרי גיבוי ואישור מפורש בלבד: לפרוס את המיגרציה וה-Edge Functions, להגדיר Apple root CAs ו-App Apple ID, ולהשאיר את קטלוג השרת disabled עד סוף QA.
+6. לבצע על iPhone פיזי וב-Sandbox/TestFlight: רכישה, duplicate delivery, restore, מעבר מכשיר, offline באמצע אימות, Ask to Buy, refund, revoke ו-refund reversal.
+7. רק אחרי שכל השלבים עוברים: להפעיל flags לפי קטגוריה, קודם ב-TestFlight ולבסוף ב-build ל-App Review.
 
-## צ'קליסט לבעלים, לפני שמפעילים כסף אמיתי
+## קבצי תפעול
 
-### App Store Connect (רק אתה, בממשק של אפל)
-1. **Agreements, Tax, and Banking:** לוודא ש־**Paid Apps Agreement** פעיל, ושפרטי הבנק והמס הושלמו. *לא נגעתי ולא אגע בהגדרות האלה.*
-2. ליצור את מוצרי ה־IAP עם אותם מזהים בדיוק:
-   - `com.perfecttap.coins.500` / `.1200` / `.3000` / `.8000` — מסוג Consumable
-   - `com.perfecttap.removeads` — מסוג Non-Consumable
-   - `com.perfecttap.skin.neonpulse`, `.liquidchrome`, `.glitchmode`, `.cosmicgold` — מסוג Non-Consumable
-3. לקבוע מחירים. המחירים בקובץ ה־`.storekit` (0.99–9.99$, סקין 1.99$) הם לבדיקה בלבד. ההחלטה שלך.
-4. App Information › App Store Server Notifications:
-   - Version 2
-   - כתובת: `https://<project>.supabase.co/functions/v1/app-store-notifications`
-   - כדאי להגדיר קודם את כתובת ה־Sandbox.
-5. לכל מוצר: צילום מסך לבדיקה, ותיאור שמבהיר שזה קוסמטי בלבד.
+- קטלוג מוצרים: `fastlane/iap/catalog.json`
+- הערות Review: `fastlane/iap/review-notes.en-US.txt`
+- בדיקת ASC ללא כתיבה: `bundle exec fastlane iap_check`
+- הכנת טיוטה מקומית ללא כתיבה או תלות במוצרי ASC: `bundle exec fastlane iap_prepare`
+- שער הגשה סופי, read-only, שדורש תשעה מוצרי ASC וצילומי Review תקינים: `bundle exec fastlane iap_submission_validate`
+- נוהל Sandbox במכשיר: `docs/STOREKIT_DEVICE_SANDBOX_QA.he.md`
+- פריסת Supabase מוגנת: `scripts/deploy-supabase.sh`
+- containment: `supabase/rollback/20261122120000_purchase_containment.sql`
 
-### Supabase (דורש את אישורך המפורש, ולא בוצע)
-1. להריץ את המיגרציה על פרויקט הפרודקשן (`supabase db push`), אחרי גיבוי.
-2. להגדיר secrets לפונקציות:
-   - `APPLE_ROOT_CAS_B64`: תעודות השורש מ־apple.com/certificateauthority, בקידוד base64 ומופרדות בפסיקים
-   - `APPLE_ENVIRONMENT`: ‏`Sandbox`, ואחר כך `Production`
-   - `APPLE_APP_APPLE_ID`: המזהה המספרי של האפליקציה
-3. לפרוס את `verify-purchase` ואת `app-store-notifications`.
+## מדיניות החזר מטבעות
 
-### באפליקציה (build חדש, דורש אישור)
-1. `FeatureFlags.serverPurchaseVerification = true`, ואז בדיקת Sandbox: רכישה, רכישה כפולה, החזר דרך "Request a Refund" בסביבת הבדיקה, Ask to Buy, ניתוק רשת באמצע.
-2. רק אחרי כל זה: `FeatureFlags.iapEnabled = true`, ‏build ל־TestFlight, ורק אחר כך App Review.
-
-## סיכונים פתוחים
-- **הלקוח עדיין סומך על עצמו מקומית.** במכשיר פרוץ אפשר לערוך את UserDefaults. השרת מגביל את הנזק לנתונים המשותפים: לוח תוצאות, זכאויות וגיבוי, אבל לא לעותק המקומי.
-- **רווח מטבעות ממשחק עדיין מחושב בלקוח.** התקרה בשרת: תקציב מתגלגל של 30,000 לשעה (שמירות חוזרות לא ממלאות אותו מחדש), ועוד 20,000 לכל שעה אופליין מאז השמירה הקודמת, עד 500,000. היא חוסמת קפיצות לא סבירות, אבל זו לא כלכלה סמכותית מלאה. השלב הבא: RPC בשרת לכל מקור הכנסה (משחק עם session מאומת, משימות, גלגל).
-- **החזר על מטבעות שכבר נוצלו:** היתרה יורדת עד אפס, ולא לתוך מינוס. זו מדיניות שצריך לאשר.
+בהחזר על consumable, היתרה יורדת בגובה החבילה עד רצפה של אפס. אין יתרה שלילית. זו החלטת מוצר שצריך לאשר לפני הפעלה.

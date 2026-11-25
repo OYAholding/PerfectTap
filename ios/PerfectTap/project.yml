@@ -42,6 +42,7 @@ targets:
           - SETUP.md
           - PerfectTapUITests/**
           - PerfectTapTests/**
+          - PerfectTapStoreKitTests/**
           - StoreKit/**
           - "*.xcodeproj"
           - "*.xcworkspace"
@@ -80,6 +81,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SWIFT_EMIT_LOC_STRINGS: YES
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: PerfectTap.entitlements
         # Public client config only (publishable key is safe to ship).
         # NEVER put a secret / service_role key in the app.
         SUPABASE_URL: "https://pgvtaotdyspwnpqtxpju.supabase.co"   # set by scripts/use-supabase-project.sh <ref>
@@ -94,9 +96,19 @@ targets:
         Debug:
           PT_BACKEND: supabase
           PT_EMAIL_OTP_ENABLED: "NO"
+          PT_IAP_CATALOG_ENABLED: "NO"
+          PT_IAP_SERVER_VERIFICATION_ENABLED: "NO"
+          PT_IAP_COIN_PACKS_ENABLED: "NO"
+          PT_IAP_REMOVE_ADS_ENABLED: "NO"
+          PT_IAP_PREMIUM_SKINS_ENABLED: "NO"
         Release:
           PT_BACKEND: supabase
           PT_EMAIL_OTP_ENABLED: "NO"
+          PT_IAP_CATALOG_ENABLED: "NO"
+          PT_IAP_SERVER_VERIFICATION_ENABLED: "NO"
+          PT_IAP_COIN_PACKS_ENABLED: "NO"
+          PT_IAP_REMOVE_ADS_ENABLED: "NO"
+          PT_IAP_PREMIUM_SKINS_ENABLED: "NO"
     info:
       path: Info.plist
       properties:
@@ -117,6 +129,11 @@ targets:
         GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS: false
         PT_BACKEND: $(PT_BACKEND)
         PT_EMAIL_OTP_ENABLED: $(PT_EMAIL_OTP_ENABLED)
+        PT_IAP_CATALOG_ENABLED: $(PT_IAP_CATALOG_ENABLED)
+        PT_IAP_SERVER_VERIFICATION_ENABLED: $(PT_IAP_SERVER_VERIFICATION_ENABLED)
+        PT_IAP_COIN_PACKS_ENABLED: $(PT_IAP_COIN_PACKS_ENABLED)
+        PT_IAP_REMOVE_ADS_ENABLED: $(PT_IAP_REMOVE_ADS_ENABLED)
+        PT_IAP_PREMIUM_SKINS_ENABLED: $(PT_IAP_PREMIUM_SKINS_ENABLED)
         SUPABASE_URL: $(SUPABASE_URL)
         SUPABASE_PUBLISHABLE_KEY: $(SUPABASE_PUBLISHABLE_KEY)
         SKAdNetworkItems:
@@ -173,9 +190,6 @@ targets:
     platform: iOS
     sources:
       - path: PerfectTapTests
-      # Local StoreKit configuration (fake money) for StoreKitTest.
-      - path: StoreKit/PerfectTap.storekit
-        buildPhase: resources
     dependencies:
       - target: PerfectTap
     settings:
@@ -202,6 +216,25 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
 
+  PerfectTapStoreKitTests:
+    type: bundle.unit-test
+    supportedDestinations: [iOS]
+    platform: iOS
+    sources:
+      - path: PerfectTapStoreKitTests
+      - path: StoreKit/PerfectTap.storekit
+        buildPhase: resources
+    dependencies:
+      - target: PerfectTap
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.perfecttap.app.storekittests
+        DEVELOPMENT_TEAM: K88C7DPG4C
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PerfectTap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PerfectTap"
+
 schemes:
   PerfectTap:
     build:
@@ -212,7 +245,6 @@ schemes:
       # App Store builds, which talk to the real App Store.
       storeKitConfiguration: StoreKit/PerfectTap.storekit
     test:
-      storeKitConfiguration: StoreKit/PerfectTap.storekit
       targets:
         - PerfectTapTests
   # Mode-by-mode UI run. Uses the Debug backend (Supabase cloud): it creates one anonymous
@@ -224,5 +256,14 @@ schemes:
         PerfectTap: all
         PerfectTapUITests: [test]
     test:
+      storeKitConfiguration: StoreKit/PerfectTap.storekit
       targets:
         - PerfectTapUITests
+  PerfectTapStoreKitTests:
+    build:
+      targets:
+        PerfectTap: all
+        PerfectTapStoreKitTests: [test]
+    test:
+      targets:
+        - PerfectTapStoreKitTests

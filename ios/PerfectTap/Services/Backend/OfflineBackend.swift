@@ -16,7 +16,11 @@ final class OfflineBackend: GameBackend {
     var currentUID: String? { uid }
     var currentUserEmail: String? { nil }
     var isLinkedToEmail: Bool { false }
+    var isPermanentAccount: Bool { false }
     func signInAnonymously() async -> String? { uid }
+    func linkOrSignInWithApple(idToken: String, nonce: String?, fullName: PersonNameComponents?) async throws -> PermanentIdentityResult {
+        throw BackendError.network
+    }
     func linkAnonymousAccount(email: String, password: String) async throws -> String { throw BackendError.network }
     func confirmEmailLink(email: String, code: String, password: String) async throws -> String { throw BackendError.network }
     func signInWithEmail(email: String, password: String) async throws -> String { throw BackendError.network }

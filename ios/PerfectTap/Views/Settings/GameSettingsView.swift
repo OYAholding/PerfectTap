@@ -20,6 +20,7 @@ struct GameSettingsView: View {
     @State private var profile: PlayerProfile = PlayerProfile.load() ?? PlayerProfile()
     @State private var showPrivacyPolicy = false
     @State private var showTermsOfUse = false
+    @State private var restoreMessage: String?
 
     /// Real build version (was hard-coded "1.0.0" while the app ships 1.0.2).
     static var appVersion: String {
@@ -152,7 +153,14 @@ struct GameSettingsView: View {
 
                             // Restore purchases
                             Button {
-                                Task { await PurchaseManager.shared.restorePurchases() }
+                                Task {
+                                    let result = await PurchaseManager.shared.restorePurchases()
+                                    switch result {
+                                    case .restored(let count): restoreMessage = "Restored \(count) purchase\(count == 1 ? "" : "s")."
+                                    case .nothingToRestore: restoreMessage = "No restorable purchases were found."
+                                    case .failed(let message): restoreMessage = message
+                                    }
+                                }
                             } label: {
                                 HStack {
                                     Image(systemName: "arrow.clockwise").foregroundColor(Color(red: 0.59, green: 0.28, blue: 0.98))
@@ -318,6 +326,12 @@ struct GameSettingsView: View {
             }
         } message: {
             Text("Enter your password to complete account deletion.")
+        }
+        .alert(restoreMessage ?? "", isPresented: Binding(
+            get: { restoreMessage != nil },
+            set: { if !$0 { restoreMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { restoreMessage = nil }
         }
     }
 

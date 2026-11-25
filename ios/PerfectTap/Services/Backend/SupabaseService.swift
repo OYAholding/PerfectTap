@@ -67,6 +67,11 @@ final class SupabaseService: GameBackend {
         return !user.isAnonymous && user.email != nil
     }
 
+    var isPermanentAccount: Bool {
+        guard let user = client.auth.currentUser else { return false }
+        return !user.isAnonymous
+    }
+
     /// Restores the Keychain session or creates an anonymous user, then (once)
     /// moves this device's Firebase-era progress onto it.
     func signInAnonymously() async -> String? {
@@ -87,6 +92,26 @@ final class SupabaseService: GameBackend {
         }
         if let uid { await claimLegacyAccountIfNeeded(uid: uid) }
         return uid
+    }
+
+    /// Native Sign in with Apple. First use links the identity to the current
+    /// anonymous user (same UUID and server data). If the Apple identity already
+    /// exists, sign in to that permanent user so the caller can merge profiles.
+    func linkOrSignInWithApple(idToken: String, nonce: String?, fullName: PersonNameComponents?) async throws -> PermanentIdentityResult {
+        guard let oldUID = currentUID else { throw BackendError.notSignedIn }
+        let credentials = OpenIDConnectCredentials(provider: .apple, idToken: idToken, nonce: nonce)
+        do {
+            let session = try await client.auth.linkIdentityWithIdToken(credentials: credentials)
+            return PermanentIdentityResult(uid: session.user.id.uuidString.lowercased(), keptAnonymousUID: true)
+        } catch let authError as AuthError where authError.errorCode == .identityAlreadyExists {
+            let session = try await client.auth.signInWithIdToken(credentials: credentials)
+            let uid = session.user.id.uuidString.lowercased()
+            return PermanentIdentityResult(uid: uid, keptAnonymousUID: uid == oldUID)
+        } catch let authError as AuthError where authError.errorCode == .manualLinkingDisabled {
+            throw BackendError.server("Sign in with Apple is not configured yet. Your local progress is unchanged.")
+        } catch {
+            throw mapAuthError(error)
+        }
     }
 
     /// Step 1 of "Cloud Backup": Supabase emails a one-time code to the address.
@@ -274,7 +299,7 @@ final class SupabaseService: GameBackend {
     /// function, which verifies it with Apple's certificates and records it in
     /// the purchase ledger idempotently (unique transaction ID).
     static let definitiveRejections: Set<String> = [
-        "invalid_signature", "wrong_bundle", "invalid_transaction", "invalid_environment", "owned_by_other_account",
+        "invalid_signature", "wrong_bundle", "invalid_transaction", "invalid_environment", "missing_account_token",
     ]
 
     func verifyPurchase(jws: String) async -> PurchaseVerification {
@@ -284,7 +309,8 @@ final class SupabaseService: GameBackend {
         do {
             let reply: Reply = try await client.functions.invoke(
                 "verify-purchase", options: FunctionInvokeOptions(body: Body(signedTransaction: jws)))
-            return reply.status == "granted" || reply.status == "already_granted" || reply.status == "revoked"
+            return reply.status == "granted" || reply.status == "already_granted"
+                || reply.status == "revoked" || reply.status == "verified_local_restore"
                 ? .verified : .rejected(reply.reason ?? reply.status)
         } catch FunctionsError.httpError(_, let data) {
             // Only definitive answers finish the transaction without a grant.

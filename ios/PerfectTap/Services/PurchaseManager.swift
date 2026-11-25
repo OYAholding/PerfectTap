@@ -34,14 +34,6 @@ enum CoinPackID: String, CaseIterable {
         }
     }
 
-    var bonusLabel: String? {
-        switch self {
-        case .small:  return nil
-        case .medium: return "+20% BONUS"
-        case .large:  return "+50% BONUS"
-        case .mega:   return "BEST VALUE"
-        }
-    }
 }
 
 enum SpecialProductID: String, CaseIterable {
@@ -89,6 +81,12 @@ enum PremiumPurchaseResult: Equatable {
     case failed(message: String)
 }
 
+enum RestorePurchasesResult: Equatable {
+    case restored(Int)
+    case nothingToRestore
+    case failed(message: String)
+}
+
 // MARK: - PurchaseManager (StoreKit 2)
 //
 // Delivery pipeline for every transaction, whatever its source (purchase
@@ -111,6 +109,9 @@ final class PurchaseManager: ObservableObject {
     @Published private(set) var lastCoinPackCreditEvent: CoinPackCreditEvent? = nil
 
     private var transactionListener: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
+    private var retryAttempt = 0
+    private var startedForUserID: String?
     private var ledger: EntitlementLedger
     private let defaults: UserDefaults
     var verifier: PurchaseVerifying
@@ -130,21 +131,41 @@ final class PurchaseManager: ObservableObject {
 
     deinit {
         transactionListener?.cancel()
+        retryTask?.cancel()
     }
 
     // MARK: - Launch
 
-    /// Call once at launch: listen for updates, deliver unfinished
-    /// transactions, load products.
+    /// Product discovery is safe before authentication. Transaction handling
+    /// starts only after Auth has restored/created the UUID used to bind every
+    /// new purchase to its player account.
     func start() async {
-        if transactionListener == nil { transactionListener = listenForTransactions() }
-        await processUnfinishedTransactions()
         await loadProducts()
+        guard let uid = Backend.shared.currentUID, UUID(uuidString: uid) != nil else {
+            return
+        }
+        if transactionListener == nil { transactionListener = listenForTransactions() }
+        guard startedForUserID != uid else {
+            return
+        }
+        startedForUserID = uid
+        await processUnfinishedTransactions()
+        await reconcileCurrentEntitlements(origin: .transactionListener)
+    }
+
+    /// Called when the app returns to the foreground. It retries recoverable
+    /// verification failures immediately instead of waiting for another launch.
+    func resume() async {
+        guard Backend.shared.currentUID != nil else { return }
+        retryTask?.cancel()
+        retryTask = nil
+        retryAttempt = 0
+        await processUnfinishedTransactions()
+        await reconcileCurrentEntitlements(origin: .transactionListener)
     }
 
     /// Kept for existing callers.
     func loadProducts() async {
-        if transactionListener == nil { transactionListener = listenForTransactions() }
         let coinIDs = CoinPackID.allCases.map(\.rawValue)
         let specialIDs = SpecialProductID.allCases.map(\.rawValue)
         let premiumIDs = ShopItem.premiumProductIDs
@@ -153,6 +174,7 @@ final class PurchaseManager: ObservableObject {
             coinProducts = products.filter { coinIDs.contains($0.id) }.sorted { $0.price < $1.price }
             specialProducts = products.filter { specialIDs.contains($0.id) }
             premiumProducts = products.filter { premiumIDs.contains($0.id) }
+            lastError = nil
         } catch {
             lastError = "Failed to load products: \(error.localizedDescription)"
         }
@@ -166,12 +188,14 @@ final class PurchaseManager: ObservableObject {
     // MARK: - Purchase
 
     func purchaseCoinPack(_ packID: CoinPackID) async -> CoinPackPurchaseResult {
-        guard FeatureFlags.realMoneyPurchasesEnabled else { return .failed(message: "Purchases are not available yet.") }
+        guard case .available(let accountToken) = FeatureFlags.monetizationAvailability(for: .coins) else {
+            return .failed(message: availabilityMessage(for: .coins))
+        }
         guard let product = coinProducts.first(where: { $0.id == packID.rawValue }) else {
             lastError = "Product not found"
             return .failed(message: "Product not found")
         }
-        switch await purchase(product) {
+        switch await purchase(product, accountToken: accountToken) {
         case .delivered(let effects, let alreadyDelivered):
             let credited = effects.reduce(0) { if case .creditCoins(let n) = $1 { return $0 + n } else { return $0 } }
             if credited > 0 { return .success(creditedCoins: credited, delivery: .creditedNow) }
@@ -187,22 +211,26 @@ final class PurchaseManager: ObservableObject {
         }
     }
 
-    func purchaseRemoveAds() async -> Bool {
-        guard FeatureFlags.realMoneyPurchasesEnabled,
-              let product = specialProducts.first(where: { $0.id == SpecialProductID.removeAds.rawValue }) else {
-            lastError = "Product not found"
-            return false
+    func purchaseRemoveAds() async -> PremiumPurchaseResult {
+        guard case .available(let accountToken) = FeatureFlags.monetizationAvailability(for: .removeAds) else {
+            return .failed(message: availabilityMessage(for: .removeAds))
         }
-        if case .delivered = await purchase(product) { return true }
-        return false
+        guard let product = specialProducts.first(where: { $0.id == SpecialProductID.removeAds.rawValue }) else {
+            return .failed(message: "This item is not available right now.")
+        }
+        return premiumResult(from: await purchase(product, accountToken: accountToken))
     }
 
     func purchasePremium(_ item: ShopItem) async -> PremiumPurchaseResult {
-        guard FeatureFlags.premiumSkinsVisible else {
-            return .failed(message: "Purchases are not available yet.")
+        guard case .available(let accountToken) = FeatureFlags.monetizationAvailability(for: .premiumSkins) else {
+            return .failed(message: availabilityMessage(for: .premiumSkins))
         }
         guard let product = product(for: item) else { return .failed(message: "This item is not available right now.") }
-        switch await purchase(product) {
+        return premiumResult(from: await purchase(product, accountToken: accountToken))
+    }
+
+    private func premiumResult(from outcome: PurchaseFlowOutcome) -> PremiumPurchaseResult {
+        switch outcome {
         case .delivered:           return .success
         case .deferred:            return .deferred
         case .pending:             return .pending
@@ -219,17 +247,12 @@ final class PurchaseManager: ObservableObject {
         case failed(String)
     }
 
-    private func purchase(_ product: Product) async -> PurchaseFlowOutcome {
+    private func purchase(_ product: Product, accountToken: UUID) async -> PurchaseFlowOutcome {
         purchaseInProgress = true
         lastError = nil
         defer { purchaseInProgress = false }
 
-        var options: Set<Product.PurchaseOption> = []
-        // Ties the transaction to the player's account so the server ledger and
-        // App Store Server Notifications can be matched to the right profile.
-        if let uid = Backend.shared.currentUID, let token = UUID(uuidString: uid) {
-            options.insert(.appAccountToken(token))
-        }
+        let options: Set<Product.PurchaseOption> = [.appAccountToken(accountToken)]
         do {
             let result = try await product.purchase(options: options)
             switch result {
@@ -260,12 +283,23 @@ final class PurchaseManager: ObservableObject {
     // MARK: - Restore
 
     /// Re-delivers non-consumables (Remove Ads, premium skins) the Apple ID owns.
-    func restorePurchases() async {
-        try? await AppStore.sync()
+    func restorePurchases() async -> RestorePurchasesResult {
+        guard let uid = Backend.shared.currentUID, UUID(uuidString: uid) != nil else {
+            return .failed(message: MonetizationBlocker.invalidAccount.message)
+        }
+        do {
+            try await AppStore.sync()
+        } catch {
+            return .failed(message: "Restore failed: \(error.localizedDescription)")
+        }
+        var delivered = 0
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
-            _ = await deliver(transaction, jws: result.jwsRepresentation, origin: .restore)
+            if case .delivered = await deliver(transaction, jws: result.jwsRepresentation, origin: .restore) {
+                delivered += 1
+            }
         }
+        return delivered > 0 ? .restored(delivered) : .nothingToRestore
     }
 
     // MARK: - Background sources
@@ -274,6 +308,13 @@ final class PurchaseManager: ObservableObject {
         for await result in Transaction.unfinished {
             guard case .verified(let transaction) = result else { continue }
             _ = await deliver(transaction, jws: result.jwsRepresentation, origin: .transactionListener)
+        }
+    }
+
+    private func reconcileCurrentEntitlements(origin: Origin) async {
+        for await result in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = result else { continue }
+            _ = await deliver(transaction, jws: result.jwsRepresentation, origin: origin)
         }
     }
 
@@ -297,10 +338,29 @@ final class PurchaseManager: ObservableObject {
     private enum Origin { case purchaseFlow, transactionListener, restore }
 
     private func deliver(_ transaction: Transaction, jws: String, origin: Origin) async -> DeliveryOutcome {
+        guard let uid = Backend.shared.currentUID,
+              let expectedToken = UUID(uuidString: uid) else {
+            return .deferred
+        }
+        guard let kind = PurchaseProductKind.kind(for: transaction.productID) else {
+            // A verified transaction can outlive the catalog bundled with this
+            // build. Never grant it, but keep it unfinished so a corrected
+            // release can recover it instead of silently discarding ownership.
+            scheduleRetry()
+            return .deferred
+        }
+        if case .coins = kind, transaction.appAccountToken != expectedToken {
+            // Consumables are not in currentEntitlements. Keep the transaction
+            // unfinished until the permanent account that bought it signs in.
+            scheduleRetry()
+            return .deferred
+        }
         let event = PurchaseEvent(transactionID: transaction.id, productID: transaction.productID,
-                                  isRevoked: transaction.revocationDate != nil)
+                                  isRevoked: transaction.revocationDate != nil,
+                                  appAccountToken: transaction.appAccountToken)
         let outcome = await deliver(event, jws: jws)
         if outcome != .deferred { await transaction.finish() }
+        if outcome == .deferred { scheduleRetry() }
         if case .delivered(let effects) = outcome {
             for case .creditCoins(let coins) in effects {
                 lastCoinPackCreditEvent = CoinPackCreditEvent(productID: event.productID, coins: coins,
@@ -325,6 +385,26 @@ final class PurchaseManager: ObservableObject {
         ledger.save(to: defaults)
         effects.forEach(EconomyManager.shared.apply)
         return .delivered(effects)
+    }
+
+    private func scheduleRetry() {
+        guard retryTask == nil else { return }
+        let delays: [UInt64] = [2, 5, 15, 60, 300]
+        let delay = delays[min(retryAttempt, delays.count - 1)]
+        retryAttempt = min(retryAttempt + 1, delays.count - 1)
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.retryTask = nil
+            await self.processUnfinishedTransactions()
+        }
+    }
+
+    private func availabilityMessage(for category: MonetizationCategory) -> String {
+        if case .blocked(let blocker) = FeatureFlags.monetizationAvailability(for: category) {
+            return blocker.message
+        }
+        return "Purchases are not available yet."
     }
 
     private func creditOrigin(_ origin: Origin) -> CoinPackCreditEventOrigin {

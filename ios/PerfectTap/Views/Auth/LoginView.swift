@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 
 // MARK: - LinkAccountView (optional — link Firebase account for cloud sync)
 // This is NOT shown on first launch. It's accessible from Settings for users
@@ -14,6 +15,7 @@ struct LinkAccountView: View {
     @State private var isLoading = false
     @State private var successMessage: String? = nil
     @State private var verificationCode = ""
+    @State private var appleNonce = ""
 
     var body: some View {
         ZStack {
@@ -52,7 +54,7 @@ struct LinkAccountView: View {
                             .tracking(3)
                             .foregroundColor(.white)
 
-                        Text("Link an account to back up your progress.\nThis is optional — your data is saved locally.")
+                        Text("Link an account to back up your progress across devices.\nThis is optional — App Store purchases restore separately through Apple.")
                             .font(.system(size: 13))
                             .multilineTextAlignment(.center)
                             .foregroundColor(.white.opacity(0.45))
@@ -75,6 +77,42 @@ struct LinkAccountView: View {
                             }
                         }
                     } else {
+                        if authVM.isPermanentAccount {
+                            Label("Progress protected", systemImage: "checkmark.shield.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Color(red: 0.22, green: 0.82, blue: 0.49))
+                        } else {
+                            SignInWithAppleButton(.continue) { request in
+                                let nonce = AuthViewModel.randomNonce()
+                                appleNonce = nonce
+                                request.requestedScopes = [.email, .fullName]
+                                request.nonce = AuthViewModel.sha256(nonce)
+                            } onCompletion: { result in
+                                switch result {
+                                case .success(let authorization):
+                                    Task {
+                                        if await authVM.linkWithApple(authorization: authorization, rawNonce: appleNonce) {
+                                            withAnimation(.spring(response: 0.4)) {
+                                                successMessage = "Protected with Apple!"
+                                            }
+                                        }
+                                    }
+                                case .failure(let error as ASAuthorizationError) where error.code == .canceled:
+                                    break
+                                case .failure(let error):
+                                    authVM.errorMessage = error.localizedDescription
+                                }
+                            }
+                            .signInWithAppleButtonStyle(.white)
+                            .frame(height: 50)
+                            .cornerRadius(12)
+                            .disabled(authVM.isLinkingApple)
+
+                            Text("Recommended. No PerfectTap password required.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+
                         // Mode selector tabs
                         HStack(spacing: 0) {
                             modeTab(title: "CREATE ACCOUNT", active: isSignUp) {

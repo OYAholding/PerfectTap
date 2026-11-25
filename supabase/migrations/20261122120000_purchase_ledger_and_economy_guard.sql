@@ -28,7 +28,8 @@ create table private.iap_products (
   product_id text primary key,
   kind       text not null check (kind in ('coins', 'remove_ads', 'premium_item')),
   coins      int  check ((kind = 'coins') = (coins is not null and coins > 0)),
-  item_id    text check ((kind = 'premium_item') = (item_id is not null))
+  item_id    text check ((kind = 'premium_item') = (item_id is not null)),
+  enabled    boolean not null default false
 );
 alter table private.iap_products enable row level security;
 
@@ -55,6 +56,22 @@ create table private.purchase_ledger (
 );
 create index purchase_ledger_user_idx on private.purchase_ledger (user_id);
 alter table private.purchase_ledger enable row level security;
+
+create table private.app_store_notifications (
+  notification_uuid text primary key,
+  notification_type text not null,
+  subtype            text,
+  signed_at          timestamptz not null,
+  transaction_id     text,
+  environment        text check (environment is null or environment in ('Production', 'Sandbox', 'Xcode', 'LocalTesting')),
+  status             text not null default 'received' check (status in ('received', 'processed', 'ignored', 'stale', 'failed')),
+  result             text,
+  created_at         timestamptz not null default now(),
+  processed_at       timestamptz
+);
+create index app_store_notifications_transaction_idx
+  on private.app_store_notifications (transaction_id, signed_at desc);
+alter table private.app_store_notifications enable row level security;
 
 create table private.economy (
   user_id           uuid primary key references auth.users(id) on delete cascade,
@@ -218,7 +235,8 @@ revoke all on function private.set_profile_item(uuid, text, boolean) from public
 
 create or replace function private.revoke_purchase(
   p_transaction_id text, p_revoked_at timestamptz,
-  p_product_id text default null, p_original_transaction_id text default null, p_environment text default 'Production')
+  p_product_id text default null, p_original_transaction_id text default null,
+  p_environment text default 'Production', p_user uuid default null)
 returns text
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -237,7 +255,7 @@ begin
     end if;
     insert into private.purchase_ledger
       (transaction_id, original_transaction_id, user_id, product_id, environment, purchased_at, revoked_at)
-    values (p_transaction_id, coalesce(nullif(p_original_transaction_id, ''), p_transaction_id), null, p_product_id,
+    values (p_transaction_id, coalesce(nullif(p_original_transaction_id, ''), p_transaction_id), p_user, p_product_id,
             coalesce(p_environment, 'Production'), coalesce(p_revoked_at, now()), coalesce(p_revoked_at, now()))
     on conflict (transaction_id) do nothing;
     return 'revoked';
@@ -278,7 +296,7 @@ begin
   values (l.user_id, 'purchase_revoked', jsonb_build_object('transaction_id', p_transaction_id, 'product_id', l.product_id));
   return 'revoked';
 end $$;
-revoke all on function private.revoke_purchase(text, timestamptz, text, text, text) from public, anon, authenticated;
+revoke all on function private.revoke_purchase(text, timestamptz, text, text, text, uuid) from public, anon, authenticated;
 
 create or replace function private.record_verified_purchase(
   p_user uuid, p_transaction_id text, p_original_transaction_id text, p_product_id text,
@@ -293,6 +311,9 @@ begin
   if p_user is null or coalesce(p_transaction_id, '') = '' then perform private.fail('invalid_payload'); end if;
   select * into prod from private.iap_products where product_id = p_product_id;
   if not found then perform private.fail('unknown_product'); end if;
+  if not prod.enabled and not exists (
+    select 1 from private.purchase_ledger where transaction_id = p_transaction_id
+  ) then perform private.fail('disabled_product'); end if;
 
   insert into private.purchase_ledger
     (transaction_id, original_transaction_id, user_id, product_id, environment, purchased_at)
@@ -334,8 +355,106 @@ begin
 end $$;
 revoke all on function private.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz)
   from public, anon, authenticated;
+
+create or replace function private.reinstate_purchase(p_transaction_id text)
+returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  l private.purchase_ledger;
+  prod private.iap_products;
+begin
+  select * into l from private.purchase_ledger where transaction_id = p_transaction_id for update;
+  if not found then return 'unknown_transaction'; end if;
+  if l.revoked_at is null then return 'already_active'; end if;
+  if l.user_id is null then return 'unknown_owner'; end if;
+  select * into prod from private.iap_products where product_id = l.product_id;
+  if not found then return 'unknown_product'; end if;
+
+  update private.purchase_ledger set revoked_at = null where transaction_id = p_transaction_id;
+  insert into private.economy (user_id) values (l.user_id) on conflict (user_id) do nothing;
+  if prod.kind = 'coins' then
+    update private.economy set pending_iap_coins = pending_iap_coins + prod.coins, updated_at = now()
+    where user_id = l.user_id;
+  elsif prod.kind = 'remove_ads' then
+    update private.economy set no_ads = true, updated_at = now() where user_id = l.user_id;
+    update private.profile_data set data = data || '{"no_ads": true}'::jsonb where id = l.user_id;
+  else
+    update private.economy
+    set premium_items = case when prod.item_id = any(premium_items) then premium_items else premium_items || prod.item_id end,
+        updated_at = now()
+    where user_id = l.user_id;
+    perform private.set_profile_item(l.user_id, prod.item_id, true);
+  end if;
+  insert into private.economy_events (user_id, kind, detail)
+  values (l.user_id, 'purchase_reinstated', jsonb_build_object('transaction_id', p_transaction_id, 'product_id', l.product_id));
+  return 'reinstated';
+end $$;
+revoke all on function private.reinstate_purchase(text) from public, anon, authenticated;
+
+create or replace function private.process_app_store_notification(
+  p_notification_uuid text, p_notification_type text, p_subtype text, p_signed_at timestamptz,
+  p_transaction_id text, p_original_transaction_id text, p_product_id text,
+  p_environment text, p_user uuid, p_revoked_at timestamptz default null)
+returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  inserted text;
+  outcome text;
+begin
+  if coalesce(p_notification_uuid, '') = '' or coalesce(p_notification_type, '') = '' then
+    perform private.fail('invalid_payload');
+  end if;
+  insert into private.app_store_notifications
+    (notification_uuid, notification_type, subtype, signed_at, transaction_id, environment)
+  values
+    (p_notification_uuid, p_notification_type, p_subtype, coalesce(p_signed_at, now()), p_transaction_id, p_environment)
+  on conflict (notification_uuid) do nothing
+  returning notification_uuid into inserted;
+  if inserted is null then return 'duplicate'; end if;
+
+  if p_transaction_id is not null and exists (
+    select 1 from private.app_store_notifications n
+    where n.transaction_id = p_transaction_id
+      and n.notification_uuid <> p_notification_uuid
+      and n.status = 'processed'
+      and n.signed_at > coalesce(p_signed_at, now())
+  ) then
+    update private.app_store_notifications
+    set status = 'stale', result = 'newer_event_exists', processed_at = now()
+    where notification_uuid = p_notification_uuid;
+    return 'stale';
+  end if;
+
+  if p_notification_type in ('REFUND', 'REVOKE') then
+    outcome := private.revoke_purchase(
+      p_transaction_id, coalesce(p_revoked_at, p_signed_at, now()), p_product_id,
+      p_original_transaction_id, p_environment, p_user);
+  elsif p_notification_type = 'REFUND_REVERSED' then
+    outcome := private.reinstate_purchase(p_transaction_id);
+  else
+    update private.app_store_notifications
+    set status = 'ignored', result = 'unsupported_type', processed_at = now()
+    where notification_uuid = p_notification_uuid;
+    return 'ignored';
+  end if;
+
+  update private.app_store_notifications
+  set status = 'processed', result = outcome, processed_at = now()
+  where notification_uuid = p_notification_uuid;
+  return outcome;
+exception when others then
+  update private.app_store_notifications
+  set status = 'failed', result = 'internal_error', processed_at = now()
+  where notification_uuid = p_notification_uuid;
+  raise;
+end $$;
+revoke all on function private.process_app_store_notification(text, text, text, timestamptz, text, text, text, text, uuid, timestamptz)
+  from public, anon, authenticated;
 grant execute on function private.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz) to service_role;
-grant execute on function private.revoke_purchase(text, timestamptz, text, text, text) to service_role;
+grant execute on function private.revoke_purchase(text, timestamptz, text, text, text, uuid) to service_role;
+grant execute on function private.reinstate_purchase(text) to service_role;
+grant execute on function private.process_app_store_notification(text, text, text, timestamptz, text, text, text, text, uuid, timestamptz)
+  to service_role;
 
 -- Public invoker wrappers so edge functions (service role) can reach them via
 -- /rest/v1/rpc. Not executable by anon / authenticated.
@@ -348,13 +467,39 @@ returns text language sql volatile security invoker set search_path = '' as $$
 $$;
 create or replace function public.revoke_purchase(
   p_transaction_id text, p_revoked_at timestamptz,
-  p_product_id text default null, p_original_transaction_id text default null, p_environment text default 'Production')
+  p_product_id text default null, p_original_transaction_id text default null,
+  p_environment text default 'Production', p_user uuid default null)
 returns text language sql volatile security invoker set search_path = '' as $$
-  select private.revoke_purchase(p_transaction_id, p_revoked_at, p_product_id, p_original_transaction_id, p_environment)
+  select private.revoke_purchase(p_transaction_id, p_revoked_at, p_product_id, p_original_transaction_id, p_environment, p_user)
+$$;
+create or replace function public.process_app_store_notification(
+  p_notification_uuid text, p_notification_type text, p_subtype text, p_signed_at timestamptz,
+  p_transaction_id text, p_original_transaction_id text, p_product_id text,
+  p_environment text, p_user uuid, p_revoked_at timestamptz default null)
+returns text language sql volatile security invoker set search_path = '' as $$
+  select private.process_app_store_notification(
+    p_notification_uuid, p_notification_type, p_subtype, p_signed_at, p_transaction_id,
+    p_original_transaction_id, p_product_id, p_environment, p_user, p_revoked_at)
 $$;
 revoke all on function public.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz)
   from public, anon, authenticated;
-revoke all on function public.revoke_purchase(text, timestamptz, text, text, text) from public, anon, authenticated;
+revoke all on function public.revoke_purchase(text, timestamptz, text, text, text, uuid) from public, anon, authenticated;
+revoke all on function public.process_app_store_notification(text, text, text, timestamptz, text, text, text, text, uuid, timestamptz)
+  from public, anon, authenticated;
 grant execute on function public.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz) to service_role;
-grant execute on function public.revoke_purchase(text, timestamptz, text, text, text) to service_role;
+grant execute on function public.revoke_purchase(text, timestamptz, text, text, text, uuid) to service_role;
+grant execute on function public.process_app_store_notification(text, text, text, timestamptz, text, text, text, text, uuid, timestamptz)
+  to service_role;
 grant usage on schema private to service_role;
+
+-- Only server-verified scores are public. Private profile bests remain useful
+-- for the player's own progress but never populate a global board.
+create or replace function public.get_leaderboard(p_mode text, p_limit int default 20)
+returns table (username text, score int, verified boolean)
+language sql stable security invoker set search_path = '' as $$
+  select l.username, l.score, true
+  from public.leaderboard_scores l
+  where l.mode = p_mode and l.username <> ''
+  order by l.score desc
+  limit least(greatest(coalesce(p_limit, 20), 1), 100)
+$$;

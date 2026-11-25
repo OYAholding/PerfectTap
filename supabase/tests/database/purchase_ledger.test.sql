@@ -7,7 +7,7 @@ begin
   select n.nspname into s from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pgtap';
   perform set_config('search_path', 'public, ' || quote_ident(coalesce(s, 'extensions')), false);
 end $$;
-select plan(34);
+select plan(42);
 
 insert into auth.users (id, email, aud, role) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'buyer@test.local', 'authenticated', 'authenticated'),
@@ -29,11 +29,13 @@ $$;
 select pg_temp.as_user('aaaaaaaa-0000-0000-0000-000000000001');
 select public.save_profile('{"username":"buyer_1","coins":1200,"owned_items":["theme_fire"],"no_ads":false,"season_premium":false,"season_ad_progress":3}'::jsonb);
 select pg_temp.as_admin();
+select ok((select bool_and(not enabled) from private.iap_products), 'IAP catalog is disabled by default');
+update private.iap_products set enabled = true;
 
 -- ---------- privileges ----------
 select ok(not has_function_privilege('authenticated', 'public.record_verified_purchase(uuid,text,text,text,text,timestamptz,timestamptz)', 'EXECUTE'),
   'players cannot record purchases');
-select ok(not has_function_privilege('anon', 'public.revoke_purchase(text,timestamptz,text,text,text)', 'EXECUTE'),
+select ok(not has_function_privilege('anon', 'public.revoke_purchase(text,timestamptz,text,text,text,uuid)', 'EXECUTE'),
   'anon cannot revoke purchases');
 select ok(has_function_privilege('service_role', 'public.record_verified_purchase(uuid,text,text,text,text,timestamptz,timestamptz)', 'EXECUTE'),
   'service role (edge function) can record purchases');
@@ -42,7 +44,7 @@ select is(
    where n.nspname = 'public' and p.prosecdef and has_function_privilege('authenticated', p.oid, 'EXECUTE')), 0,
   'still no SECURITY DEFINER function callable by players in public');
 select ok((select bool_and(rowsecurity) from pg_tables where schemaname = 'private'
-           and tablename in ('purchase_ledger','economy','economy_events','iap_products')), 'RLS on new tables');
+           and tablename in ('purchase_ledger','economy','economy_events','iap_products','app_store_notifications')), 'RLS on new tables');
 
 -- ---------- save_profile guard ----------
 select pg_temp.as_user('aaaaaaaa-0000-0000-0000-000000000001');
@@ -126,6 +128,30 @@ select public.record_verified_purchase('aaaaaaaa-0000-0000-0000-000000000001', '
 select public.revoke_purchase('t-10', now());
 select ok(pg_temp.data('aaaaaaaa-0000-0000-0000-000000000001')->'owned_items' ? 'theme_cosmicgold',
   'skin kept while another valid transaction remains');
+
+-- Notification UUID dedupe, refund reversal and signed-date ordering.
+select is(public.process_app_store_notification(
+  'n-refund-1', 'REFUND', null, now(), 't-11', 't-11', 'com.perfecttap.skin.cosmicgold',
+  'Sandbox', 'aaaaaaaa-0000-0000-0000-000000000001', now()), 'revoked',
+  'notification refund revokes the last active skin transaction');
+select is(public.process_app_store_notification(
+  'n-refund-1', 'REFUND', null, now(), 't-11', 't-11', 'com.perfecttap.skin.cosmicgold',
+  'Sandbox', 'aaaaaaaa-0000-0000-0000-000000000001', now()), 'duplicate',
+  'notification UUID is idempotent');
+select is(public.process_app_store_notification(
+  'n-reverse-1', 'REFUND_REVERSED', null, now() + interval '1 second', 't-11', 't-11',
+  'com.perfecttap.skin.cosmicgold', 'Sandbox', 'aaaaaaaa-0000-0000-0000-000000000001', null), 'reinstated',
+  'refund reversal reinstates the purchase');
+select ok(pg_temp.data('aaaaaaaa-0000-0000-0000-000000000001')->'owned_items' ? 'theme_cosmicgold',
+  'reinstated skin is restored');
+select is(public.process_app_store_notification(
+  'n-refund-stale', 'REFUND', null, now() - interval '1 day', 't-11', 't-11',
+  'com.perfecttap.skin.cosmicgold', 'Sandbox', 'aaaaaaaa-0000-0000-0000-000000000001', now()), 'stale',
+  'older notification cannot override a newer processed event');
+select ok(pg_temp.data('aaaaaaaa-0000-0000-0000-000000000001')->'owned_items' ? 'theme_cosmicgold',
+  'stale refund did not remove the reinstated skin');
+select is((select count(*)::int from private.app_store_notifications), 3,
+  'notification audit stores unique events including stale ones');
 
 select * from finish();
 rollback;

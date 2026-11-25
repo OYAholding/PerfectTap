@@ -13,6 +13,7 @@ struct ShopView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.effectsLevel) private var effects
     @StateObject private var purchaseManager = PurchaseManager.shared
+    @ObservedObject private var authVM = AuthViewModel.shared
     @State private var profile: PlayerProfile = PlayerProfile.load() ?? PlayerProfile()
     @State private var selectedCategory: ShopTab = .themes
     @State private var selectedItem: ShopItem?
@@ -20,8 +21,9 @@ struct ShopView: View {
     @State private var alertMessage = ""
     @State private var showCoinPacks = false
     @State private var confirmItem: ShopItem?
+    @State private var offerAppleSignIn = false
 
-    private let iapEnabled = FeatureFlags.realMoneyPurchasesEnabled
+    private var iapEnabled: Bool { FeatureFlags.coinPacksVisible || FeatureFlags.removeAdsVisible }
 
     /// Shop tabs: the visible cosmetic categories plus Premium (when allowed).
     enum ShopTab: Hashable {
@@ -87,8 +89,8 @@ struct ShopView: View {
                         ForEach(selectedCategory.items) { item in
                             ShopItemCard(
                                 item: item,
-                                isOwned: EconomyManager.shared.isOwned(item.id, in: profile),
-                                isEquipped: EconomyManager.shared.isEquipped(item, in: profile),
+                                isOwned: !FeatureFlags.iapPreview && EconomyManager.shared.isOwned(item.id, in: profile),
+                                isEquipped: !FeatureFlags.iapPreview && EconomyManager.shared.isEquipped(item, in: profile),
                                 isSelected: selectedItem?.id == item.id,
                                 canAfford: profile.coins >= item.price,
                                 priceLabel: priceLabel(for: item)
@@ -117,6 +119,11 @@ struct ShopView: View {
         }
         .navigationBarHidden(true)
         .alert(alertMessage, isPresented: $showPurchaseAlert) {
+            if offerAppleSignIn {
+                Button("Sign in with Apple") {
+                    Task { _ = await authVM.linkWithApple() }
+                }
+            }
             Button("OK", role: .cancel) {}
         }
         .confirmationDialog(
@@ -135,6 +142,7 @@ struct ShopView: View {
             guard event.origin == .transactionListener else { return }
             profile = PlayerProfile.load() ?? PlayerProfile()
             alertMessage = "Purchase completed: +\(event.coins) coins added."
+            offerAppleSignIn = false
             showPurchaseAlert = true
         }
         .onAppear {
@@ -208,9 +216,14 @@ struct ShopView: View {
                 .multilineTextAlignment(.center)
             Button {
                 Task {
-                    await purchaseManager.restorePurchases()
+                    let result = await purchaseManager.restorePurchases()
                     profile = EconomyManager.shared.currentProfile()
-                    alertMessage = "Purchases restored."
+                    switch result {
+                    case .restored(let count): alertMessage = "Restored \(count) purchase\(count == 1 ? "" : "s")."
+                    case .nothingToRestore: alertMessage = "No restorable purchases were found."
+                    case .failed(let message): alertMessage = message
+                    }
+                    offerAppleSignIn = false
                     showPurchaseAlert = true
                 }
             } label: {
@@ -225,8 +238,8 @@ struct ShopView: View {
 
     @ViewBuilder
     private func actionBar(for item: ShopItem) -> some View {
-        let owned = EconomyManager.shared.isOwned(item.id, in: profile)
-        let equipped = EconomyManager.shared.isEquipped(item, in: profile)
+        let owned = !FeatureFlags.iapPreview && EconomyManager.shared.isOwned(item.id, in: profile)
+        let equipped = !FeatureFlags.iapPreview && EconomyManager.shared.isEquipped(item, in: profile)
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
@@ -304,6 +317,7 @@ struct ShopView: View {
 
     private func buyPremium(_ item: ShopItem) {
         Task {
+            offerAppleSignIn = false
             let result = await purchaseManager.purchasePremium(item)
             profile = EconomyManager.shared.currentProfile()
             switch result {
@@ -316,7 +330,8 @@ struct ShopView: View {
             case .cancelled:
                 return
             case .failed(let message):
-                alertMessage = message
+                presentPurchaseFailure(message)
+                return
             }
             showPurchaseAlert = true
         }
@@ -325,20 +340,33 @@ struct ShopView: View {
     // MARK: - Coin Packs IAP Section
     private var coinPacksSection: some View {
         VStack(spacing: 8) {
-            ForEach(CoinPackID.allCases, id: \.rawValue) { pack in
-                coinPackRow(pack)
+            if FeatureFlags.coinPacksVisible {
+                ForEach(CoinPackID.allCases, id: \.rawValue) { pack in
+                    coinPackRow(pack)
+                }
             }
 
             // Remove Ads
-            if !EconomyManager.shared.hasNoAds {
+            if FeatureFlags.removeAdsVisible && (FeatureFlags.iapPreview || !EconomyManager.shared.hasNoAds) {
                 Button {
                     Task {
-                        let success = await purchaseManager.purchaseRemoveAds()
-                        if success {
+                        let result = await purchaseManager.purchaseRemoveAds()
+                        switch result {
+                        case .success:
                             alertMessage = "Ads removed! Enjoy ad-free gameplay."
-                            showPurchaseAlert = true
                             profile = PlayerProfile.load() ?? PlayerProfile()
+                        case .pending:
+                            alertMessage = "Purchase is waiting for approval. Remove Ads will activate automatically."
+                        case .deferred:
+                            alertMessage = "Payment received. Remove Ads will activate as soon as verification completes."
+                        case .cancelled:
+                            return
+                        case .failed(let message):
+                            presentPurchaseFailure(message)
+                            return
                         }
+                        offerAppleSignIn = false
+                        showPurchaseAlert = true
                     }
                 } label: {
                     HStack {
@@ -352,6 +380,7 @@ struct ShopView: View {
                             Text(product.displayPrice)
                                 .font(.system(size: 13, weight: .black))
                                 .foregroundColor(.green)
+                                .accessibilityIdentifier("iap.removeAds.price")
                         } else {
                             Text("Loading...")
                                 .font(.system(size: 11))
@@ -376,6 +405,7 @@ struct ShopView: View {
     private func coinPackRow(_ pack: CoinPackID) -> some View {
         Button {
             Task {
+                offerAppleSignIn = false
                 let result = await purchaseManager.purchaseCoinPack(pack)
                 switch result {
                 case .success(let creditedCoins, let delivery):
@@ -393,8 +423,7 @@ struct ShopView: View {
                 case .cancelled:
                     break
                 case .failed(let message):
-                    alertMessage = message
-                    showPurchaseAlert = true
+                    presentPurchaseFailure(message)
                 }
             }
         } label: {
@@ -408,8 +437,8 @@ struct ShopView: View {
                         Text(pack.displayName)
                             .font(.system(size: 13, weight: .bold))
                             .foregroundColor(.white)
-                        if let bonus = pack.bonusLabel {
-                            Text(bonus)
+                        if let value = valueLabel(for: pack) {
+                            Text(value)
                                 .font(.system(size: 8, weight: .black))
                                 .tracking(0.5)
                                 .foregroundColor(.green)
@@ -429,6 +458,7 @@ struct ShopView: View {
                     Text(product.displayPrice)
                         .font(.system(size: 14, weight: .black))
                         .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
+                        .accessibilityIdentifier("iap.\(pack.rawValue).price")
                 } else {
                     Text("...")
                         .font(.system(size: 11))
@@ -441,6 +471,26 @@ struct ShopView: View {
             .cornerRadius(12)
         }
         .disabled(purchaseManager.purchaseInProgress)
+    }
+
+    private func valueLabel(for pack: CoinPackID) -> String? {
+        guard pack != .small,
+              let base = purchaseManager.coinProducts.first(where: { $0.id == CoinPackID.small.rawValue }),
+              let product = purchaseManager.coinProducts.first(where: { $0.id == pack.rawValue }) else { return nil }
+        let basePrice = NSDecimalNumber(decimal: base.price).doubleValue
+        let price = NSDecimalNumber(decimal: product.price).doubleValue
+        guard basePrice > 0, price > 0 else { return nil }
+        let baseRate = Double(CoinPackID.small.coinAmount) / basePrice
+        let rate = Double(pack.coinAmount) / price
+        let percent = Int((((rate / baseRate) - 1) * 100).rounded())
+        return percent >= 5 ? "\(percent)% BETTER VALUE" : nil
+    }
+
+    private func presentPurchaseFailure(_ message: String) {
+        alertMessage = message
+        offerAppleSignIn = !Backend.shared.isPermanentAccount
+            && message == MonetizationBlocker.permanentAccountRequired.message
+        showPurchaseAlert = true
     }
 
 }
@@ -557,7 +607,9 @@ private struct ShopItemCard: View {
                     )
             )
         }
+        .accessibilityIdentifier("shop.item.\(item.id)")
         .accessibilityLabel("\(item.name), \(status)")
+        .accessibilityValue(status)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

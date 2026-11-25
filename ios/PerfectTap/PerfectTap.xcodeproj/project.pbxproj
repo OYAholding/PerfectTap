@@ -39,6 +39,8 @@
 		42607FEA51D094961FC849A0 /* TimingProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98461DB6596C6805FBF85DD2 /* TimingProgressView.swift */; };
 		45D61EB1F2B31C5AFD585119 /* GoogleUserMessagingPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = 24F8FAC8C193CF8C6614CAB1 /* GoogleUserMessagingPlatform */; };
 		48210D823E71668287C03E89 /* OfflineBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568451359E13C8AA70311BDF /* OfflineBackend.swift */; };
+		49D27DA60C09197CF8AA5F61 /* StoreKitCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 868D71C7091506DC4BDA3D9C /* StoreKitCatalogTests.swift */; };
+		49EDEA3C9C5A2007ACCF8E11 /* PerfectTap.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 12A9CA4680FA74D9D8131887 /* PerfectTap.storekit */; };
 		4D3A6E7BD9360736AFB90AE1 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = 55CD7B0979810E853BB0A6C0 /* GoogleMobileAds */; };
 		4EB36449BD47BD8F7DF1D7BD /* ConsentFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69354A2F4E975FB7571BF152 /* ConsentFlowTests.swift */; };
 		51C3A5937410EF0EAF26AF87 /* LegacyClaimIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E23D5C355699D9BE4585FF /* LegacyClaimIdentityTests.swift */; };
@@ -62,6 +64,7 @@
 		9173E644DF38392B606F71E3 /* ParticleEffectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF05286A4FD96F6397E237D4 /* ParticleEffectView.swift */; };
 		91F1F87F741F32E7EEE588D9 /* Achievement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0699019BFFE748789531F6AD /* Achievement.swift */; };
 		92FF4B3C87CB10436B806A39 /* DailyQuestsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4B2816CAD0C998342B1B70 /* DailyQuestsView.swift */; };
+		971175B8D798B7927C0526F2 /* IAPReviewScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 618750E922B048837923DA66 /* IAPReviewScreenshotTests.swift */; };
 		98474E9BD96979397AF7A733 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D8F0EBB76E8A3A4254DC7793 /* Assets.xcassets */; };
 		9E49A3DC43AFFC7EB2C389B0 /* DuelSettlementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */; };
 		9FB219D87DF2FA42C011C01E /* StabilityRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65303288097EF4DD82C2D77E /* StabilityRegressionTests.swift */; };
@@ -73,7 +76,6 @@
 		B3DEF0613093A7ADF87E6CAA /* Perf.swift in Sources */ = {isa = PBXBuildFile; fileRef = 926588BC8C7FF96F4BFFFF99 /* Perf.swift */; };
 		B71BAFDE6C5DA76B7D5F7082 /* GameplayPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7952A5493EC9D1FE66767438 /* GameplayPerformanceTests.swift */; };
 		B8F3ADDF597DB5E06112F353 /* GameBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E350779B14464EB647F28558 /* GameBackend.swift */; };
-		C3044211972270DD3A2E53C3 /* PerfectTap.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 12A9CA4680FA74D9D8131887 /* PerfectTap.storekit */; };
 		C3E2B0CA1A31834FA15B832E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0646B6981291830664A76E36 /* HomeView.swift */; };
 		C4C83BBF394F4A07A9C62238 /* TrackingConsentUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7BF0A8857985AD13AD3EC80 /* TrackingConsentUITests.swift */; };
 		CADD0028F45C4499B3E63AF4 /* SeasonPassView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED41A4FDC10908AA6CDB5FEA /* SeasonPassView.swift */; };
@@ -103,6 +105,13 @@
 			remoteGlobalIDString = F02F8AA841056D6ED520ACBC;
 			remoteInfo = PerfectTap;
 		};
+		E346EBDEE3609D66BB4819A4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BB6A3835B93C3A7397217A92 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F02F8AA841056D6ED520ACBC;
+			remoteInfo = PerfectTap;
+		};
 		E5E7059F81CBB290CDAF9922 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = BB6A3835B93C3A7397217A92 /* Project object */;
@@ -122,6 +131,7 @@
 		0699019BFFE748789531F6AD /* Achievement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Achievement.swift; sourceTree = "<group>"; };
 		08A4A1CF1221F95BF5131884 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		09DE701071D3DBAE85A7BA9A /* LegalTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalTextView.swift; sourceTree = "<group>"; };
+		0B388A4E430E9640681AF448 /* PerfectTap.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PerfectTap.entitlements; sourceTree = "<group>"; };
 		0C19079025CBD0FC5FB0BC5A /* SocialModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialModels.swift; sourceTree = "<group>"; };
 		0D6F40C24156BD0E3AB89584 /* TimingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingEngine.swift; sourceTree = "<group>"; };
 		0E791510610BEA4F3B739915 /* DuelResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelResultsView.swift; sourceTree = "<group>"; };
@@ -131,6 +141,7 @@
 		17CACB3D1A1FEDE367E8CED0 /* PendingDuelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingDuelStore.swift; sourceTree = "<group>"; };
 		1A8FC689866162402B344D47 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		1F19064322EEC58A61CCBCE2 /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
+		254CE6D17B8C948AC2B6D4C9 /* PerfectTapStoreKitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PerfectTapStoreKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		271370FE4E4C5B3A2AFE4210 /* Duel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Duel.swift; sourceTree = "<group>"; };
 		281CC4A6F29CD6D4ED8467DB /* PlayerProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerProfile.swift; sourceTree = "<group>"; };
 		28D45C259C8B3C5D2524ABC5 /* ConsentManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsentManager.swift; sourceTree = "<group>"; };
@@ -143,6 +154,7 @@
 		4C75868A125000157351554F /* TimingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingEngineTests.swift; sourceTree = "<group>"; };
 		568451359E13C8AA70311BDF /* OfflineBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineBackend.swift; sourceTree = "<group>"; };
 		5743C0587E2AA0DE2A228632 /* SetUsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetUsernameView.swift; sourceTree = "<group>"; };
+		618750E922B048837923DA66 /* IAPReviewScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IAPReviewScreenshotTests.swift; sourceTree = "<group>"; };
 		6329CE3AEC170E6896B415D9 /* LuckyWheelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuckyWheelView.swift; sourceTree = "<group>"; };
 		651BB85DC7EADE374D1F5C74 /* ModeSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectView.swift; sourceTree = "<group>"; };
 		65303288097EF4DD82C2D77E /* StabilityRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StabilityRegressionTests.swift; sourceTree = "<group>"; };
@@ -154,6 +166,7 @@
 		7952A5493EC9D1FE66767438 /* GameplayPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameplayPerformanceTests.swift; sourceTree = "<group>"; };
 		7A8E72E9E3F5EF07C92F8288 /* BackendCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendCodec.swift; sourceTree = "<group>"; };
 		854CD79F2CC57FC0F1622D1A /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
+		868D71C7091506DC4BDA3D9C /* StoreKitCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitCatalogTests.swift; sourceTree = "<group>"; };
 		8A3C61C2D6CAAA37EA4626FE /* EffectsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsSettings.swift; sourceTree = "<group>"; };
 		8AB144655DBE70DAD84BC758 /* DuelLobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelLobbyView.swift; sourceTree = "<group>"; };
 		8BBF645FEB2EED69BFB0EF77 /* GameConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameConfig.swift; sourceTree = "<group>"; };
@@ -336,12 +349,21 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		401224335039B0E79A1CA5E2 /* PerfectTapStoreKitTests */ = {
+			isa = PBXGroup;
+			children = (
+				868D71C7091506DC4BDA3D9C /* StoreKitCatalogTests.swift */,
+			);
+			path = PerfectTapStoreKitTests;
+			sourceTree = "<group>";
+		};
 		40CC4C9F97804BD20C439615 = {
 			isa = PBXGroup;
 			children = (
 				15E1B6149D749E35ABF884C6 /* Components */,
 				353BB5DEE68AF30FDF922BE4 /* Models */,
 				D6C23ECD74BAD2B868DA3E2F /* PerfectTap */,
+				401224335039B0E79A1CA5E2 /* PerfectTapStoreKitTests */,
 				1932DC08638C6103DD3A9261 /* PerfectTapTests */,
 				E43766FAAAAB71C1FFCC60C8 /* PerfectTapUITests */,
 				33FC09F5B5836DB87FDB66A1 /* Services */,
@@ -357,6 +379,7 @@
 			isa = PBXGroup;
 			children = (
 				D9B6BC6DFC04AC77F9307006 /* PerfectTap.app */,
+				254CE6D17B8C948AC2B6D4C9 /* PerfectTapStoreKitTests.xctest */,
 				D161CB014BDEF7939B0BD369 /* PerfectTapTests.xctest */,
 				AD736F75085FE008815E13EA /* PerfectTapUITests.xctest */,
 			);
@@ -433,6 +456,7 @@
 				D8F0EBB76E8A3A4254DC7793 /* Assets.xcassets */,
 				946E4BF59404191A9E2C2DF9 /* GoogleService-Info.plist */,
 				8CFF05E8BA3D2C59F97A17AD /* Info.plist */,
+				0B388A4E430E9640681AF448 /* PerfectTap.entitlements */,
 				CBA39D902F0065CF4B2C51CB /* PerfectTapApp.swift */,
 				E61F57EFA0BD4D28AB27A58B /* PrivacyInfo.xcprivacy */,
 				15E1B6149D749E35ABF884C6 /* Components */,
@@ -472,6 +496,7 @@
 			isa = PBXGroup;
 			children = (
 				7952A5493EC9D1FE66767438 /* GameplayPerformanceTests.swift */,
+				618750E922B048837923DA66 /* IAPReviewScreenshotTests.swift */,
 				A52B866522210CECF111961F /* ModeRuntimeQATests.swift */,
 				C7BF0A8857985AD13AD3EC80 /* TrackingConsentUITests.swift */,
 			);
@@ -513,7 +538,6 @@
 			buildConfigurationList = DF7501577CB994DDECE4FA10 /* Build configuration list for PBXNativeTarget "PerfectTapTests" */;
 			buildPhases = (
 				9DEB89C2BB6BD190A4CA86D0 /* Sources */,
-				9856B1F96A65C95BAD1C4892 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -525,6 +549,25 @@
 			);
 			productName = PerfectTapTests;
 			productReference = D161CB014BDEF7939B0BD369 /* PerfectTapTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		D078749C55B71BD8EE5AAD27 /* PerfectTapStoreKitTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6401B8F0E952016B39341EF4 /* Build configuration list for PBXNativeTarget "PerfectTapStoreKitTests" */;
+			buildPhases = (
+				84D3A1415122E58B0291A7EF /* Sources */,
+				115BC7F24F3EBD32E98D425A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1DC6EA7804BAC77705AC666A /* PBXTargetDependency */,
+			);
+			name = PerfectTapStoreKitTests;
+			packageProductDependencies = (
+			);
+			productName = PerfectTapStoreKitTests;
+			productReference = 254CE6D17B8C948AC2B6D4C9 /* PerfectTapStoreKitTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		F02F8AA841056D6ED520ACBC /* PerfectTap */ = {
@@ -572,6 +615,10 @@
 						DevelopmentTeam = K88C7DPG4C;
 						ProvisioningStyle = Automatic;
 					};
+					D078749C55B71BD8EE5AAD27 = {
+						DevelopmentTeam = K88C7DPG4C;
+						ProvisioningStyle = Automatic;
+					};
 					F02F8AA841056D6ED520ACBC = {
 						DevelopmentTeam = K88C7DPG4C;
 						ProvisioningStyle = Automatic;
@@ -601,11 +648,20 @@
 				F02F8AA841056D6ED520ACBC /* PerfectTap */,
 				34A3337D8DFEDDA6336EB07B /* PerfectTapTests */,
 				193F79436D07CD98CAF2E847 /* PerfectTapUITests */,
+				D078749C55B71BD8EE5AAD27 /* PerfectTapStoreKitTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		115BC7F24F3EBD32E98D425A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				49EDEA3C9C5A2007ACCF8E11 /* PerfectTap.storekit in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		336FE9232E3EE3D9CA62A8EB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -613,14 +669,6 @@
 				98474E9BD96979397AF7A733 /* Assets.xcassets in Resources */,
 				7090E1A18FB68AFA101A7545 /* GoogleService-Info.plist in Resources */,
 				03C7912C28C0B4F5CA59F2B1 /* PrivacyInfo.xcprivacy in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		9856B1F96A65C95BAD1C4892 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				C3044211972270DD3A2E53C3 /* PerfectTap.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -696,6 +744,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		84D3A1415122E58B0291A7EF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				49D27DA60C09197CF8AA5F61 /* StoreKitCatalogTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9DEB89C2BB6BD190A4CA86D0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -717,6 +773,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B71BAFDE6C5DA76B7D5F7082 /* GameplayPerformanceTests.swift in Sources */,
+				971175B8D798B7927C0526F2 /* IAPReviewScreenshotTests.swift in Sources */,
 				EFFD28CB4468CFE5D7A4E532 /* ModeRuntimeQATests.swift in Sources */,
 				C4C83BBF394F4A07A9C62238 /* TrackingConsentUITests.swift in Sources */,
 			);
@@ -725,6 +782,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		1DC6EA7804BAC77705AC666A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F02F8AA841056D6ED520ACBC /* PerfectTap */;
+			targetProxy = E346EBDEE3609D66BB4819A4 /* PBXContainerItemProxy */;
+		};
 		47DC07FEE1FA158780B1876F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = F02F8AA841056D6ED520ACBC /* PerfectTap */;
@@ -738,11 +800,35 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0328DBCC32983DF28588D65B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = K88C7DPG4C;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.perfecttap.app.storekittests;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PerfectTap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PerfectTap";
+			};
+			name = Debug;
+		};
 		15B71A776B882EA4BDD81508 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PerfectTap.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 6;
@@ -766,6 +852,11 @@
 				PRODUCT_NAME = PerfectTap;
 				PT_BACKEND = supabase;
 				PT_EMAIL_OTP_ENABLED = NO;
+				PT_IAP_CATALOG_ENABLED = NO;
+				PT_IAP_COIN_PACKS_ENABLED = NO;
+				PT_IAP_PREMIUM_SKINS_ENABLED = NO;
+				PT_IAP_REMOVE_ADS_ENABLED = NO;
+				PT_IAP_SERVER_VERIFICATION_ENABLED = NO;
 				SDKROOT = auto;
 				SUPABASE_PUBLISHABLE_KEY = sb_publishable_F6bkQwmaoL_yAi1N3iElGQ_2HVEH8xV;
 				SUPABASE_URL = "https://pgvtaotdyspwnpqtxpju.supabase.co";
@@ -845,6 +936,29 @@
 			};
 			name = Debug;
 		};
+		2A03AA6B6282DB81C1582C45 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = K88C7DPG4C;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.perfecttap.app.storekittests;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PerfectTap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PerfectTap";
+			};
+			name = Release;
+		};
 		3529994E09A8614CD7667A38 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -896,6 +1010,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PerfectTap.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 6;
@@ -919,6 +1034,11 @@
 				PRODUCT_NAME = PerfectTap;
 				PT_BACKEND = supabase;
 				PT_EMAIL_OTP_ENABLED = NO;
+				PT_IAP_CATALOG_ENABLED = NO;
+				PT_IAP_COIN_PACKS_ENABLED = NO;
+				PT_IAP_PREMIUM_SKINS_ENABLED = NO;
+				PT_IAP_REMOVE_ADS_ENABLED = NO;
+				PT_IAP_SERVER_VERIFICATION_ENABLED = NO;
 				SDKROOT = auto;
 				SUPABASE_PUBLISHABLE_KEY = sb_publishable_F6bkQwmaoL_yAi1N3iElGQ_2HVEH8xV;
 				SUPABASE_URL = "https://pgvtaotdyspwnpqtxpju.supabase.co";
@@ -1040,6 +1160,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		6401B8F0E952016B39341EF4 /* Build configuration list for PBXNativeTarget "PerfectTapStoreKitTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0328DBCC32983DF28588D65B /* Debug */,
+				2A03AA6B6282DB81C1582C45 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		97D19EFE3362DB7FF016CB20 /* Build configuration list for PBXProject "PerfectTap" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

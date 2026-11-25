@@ -1,5 +1,9 @@
 import Foundation
 import Combine
+import AuthenticationServices
+import CryptoKit
+import Security
+import UIKit
 
 // MARK: - Auth state machine
 enum AuthState {
@@ -20,6 +24,7 @@ final class AuthViewModel: ObservableObject {
     @Published var authState: AuthState = .loading
     @Published var currentUID: String? = nil
     @Published var errorMessage: String? = nil
+    @Published private(set) var isLinkingApple = false
 
     /// Set to `true` when Delete Account needs the user to re-enter their password
     /// (Firebase requires recent authentication for linked email users).
@@ -43,6 +48,8 @@ final class AuthViewModel: ObservableObject {
     var isLinkedToEmail: Bool {
         Backend.shared.isLinkedToEmail
     }
+
+    var isPermanentAccount: Bool { Backend.shared.isPermanentAccount }
 
     private init() {
         bootstrapIdentity()
@@ -134,6 +141,76 @@ final class AuthViewModel: ObservableObject {
 
     func clearTempNickname() {
         tempNickname = nil
+    }
+
+    // MARK: - Optional one-tap account protection
+
+    /// Links the current anonymous Supabase/Firebase user to Apple without
+    /// changing its UID. When the Apple identity already exists, signs into it
+    /// and deterministically merges this device's local profile with the cloud.
+    @discardableResult
+    func linkWithApple() async -> Bool {
+        guard !isLinkingApple else { return false }
+        isLinkingApple = true
+        errorMessage = nil
+        defer { isLinkingApple = false }
+
+        let rawNonce = Self.randomNonce()
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.requestedScopes = [.email, .fullName]
+        request.nonce = Self.sha256(rawNonce)
+
+        do {
+            let authorization = try await AppleAuthorizationCoordinator.authorize(request)
+            return await finishAppleAuthorization(authorization, rawNonce: rawNonce)
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            return false
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Entry point for SwiftUI's official SignInWithAppleButton.
+    @discardableResult
+    func linkWithApple(authorization: ASAuthorization, rawNonce: String) async -> Bool {
+        guard !isLinkingApple else { return false }
+        isLinkingApple = true
+        errorMessage = nil
+        defer { isLinkingApple = false }
+        return await finishAppleAuthorization(authorization, rawNonce: rawNonce)
+    }
+
+    private func finishAppleAuthorization(_ authorization: ASAuthorization, rawNonce: String) async -> Bool {
+        do {
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let tokenData = credential.identityToken,
+                  let idToken = String(data: tokenData, encoding: .utf8) else {
+                throw BackendError.server("Apple did not return a valid identity token. Please try again.")
+            }
+            let local = PlayerProfile.load() ?? PlayerProfile()
+            let result = try await Backend.shared.linkOrSignInWithApple(
+                idToken: idToken, nonce: rawNonce, fullName: credential.fullName)
+            let profile: PlayerProfile
+            if result.keptAnonymousUID {
+                var linked = local
+                linked.uid = result.uid
+                profile = linked
+            } else if let cloud = await Backend.shared.loadProfile() {
+                profile = mergeProfiles(local: local, cloud: cloud, firebaseUID: result.uid)
+            } else {
+                var migrated = local
+                migrated.uid = result.uid
+                profile = migrated
+            }
+            profile.save()
+            currentUID = result.uid
+            await Backend.shared.saveProfile(profile)
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     // MARK: - Cloud Backup: Link anonymous account to email/password
@@ -320,6 +397,28 @@ final class AuthViewModel: ObservableObject {
     private func generateFriendCode() -> String {
         let chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         return String((0..<6).map { _ in chars.randomElement() ?? "A" })
+    }
+
+    nonisolated static func sha256(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    nonisolated static func randomNonce(length: Int = 32) -> String {
+        precondition(length > 0)
+        let alphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        result.reserveCapacity(length)
+        while result.count < length {
+            var bytes = [UInt8](repeating: 0, count: 16)
+            guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+                return UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            }
+            for byte in bytes where byte < alphabet.count * (256 / alphabet.count) {
+                result.append(alphabet[Int(byte) % alphabet.count])
+                if result.count == length { break }
+            }
+        }
+        return result
     }
 
     private func mergeProfiles(local: PlayerProfile, cloud: PlayerProfile, firebaseUID: String) -> PlayerProfile {
@@ -541,5 +640,45 @@ final class AuthViewModel: ObservableObject {
         fmt.timeZone = TimeZone(secondsFromGMT: 0)
         fmt.dateFormat = "yyyy-MM-dd"
         return fmt.date(from: raw)
+    }
+}
+
+private final class AppleAuthorizationCoordinator: NSObject,
+                                                   ASAuthorizationControllerDelegate,
+                                                   ASAuthorizationControllerPresentationContextProviding {
+    private var continuation: CheckedContinuation<ASAuthorization, Error>?
+
+    @MainActor
+    static func authorize(_ request: ASAuthorizationAppleIDRequest) async throws -> ASAuthorization {
+        let coordinator = AppleAuthorizationCoordinator()
+        return try await coordinator.perform(request)
+    }
+
+    @MainActor
+    private func perform(_ request: ASAuthorizationAppleIDRequest) async throws -> ASAuthorization {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            let controller = ASAuthorizationController(authorizationRequests: [request])
+            controller.delegate = self
+            controller.presentationContextProvider = self
+            controller.performRequests()
+        }
+    }
+
+    func authorizationController(controller: ASAuthorizationController,
+                                 didCompleteWithAuthorization authorization: ASAuthorization) {
+        continuation?.resume(returning: authorization)
+        continuation = nil
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first ?? ASPresentationAnchor()
     }
 }

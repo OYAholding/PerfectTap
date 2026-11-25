@@ -15,6 +15,7 @@
 
 require "json"
 require "net/http"
+require "time"
 
 PT_APP_ID      = "6760975737"
 PT_BUNDLE_ID   = "com.perfecttap.app"
@@ -24,6 +25,7 @@ PT_PROJECT_DIR = File.expand_path("../ios/PerfectTap", __dir__)
 PT_SCHEME      = "PerfectTap"
 PT_OUTPUT_DIR  = File.expand_path("../build/fastlane", __dir__)
 PT_METADATA    = File.expand_path("metadata", __dir__)
+PT_IAP_CATALOG = File.expand_path("iap/catalog.json", __dir__)
 
 default_platform(:ios)
 
@@ -105,6 +107,44 @@ def pt_require_confirmation!(what)
   UI.user_error!("#{what} writes to App Store Connect. Re-run with PT_CONFIRM=yes after explicit approval.")
 end
 
+def pt_iap_catalog
+  UI.user_error!("Missing #{PT_IAP_CATALOG}") unless File.exist?(PT_IAP_CATALOG)
+  catalog = JSON.parse(File.read(PT_IAP_CATALOG))
+  UI.user_error!("IAP catalog targets the wrong app") unless catalog["appId"] == PT_APP_ID && catalog["bundleId"] == PT_BUNDLE_ID
+  products = catalog["products"].to_a
+  ids = products.map { |p| p["productId"] }
+  UI.user_error!("IAP catalog must contain 9 unique products") unless products.size == 9 && ids.uniq.size == 9
+  catalog
+end
+
+def pt_validate_local_iap_catalog!
+  catalog = pt_iap_catalog
+  storekit_path = File.expand_path("../ios/PerfectTap/StoreKit/PerfectTap.storekit", __dir__)
+  storekit = JSON.parse(File.read(storekit_path))["products"].to_h { |p| [p["productID"], p] }
+  catalog["products"].each do |product|
+    local = storekit[product["productId"]]
+    UI.user_error!("#{product['productId']} missing from PerfectTap.storekit") unless local
+    expected_type = product["type"] == "CONSUMABLE" ? "Consumable" : "NonConsumable"
+    UI.user_error!("#{product['productId']} type mismatch") unless local["type"] == expected_type
+    UI.user_error!("#{product['productId']} local test price mismatch") unless local["displayPrice"] == product["priceUSD"]
+    required = product.values_at("referenceName", "displayName", "description", "reviewScreenshot")
+    UI.user_error!("#{product['productId']} metadata is incomplete") if required.any? { |v| v.to_s.strip.empty? }
+    english = local["localizations"].to_a.find { |l| l["locale"] == "en_US" }
+    UI.user_error!("#{product['productId']} lacks complete en_US StoreKit localization") if
+      english.nil? || english.values_at("displayName", "description").any? { |v| v.to_s.strip.empty? }
+  end
+  catalog
+end
+
+def pt_validate_review_screenshot!(path)
+  UI.user_error!("Missing review screenshot #{path}") unless File.exist?(path)
+  data = File.binread(path, 24)
+  UI.user_error!("Review screenshot is not a PNG: #{path}") unless data.start_with?("\x89PNG\r\n\x1a\n".b)
+  width, height = data.byteslice(16, 8).unpack("NN")
+  UI.user_error!("Review screenshot is too small: #{path} (#{width}x#{height})") if width < 640 || height < 960
+  UI.user_error!("Review screenshot looks empty: #{path}") if File.size(path) < 10_000
+end
+
 def pt_url_status(url)
   return "not set" if url.to_s.empty?
   uri = URI(url)
@@ -167,6 +207,57 @@ platform :ios do
         UI.message("Support URL (#{latest.dig('attributes', 'versionString')}, #{l.dig('attributes', 'locale')}): #{url} -> #{pt_url_status(url)}")
       end
     end
+  end
+
+  desc "Read-only: compare the prepared 9-product catalog with App Store Connect"
+  lane :iap_check do
+    pt_api_key
+    pt_assert_app!
+    wanted = pt_iap_catalog["products"].to_h { |p| [p["productId"], p] }
+    live = pt_get("/v1/apps/#{PT_APP_ID}/inAppPurchasesV2?limit=200")["data"]
+    live_by_id = live.to_h { |p| [p.dig("attributes", "productId"), p] }
+    rows = wanted.map do |product_id, product|
+      remote = live_by_id[product_id]
+      [product_id, product["type"], product["priceUSD"], remote&.dig("attributes", "state") || "MISSING"]
+    end
+    puts Terminal::Table.new(title: "PerfectTap IAP catalog (read-only)", headings: %w[Product Type USD ASC], rows: rows)
+    extras = live_by_id.keys - wanted.keys
+    UI.important("Unexpected App Store products: #{extras.join(', ')}") unless extras.empty?
+    UI.message("Prepared: #{wanted.size}; App Store Connect: #{live.size}; missing: #{wanted.keys.count { |id| !live_by_id.key?(id) }}")
+  end
+
+  desc "Local draft only: validate IAP metadata and local test prices (no screenshot or ASC required)"
+  lane :iap_prepare do
+    catalog = pt_validate_local_iap_catalog!
+    FileUtils.mkdir_p(PT_OUTPUT_DIR)
+    report = {
+      generatedAt: Time.now.utc.iso8601,
+      appId: PT_APP_ID,
+      mode: "DRAFT_PREPARE_ONLY_NO_APP_STORE_WRITES",
+      productCount: catalog["products"].size,
+      consumables: catalog["products"].count { |p| p["type"] == "CONSUMABLE" },
+      nonConsumables: catalog["products"].count { |p| p["type"] == "NON_CONSUMABLE" },
+      localPricesAreDraft: true,
+      reviewNotes: File.expand_path("iap/review-notes.en-US.txt", __dir__)
+    }
+    path = File.join(PT_OUTPUT_DIR, "iap_prepare_report.json")
+    File.write(path, JSON.pretty_generate(report) + "\n")
+    UI.success("Prepared 9 draft IAPs locally: #{path}. Prices are local test values, not live App Store prices.")
+  end
+
+  desc "Read-only final gate: require all ASC products and valid per-product review screenshots"
+  lane :iap_submission_validate do
+    catalog = pt_validate_local_iap_catalog!
+    catalog["products"].map { |p| p["reviewScreenshot"] }.uniq.each do |relative|
+      pt_validate_review_screenshot!(File.expand_path("iap/#{relative}", __dir__))
+    end
+    pt_api_key
+    pt_assert_app!
+    live = pt_get("/v1/apps/#{PT_APP_ID}/inAppPurchasesV2?limit=200")["data"]
+    live_ids = live.map { |p| p.dig("attributes", "productId") }
+    missing = catalog["products"].map { |p| p["productId"] } - live_ids
+    UI.user_error!("App Store Connect is missing: #{missing.join(', ')}") unless missing.empty?
+    UI.success("Final IAP submission inputs validated read-only. No App Store Connect write was made.")
   end
 
   desc "Read-only: download App Store metadata into fastlane/metadata (local files only)"
