@@ -430,7 +430,12 @@ final class AuthViewModel: ObservableObject {
         merged.friendCode = cloud.friendCode.isEmpty ? local.friendCode : cloud.friendCode
 
         // 2) Core progression/economy
-        merged.coins = max(local.coins, cloud.coins)
+        // Once the authoritative ledger is owner-enabled, only the server
+        // balance may cross an identity merge. The legacy rollout keeps the
+        // historical max merge until reconciliation is approved.
+        merged.coins = FeatureFlags.authoritativeEconomyEnabled
+            ? cloud.coins
+            : max(local.coins, cloud.coins)
         if cloud.level > local.level || (cloud.level == local.level && cloud.xp > local.xp) {
             merged.level = cloud.level
             merged.xp = cloud.xp

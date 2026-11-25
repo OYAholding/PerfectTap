@@ -85,6 +85,7 @@ enum FeatureFlags {
     static var coinPacksEnabled: Bool { enabled("PT_IAP_COIN_PACKS_ENABLED") }
     static var removeAdsEnabled: Bool { enabled("PT_IAP_REMOVE_ADS_ENABLED") }
     static var premiumSkinsEnabled: Bool { enabled("PT_IAP_PREMIUM_SKINS_ENABLED") }
+    static var authoritativeEconomyEnabled: Bool { enabled("PT_AUTHORITATIVE_ECONOMY_ENABLED") }
 
     static var realMoneyPurchasesEnabled: Bool { iapEnabled && serverPurchaseVerification }
 

@@ -8,6 +8,7 @@ struct HomeView: View {
     @State private var showTutorial = !UserDefaults.standard.bool(forKey: "perfecttap_tutorial_done")
     @State private var isWatchingAd = false
     @State private var showAdReward = false
+    @State private var homeRewardClaimedToday = false
     @State private var pendingFriendRequests = 0
     @State private var pendingDuelInvitations = 0
     @State private var incomingRequestsRaw: [FriendRequest] = []
@@ -259,12 +260,20 @@ struct HomeView: View {
             guard !isWatchingAd else { return }
             isWatchingAd = true
             Task {
-                let watched = await AdManager.shared.showRewardedAd(placement: .doubleCoins)
+                let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: true)
+                guard let day = verification.dayKey,
+                      RewardClaimLimiter.shared.canClaim(.homeCoins, day: day, userID: Backend.shared.currentUID) else {
+                    isWatchingAd = false
+                    homeRewardClaimedToday = true
+                    return
+                }
+                let watched = await AdManager.shared.showRewardedAd(placement: .homeCoins)
                 isWatchingAd = false
-                if watched {
-                    let reward = 25
-                    EconomyManager.shared.addCoins(reward, source: .dailyReward)
+                if watched, RewardClaimLimiter.shared.record(.homeCoins, day: day, userID: Backend.shared.currentUID) {
+                    let reward = EconomyConfig.current.homeRewardedCoins
+                    EconomyManager.shared.addCoins(reward, source: .rewardedAd)
                     profile = PlayerProfile.load() ?? PlayerProfile()
+                    homeRewardClaimedToday = true
                     showAdReward = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         showAdReward = false
@@ -279,7 +288,7 @@ struct HomeView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 18))
                         .foregroundColor(.green)
-                    Text("+25 COINS!")
+                    Text("+\(EconomyConfig.current.homeRewardedCoins) COINS!")
                         .font(.system(size: 14, weight: .black))
                         .tracking(1)
                         .foregroundColor(.green)
@@ -287,7 +296,7 @@ struct HomeView: View {
                     Image(systemName: "play.rectangle.fill")
                         .font(.system(size: 18))
                         .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
-                    Text("WATCH AD — FREE COINS")
+                    Text(homeRewardClaimedToday ? "DAILY AD REWARD CLAIMED" : "WATCH OPTIONAL AD — +\(EconomyConfig.current.homeRewardedCoins) COINS")
                         .font(.system(size: 14, weight: .black))
                         .tracking(1)
                         .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
@@ -299,7 +308,7 @@ struct HomeView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(red: 0.98, green: 0.73, blue: 0.26).opacity(0.2)))
             .cornerRadius(16)
         }
-        .disabled(isWatchingAd || showAdReward)
+        .disabled(isWatchingAd || showAdReward || homeRewardClaimedToday)
     }
 
     private func quickActionBadgeButton(icon: String, label: String, color: Color, badge: Int, action: @escaping () -> Void) -> some View {

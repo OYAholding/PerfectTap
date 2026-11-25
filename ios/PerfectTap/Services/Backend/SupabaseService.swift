@@ -406,6 +406,43 @@ final class SupabaseService: GameBackend {
         return BackendCodec.decodeProfile(dict)
     }
 
+    struct EconomyState: Decodable, Equatable {
+        let confirmedBalance: Int
+        let coinDebt: Int
+        let configVersion: String?
+        let legacyStatus: String
+        let disputedBalance: Int
+    }
+
+    struct EconomyMutation: Decodable, Equatable {
+        let status: String
+        let balance: Int?
+        let coinDebt: Int?
+        let itemID: String?
+    }
+
+    func loadEconomyState() async throws -> EconomyState {
+        try await client.rpc("get_my_economy_state").execute().value
+    }
+
+    func claimDailyEconomyReward(eventID: UUID) async throws -> EconomyMutation {
+        try await client.rpc(
+            "claim_daily_economy_reward",
+            params: ["p_event_key": eventID.uuidString.lowercased()]
+        ).execute().value
+    }
+
+    func purchaseEconomyItem(_ itemID: String, eventID: UUID) async throws -> EconomyMutation {
+        struct Params: Encodable {
+            let p_event_key: String
+            let p_item_id: String
+        }
+        return try await client.rpc(
+            "purchase_economy_item",
+            params: Params(p_event_key: eventID.uuidString.lowercased(), p_item_id: itemID)
+        ).execute().value
+    }
+
     func saveProfile(_ profile: PlayerProfile) async {
         guard let uid = currentUID else { return }
         profile.save()   // local first, always

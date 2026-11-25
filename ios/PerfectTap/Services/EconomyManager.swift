@@ -111,6 +111,45 @@ final class EconomyManager {
         return purchased
     }
 
+    /// Uses the server ledger once the owner-approved rollout flag is enabled.
+    /// Until then the existing local path remains intact for non-monetized RCs.
+    func buyItemForCurrentRollout(_ item: ShopItem) async -> Bool {
+        guard FeatureFlags.authoritativeEconomyEnabled else { return buyItem(item) }
+        guard !item.isFree, !item.isPremium,
+              let service = Backend.shared as? SupabaseService else { return false }
+        do {
+            let result = try await service.purchaseEconomyItem(item.id, eventID: UUID())
+            if let balance = result.balance {
+                _ = updateProfile { profile in
+                    profile.coins = balance
+                    if result.status == "applied", !profile.ownedItems.contains(item.id) {
+                        profile.ownedItems.append(item.id)
+                    }
+                }
+            }
+            return result.status == "applied" || result.status == "already_owned"
+        } catch {
+            return false
+        }
+    }
+
+    func claimDailyRewardForCurrentRollout() async -> Bool {
+        guard FeatureFlags.authoritativeEconomyEnabled else { return false }
+        guard let service = Backend.shared as? SupabaseService else { return false }
+        do {
+            let result = try await service.claimDailyEconomyReward(eventID: UUID())
+            guard let balance = result.balance else { return false }
+            if let serverProfile = await service.loadProfile() {
+                persistProfile(serverProfile, syncCloud: false)
+            } else {
+                _ = updateProfile(syncCloud: false) { $0.coins = balance }
+            }
+            return result.status == "applied" || result.status == "duplicate"
+        } catch {
+            return false
+        }
+    }
+
     // MARK: - Equip
 
     func equipItem(_ item: ShopItem) {
@@ -159,7 +198,8 @@ final class EconomyManager {
     // MARK: - Revive Eligibility
 
     /// Check if revive is available for the current session.
-    /// Limit: 1 revive per game (no daily cap).
+    /// Session guard: one revive per game. The rewarded placement separately
+    /// enforces the owner-candidate cap of three verified claims per server day.
     func canRevive(mode: GameMode, hasUsedReviveThisGame: Bool) -> Bool {
         guard mode.supportsRevive else { return false }
         guard !hasUsedReviveThisGame else { return false }
@@ -215,4 +255,5 @@ enum CoinSource: String {
     case quest          // Daily quest
     case dailyReward    // Daily login reward
     case wheelSpin      // Lucky wheel
+    case rewardedAd     // Optional, capped rewarded placement
 }

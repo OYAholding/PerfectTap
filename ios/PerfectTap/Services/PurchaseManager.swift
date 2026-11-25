@@ -41,7 +41,7 @@ enum SpecialProductID: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .removeAds: return "Remove Ads Forever"
+        case .removeAds: return "Remove Forced Ads"
         }
     }
 }

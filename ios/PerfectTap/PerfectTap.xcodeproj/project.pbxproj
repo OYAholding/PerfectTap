@@ -73,7 +73,9 @@
 		AABA53FC4DE8D8F935FDA1CF /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A8FC689866162402B344D47 /* LoginView.swift */; };
 		B086A01F655E05E1EBBFA293 /* AchievementsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BAC5A30E439191D71C2BB9B /* AchievementsView.swift */; };
 		B29E77D6700DAC03D3765E2F /* GameSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFC8C8DA628428FF25DCAD1B /* GameSettingsView.swift */; };
+		B31ABFA411618D72EC1A8851 /* EconomyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 819F65D2B43049DE9107EB83 /* EconomyConfig.swift */; };
 		B3DEF0613093A7ADF87E6CAA /* Perf.swift in Sources */ = {isa = PBXBuildFile; fileRef = 926588BC8C7FF96F4BFFFF99 /* Perf.swift */; };
+		B4577C7CBEC8094B367007B2 /* RewardClaimLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119C68EDFBF57434223A1F3A /* RewardClaimLimiter.swift */; };
 		B71BAFDE6C5DA76B7D5F7082 /* GameplayPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7952A5493EC9D1FE66767438 /* GameplayPerformanceTests.swift */; };
 		B8F3ADDF597DB5E06112F353 /* GameBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E350779B14464EB647F28558 /* GameBackend.swift */; };
 		C3E2B0CA1A31834FA15B832E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0646B6981291830664A76E36 /* HomeView.swift */; };
@@ -93,6 +95,7 @@
 		F458884FC00AEEBD71F77555 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372687842A3E0EA8945D2661 /* ProfileView.swift */; };
 		F4D548C50201AFAECE73483D /* FirebaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7EA7D37E17D5DDA68AE21F /* FirebaseService.swift */; };
 		F7835412804DA3C251A6B6D0 /* DailyRewardsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9963C11FF9615A50E8DE1656 /* DailyRewardsView.swift */; };
+		F85622C6DD74A09BD1E9B723 /* BalancedEconomyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 443E680D3FDA294FEE80B8F3 /* BalancedEconomyTests.swift */; };
 		F9B0DA18920F8BC28A9256D3 /* PurchaseAndCosmeticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB7C7B49FDA9882B5D466F6F /* PurchaseAndCosmeticsTests.swift */; };
 		FF6748922301FF451C943659 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 22EC89932937EE1C8B3B1342 /* FirebaseAnalytics */; };
 /* End PBXBuildFile section */
@@ -135,6 +138,7 @@
 		0C19079025CBD0FC5FB0BC5A /* SocialModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialModels.swift; sourceTree = "<group>"; };
 		0D6F40C24156BD0E3AB89584 /* TimingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingEngine.swift; sourceTree = "<group>"; };
 		0E791510610BEA4F3B739915 /* DuelResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelResultsView.swift; sourceTree = "<group>"; };
+		119C68EDFBF57434223A1F3A /* RewardClaimLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RewardClaimLimiter.swift; sourceTree = "<group>"; };
 		12A9CA4680FA74D9D8131887 /* PerfectTap.storekit */ = {isa = PBXFileReference; path = PerfectTap.storekit; sourceTree = "<group>"; };
 		15438D58AB3BA7798AD8F377 /* Quest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Quest.swift; sourceTree = "<group>"; };
 		1770FB3387AE5C3975884131 /* EntitlementLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementLedger.swift; sourceTree = "<group>"; };
@@ -148,6 +152,7 @@
 		35746FABF7F6F46DE0EA641E /* DuelContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelContext.swift; sourceTree = "<group>"; };
 		372687842A3E0EA8945D2661 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		38AF5DD8F1F1A59913B28ED8 /* FriendDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendDetailView.swift; sourceTree = "<group>"; };
+		443E680D3FDA294FEE80B8F3 /* BalancedEconomyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalancedEconomyTests.swift; sourceTree = "<group>"; };
 		450B7CCEF9A019A7C1E97F0B /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
 		488E5B36207209905F8D101A /* ShopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopView.swift; sourceTree = "<group>"; };
 		4B7EA7D37E17D5DDA68AE21F /* FirebaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseService.swift; sourceTree = "<group>"; };
@@ -165,6 +170,7 @@
 		71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuelSettlementTests.swift; sourceTree = "<group>"; };
 		7952A5493EC9D1FE66767438 /* GameplayPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameplayPerformanceTests.swift; sourceTree = "<group>"; };
 		7A8E72E9E3F5EF07C92F8288 /* BackendCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendCodec.swift; sourceTree = "<group>"; };
+		819F65D2B43049DE9107EB83 /* EconomyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconomyConfig.swift; sourceTree = "<group>"; };
 		854CD79F2CC57FC0F1622D1A /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
 		868D71C7091506DC4BDA3D9C /* StoreKitCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitCatalogTests.swift; sourceTree = "<group>"; };
 		8A3C61C2D6CAAA37EA4626FE /* EffectsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsSettings.swift; sourceTree = "<group>"; };
@@ -253,6 +259,7 @@
 			isa = PBXGroup;
 			children = (
 				F2754EC3C8C3DAFD69C770B5 /* BackendCodecTests.swift */,
+				443E680D3FDA294FEE80B8F3 /* BalancedEconomyTests.swift */,
 				69354A2F4E975FB7571BF152 /* ConsentFlowTests.swift */,
 				71FF0296CDAC82436774C35C /* DuelSettlementTests.swift */,
 				8C21B66226905092B4B80C1B /* GamePhaseTests.swift */,
@@ -325,6 +332,7 @@
 				4B7EA7D37E17D5DDA68AE21F /* FirebaseService.swift */,
 				FBCB1B47354A4BF438AEA463 /* HapticsEngine.swift */,
 				050C2104A055D21F4EE6480D /* PurchaseManager.swift */,
+				119C68EDFBF57434223A1F3A /* RewardClaimLimiter.swift */,
 				C3F851EE18AE036813192424 /* SoundEngine.swift */,
 				04E3C86A649F06B7B8CFD881 /* Backend */,
 			);
@@ -337,6 +345,7 @@
 				0699019BFFE748789531F6AD /* Achievement.swift */,
 				271370FE4E4C5B3A2AFE4210 /* Duel.swift */,
 				35746FABF7F6F46DE0EA641E /* DuelContext.swift */,
+				819F65D2B43049DE9107EB83 /* EconomyConfig.swift */,
 				95FCC2B3451E85F76D66CC41 /* GameMode.swift */,
 				17CACB3D1A1FEDE367E8CED0 /* PendingDuelStore.swift */,
 				281CC4A6F29CD6D4ED8467DB /* PlayerProfile.swift */,
@@ -694,6 +703,7 @@
 				1642182EF7F7F2F54201A4C9 /* DuelContext.swift in Sources */,
 				EE0A2737B24B631FFDE99888 /* DuelLobbyView.swift in Sources */,
 				3F01CC5FEA8A161FF03F2BB6 /* DuelResultsView.swift in Sources */,
+				B31ABFA411618D72EC1A8851 /* EconomyConfig.swift in Sources */,
 				CD55ECB47EAC23DF8316018A /* EconomyManager.swift in Sources */,
 				2A00C4BB7B0F223A21E4DC20 /* EffectsSettings.swift in Sources */,
 				20292D3178E0921724A87638 /* EntitlementLedger.swift in Sources */,
@@ -725,6 +735,7 @@
 				8BCEDE682A1B6403CD772825 /* PurchaseManager.swift in Sources */,
 				3FD452A6C3C6A9150F122CC5 /* Quest.swift in Sources */,
 				D6F4C288BCBAB831507140D8 /* ReviveModalView.swift in Sources */,
+				B4577C7CBEC8094B367007B2 /* RewardClaimLimiter.swift in Sources */,
 				1ACD99F88018360F5B40FB2A /* SeasonPass.swift in Sources */,
 				CADD0028F45C4499B3E63AF4 /* SeasonPassView.swift in Sources */,
 				010F2ACC36BAEA3D3168D228 /* SessionMetrics.swift in Sources */,
@@ -757,6 +768,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EE17B897592BE4BBDCEB18D7 /* BackendCodecTests.swift in Sources */,
+				F85622C6DD74A09BD1E9B723 /* BalancedEconomyTests.swift in Sources */,
 				4EB36449BD47BD8F7DF1D7BD /* ConsentFlowTests.swift in Sources */,
 				9E49A3DC43AFFC7EB2C389B0 /* DuelSettlementTests.swift in Sources */,
 				62021B5EB2283FEECE31FD1E /* GamePhaseTests.swift in Sources */,
@@ -850,6 +862,7 @@
 				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.perfecttap.app;
 				PRODUCT_NAME = PerfectTap;
+				PT_AUTHORITATIVE_ECONOMY_ENABLED = NO;
 				PT_BACKEND = supabase;
 				PT_EMAIL_OTP_ENABLED = NO;
 				PT_IAP_CATALOG_ENABLED = NO;
@@ -1032,6 +1045,7 @@
 				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.perfecttap.app;
 				PRODUCT_NAME = PerfectTap;
+				PT_AUTHORITATIVE_ECONOMY_ENABLED = NO;
 				PT_BACKEND = supabase;
 				PT_EMAIL_OTP_ENABLED = NO;
 				PT_IAP_CATALOG_ENABLED = NO;

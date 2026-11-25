@@ -322,7 +322,7 @@
   "workspace": {
     "dependencies": [
       "npm:@apple/app-store-server-library@3.1.0",
-      "npm:@supabase/server@1.9.2"
+      "npm:@supabase/supabase-js@2.119.0"
     ]
   }
 }

@@ -14,11 +14,12 @@ StoreKit 2 הוא מסלול התשלום היחיד לפריטים דיגיטל
 
 | רכיב | מצב נוכחי |
 |---|---|
-| מתגי הפעלה | חמישה Info.plist flags נפרדים לקטלוג, אימות שרת, חבילות מטבעות, Remove Ads וסקינים. כולם `NO` גם ב-Debug וגם ב-Release ונכשלים סגור אם חסרים |
+| מתגי הפעלה | שישה Info.plist flags נפרדים לקטלוג, אימות שרת, חבילות מטבעות, Remove Forced Ads, סקינים וכלכלה סמכותית. כולם `NO` גם ב-Debug וגם ב-Release ונכשלים סגור אם חסרים |
 | StoreKit 2 | טעינת מוצרים, רכישה עם `appAccountToken`, listener, סריקת `Transaction.unfinished`, שחזור, reconcile של זכאויות וריטריי מדורג לאימות שרת |
 | זהות ושחזור | Sign in with Apple עם nonce, קישור identity לחשבון האנונימי הקיים ושימור UID/נתונים; אם ה-Apple identity כבר קיים, כניסה לחשבון הקיים ומיזוג פרופיל שמרני |
 | מסירה מקומית | ledger v2 שומר מוצר לכל transaction, מונע זיכוי כפול, תומך בכמה עסקאות פעילות לאותו non-consumable ושומר מזהי 1.1.x כסמני dedupe קבועים |
-| שרת | ledger וכלכלה ב-Postgres, קטלוג שרת שמתחיל `enabled = false`, אימות JWS ב-Production וב-Sandbox, ו-App Store Server Notifications V2 |
+| שרת | ledger רכישות וכלכלה סמכותית ב-Postgres, config/catalog שמתחילים disabled, reconciliation ליתרות legacy, אימות JWS ב-Production וב-Sandbox ו-App Store Server Notifications V2 |
+| Edge Functions | שלוש פונקציות החשבון/רכישה עברו ל-`Deno.serve` עם אימות bearer משותף; אין תלות ב-`@supabase/server` |
 | החזרים | `REFUND`, `REVOKE` ו-`REFUND_REVERSED`, עם UUID dedupe, סדר לפי signed date ויומן audit |
 | Leaderboard | ה-RPC הציבורי מחזיר רק שורות leaderboard שאומתו בשרת; אין fallback הנשלט על ידי הלקוח |
 | פרטיות | Privacy Manifest והצהרת App Privacy כוללים Purchase History לצורך App Functionality |
@@ -32,6 +33,7 @@ StoreKit 2 הוא מסלול התשלום היחיד לפריטים דיגיטל
 - `PT_IAP_COIN_PACKS_ENABLED`
 - `PT_IAP_REMOVE_ADS_ENABLED`
 - `PT_IAP_PREMIUM_SKINS_ENABLED`
+- `PT_AUTHORITATIVE_ECONOMY_ENABLED`
 
 רכישה אפשרית רק כשמתגי הקטלוג, אימות השרת והקטגוריה דולקים ויש UUID תקין. non-consumables זמינים גם לחשבון אנונימי; consumables דורשים זהות קבועה. `-PTIAPPreview` מציג UI ב-Debug בלבד ואינו נותן הרשאת רכישה.
 
@@ -39,8 +41,8 @@ StoreKit 2 הוא מסלול התשלום היחיד לפריטים דיגיטל
 
 | בדיקה | תוצאה |
 |---|---|
-| iOS unit tests — סכמת `PerfectTap`, ‏iOS 26.2 | 92/92 עברו, 0 דילוגים |
-| Postgres pgTAP | 112/112 עברו לאחר restart נקי של ה-stack המקומי |
+| iOS unit tests — סכמת `PerfectTap`, ‏iOS 18.5 | 98/98 עברו, כולל בדיקת ברירת־מחדל שמשאירה את Model B כבוי |
+| Postgres pgTAP | 132/132 עברו לאחר reset נקי של ה-stack המקומי |
 | Supabase integration | 10/10 עברו מול ה-stack המקומי |
 | Deno | 10/10 בדיקות purchase עברו; `deno check` עבר לשתי פונקציות ה-Edge עם ה-config הייעודי שלהן |
 | StoreKit catalog structure | עבר: בדיוק תשעה מוצרים, מזהים, סוגים, reference names, מחירי בדיקה ולוקליזציית `en_US` תקינים |
@@ -74,4 +76,4 @@ StoreKit 2 הוא מסלול התשלום היחיד לפריטים דיגיטל
 
 ## מדיניות החזר מטבעות
 
-בהחזר על consumable, היתרה יורדת בגובה החבילה עד רצפה של אפס. אין יתרה שלילית. זו החלטת מוצר שצריך לאשר לפני הפעלה.
+מדיניות חוב אינה פעילה ואינה מאושרת. ההמלצה היא חוב מוגבל/מותנה עם הגנות הונאה, בלי לחסום משחק; החלופות, כללי ההודעה ותהליך החריגים מפורטים ב-`docs/ECONOMY_1_2_0_EXECUTION.he.md`.

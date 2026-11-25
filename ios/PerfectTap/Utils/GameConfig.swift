@@ -96,12 +96,7 @@ enum GameConfig {
 
     // MARK: Coins — Classic & Duel earn coins
     static func calcGameCoins(score: Int, maxCombo: Int, mode: GameMode) -> Int {
-        // Only Classic and Duel modes earn coins
-        guard mode.earnCoins else { return 0 }
-        let base = score / 50
-        let comboBonus = maxCombo >= 20 ? 8 : maxCombo >= 10 ? 5 : maxCombo >= 5 ? 3 : 1
-        let modeBonus: Int = mode == .duel ? 6 : 2
-        return max(3, base + comboBonus + modeBonus)
+        EconomyConfig.current.gameCoins(score: score, maxCombo: maxCombo, mode: mode)
     }
 
     // MARK: Score validation bounds (from submitScore.ts — prevent cheating)

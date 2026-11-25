@@ -10,7 +10,7 @@ struct DailyRewardsView: View {
     @State private var eligibilityMessage: String? = nil
     @State private var isClaiming = false
 
-    private let dayRewards = [25, 35, 50, 75, 100, 125, 250]   // coins per day in 7-day cycle
+    private let dayRewards = EconomyConfig.current.dailyRewards
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -175,6 +175,21 @@ struct DailyRewardsView: View {
             ? "Using last verified server day. Reconnect to refresh availability."
             : nil
         guard canClaim else { return }
+
+        if FeatureFlags.authoritativeEconomyEnabled {
+            let previousBalance = profile.coins
+            guard await EconomyManager.shared.claimDailyRewardForCurrentRollout() else {
+                eligibilityMessage = "The server could not confirm this reward. No coins were changed."
+                return
+            }
+            profile = EconomyManager.shared.currentProfile()
+            claimedAmount = max(0, profile.coins - previousBalance)
+            withAnimation { showClaimed = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                withAnimation { showClaimed = false }
+            }
+            return
+        }
 
         profile = EconomyManager.shared.updateProfile { profile in
             // Reset streak if the player missed a day (last claim was not yesterday)
