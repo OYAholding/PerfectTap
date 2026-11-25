@@ -1,0 +1,14 @@
+// PerfectTap monetization capability ceiling: LOCAL STOREKIT (Debug-StoreKit only).
+// Purchases use StoreKit/PerfectTap.storekit (fake money) in the Xcode environment
+// with on-device JWS verification. PT_IAP_LOCAL_STOREKIT_TESTING is compiled out
+// of non-DEBUG builds and the runtime gate refuses it outside the Xcode
+// environment, so a binary built with this file cannot sell in Sandbox or
+// Production.
+PT_MONETIZATION_PROFILE = LocalStoreKit
+PT_IAP_CATALOG_ENABLED = YES
+PT_IAP_SERVER_VERIFICATION_ENABLED = NO
+PT_IAP_COIN_PACKS_ENABLED = YES
+PT_IAP_REMOVE_ADS_ENABLED = YES
+PT_IAP_PREMIUM_SKINS_ENABLED = YES
+PT_IAP_LOCAL_STOREKIT_TESTING = YES
+PT_AUTHORITATIVE_ECONOMY_ENABLED = NO

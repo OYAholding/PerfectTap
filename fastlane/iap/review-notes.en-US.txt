@@ -1,7 +1,17 @@
-PerfectTap offers four consumable coin packs and five non-consumables (Remove Forced Ads and four cosmetic skins).
+PerfectTap offers four consumable coin packs and five non-consumables: Remove Forced Ads and four cosmetic skins. There are no subscriptions, no loot boxes and no random rewards for money.
 
-To find them: launch the app, finish the short username setup if shown, tap SHOP, then tap BUY COINS. Premium skins are under the PREMIUM tab. Restore Purchases is available in the Premium section and Settings.
+HOW TO TEST PURCHASES (Sandbox)
+Purchases are enabled for the App Review / TestFlight Sandbox environment of this build. No demo account is needed; use your Sandbox Apple Account when StoreKit asks.
+1. Launch the app and finish the short username setup if shown.
+2. Remove Forced Ads: tap SHOP, then BUY COINS; Remove Forced Ads is listed below the coin packs. It can be bought as a guest, without creating an account.
+3. Cosmetic skins: tap SHOP, then the PREMIUM tab. Skins can be bought as a guest.
+4. Coin packs: tap SHOP, then BUY COINS. Coin balances are not restored by StoreKit, so before the first coin purchase the app asks you to Sign in with Apple (one tap) so the balance can be recovered on another device. After signing in, the purchase sheet opens and the coins are added once the purchase is confirmed.
+5. Restore Purchases is in the PREMIUM tab and in Settings. After deleting and reinstalling, it restores Remove Forced Ads and skins from Apple's purchase history, also for guests.
 
-Remove Forced Ads and cosmetic skins can be purchased by a guest and restore from Apple's signed StoreKit history after reinstall. Remove Forced Ads permanently removes automatic interstitial and banner ads; clearly labeled, optional rewarded ads remain available, have placement limits, and never grant unlimited rewards. Cloud Backup remains optional. Coin packs require a recoverable Sign in with Apple or verified-email account because consumable balances are not restored by StoreKit. Cosmetic skins change colors and effects only; timing zones, indicator geometry, scoring, and difficulty are unchanged.
+ADS
+Remove Forced Ads permanently removes automatic interstitial and banner ads. Clearly labeled rewarded ads remain available after the purchase; they are always optional, only shown when the player taps them, have daily limits and are never required to play, progress or finish any mode.
 
-The attached review screenshot shows the complete purchase surface. No subscription or loot-box product is offered.
+WHAT EACH PRODUCT DOES
+Coins buy cosmetic items in the in-game shop only. Skins change colors and effects only; timing zones, indicator geometry, scoring and difficulty are unchanged. Every purchase is verified with Apple's signed transaction before it is delivered. Cloud Backup is optional and not required for Remove Forced Ads or skins.
+
+The attached review screenshot shows the purchase surface for this product.

@@ -33,6 +33,7 @@ bundle install
 | `asc_check` | לא | בודק חיבור, גרסאות, builds, TestFlight, סטטוס review, ו-HTTP של Privacy/Support URL |
 | `iap_check` | לא | משווה את manifest תשעת מוצרי ה-IAP מול App Store Connect ומדווח מה חסר |
 | `iap_prepare` | לא, וגם לא מתחבר ל-ASC | מכין טיוטה: מאמת metadata, סוגים ומחירי StoreKit מקומיים וכותב report. לא דורש מוצרי ASC או screenshots |
+| `iap_reconcile` | dry-run כברירת מחדל; כתיבה רק עם `confirm_create:true` וגם `PT_CONFIRM=yes` | reconciler אידמפוטנטי: גילוי מוצרים קיימים, diff מול `catalog.json` (סוג, שם, לוקליזציה, מחיר USD, זמינות, צילום Review, הערות), בדיקת price point, יצירה/עדכון ואימות read-back. לעולם לא מוחק, לא משנה סוג ולא שולח ל-Review |
 | `iap_submission_validate` | לא — קריאה בלבד | שער סופי: דורש שכל 9 המוצרים קיימים ב-ASC ושיש PNG תקין לכל צילום review שהוגדר בקטלוג |
 | `metadata_pull` | לא | מוריד metadata ל-`fastlane/metadata` (פרטי איש קשר ל-review לא נכנסים לגיט) |
 | `validate_release` | לא | גרסה > החיה, גרסת App Store Connect = `MARKETING_VERSION`, מספר build פנוי, מחרוזת ATT, ‏privacy manifest, ‏5 כתובות חוקיות, אין סודות בריפו. נכשל כשיש חסם |
@@ -49,6 +50,8 @@ bundle exec fastlane asc_check
 bundle exec fastlane iap_check
 bundle exec fastlane iap_prepare
 bundle exec fastlane iap_submission_validate
+bundle exec fastlane iap_reconcile                      # dry-run
+ruby fastlane/test/iap_reconciler_test.rb              # בדיקות offline ל-diff
 bundle exec fastlane metadata_pull
 PT_CONFIRM=yes bundle exec fastlane beta          # רק אחרי אישור מפורש
 ```
