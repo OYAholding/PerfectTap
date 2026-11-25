@@ -2,6 +2,16 @@
 -- purchase/audit rows. Run only against the confirmed PerfectTap project.
 begin;
 
+-- Sales kill switch (20261126090000): clients stop starting new sales in both
+-- environments. Already-paid transactions are still delivered/restored.
+-- Guarded so containment still runs where the sales-gate migration is absent.
+do $$
+begin
+  if to_regclass('private.iap_sales_control') is not null then
+    update private.iap_sales_control
+    set sales_enabled = false, updated_by = 'containment', note = 'purchase_containment';
+  end if;
+end $$;
 update private.iap_products set enabled = false;
 revoke execute on function public.record_verified_purchase(uuid, text, text, text, text, timestamptz, timestamptz)
   from service_role;
