@@ -36,6 +36,7 @@ final class StoreKitLifecycleTests: XCTestCase {
         session.disableDialogs = true
         session.askToBuyEnabled = false
         session.clearTransactions()
+        try await waitUntilStoreKitCacheIsEmpty()
         defaults = UserDefaults(suiteName: "pt-sk-\(UUID().uuidString)")
         savedProfile = PlayerProfile.load()
         var profile = PlayerProfile()
@@ -53,6 +54,41 @@ final class StoreKitLifecycleTests: XCTestCase {
 
     // MARK: Helpers
 
+    /// Upper bound for a StoreKit condition to become true. Every wait returns as
+    /// soon as its condition holds (milliseconds on an idle simulator); the bound
+    /// only matters on a loaded host, where one storekitd query can take seconds.
+    nonisolated private static let storeKitTimeout: TimeInterval = 90
+
+    /// Re-evaluates `condition` until it yields a value or `timeout` elapses
+    /// (always at least one attempt).
+    private func waitFor<T>(_ timeout: TimeInterval = storeKitTimeout,
+                            _ condition: () async throws -> T?) async throws -> T? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if let value = try await condition() { return value }
+            if Date() >= deadline { return nil }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
+    /// `clearTransactions()` returns before storekitd has dropped its client-side
+    /// transaction cache: ASOctaneSupportXPCService deletes the test transactions and
+    /// only then calls back into storekitd (removeTransactionIdentifiersFromCache,
+    /// "[ReceiptManager] Clearing transactions") on another queue. Transaction IDs
+    /// restart at 0 after a clear, so until that purge lands Transaction.all /
+    /// Transaction.unfinished can still serve the previous test's copies under the
+    /// IDs this test is about to reuse, and a late purge can drop this test's first
+    /// purchase from the client cache. Start each test from an observed-empty view.
+    private func waitUntilStoreKitCacheIsEmpty(file: StaticString = #filePath, line: UInt = #line) async throws {
+        let empty: Bool? = try await waitFor {
+            for await _ in Transaction.unfinished { return nil }
+            for await _ in Transaction.all { return nil }
+            return true
+        }
+        XCTAssertEqual(empty, true, "StoreKitTest still lists transactions after clearTransactions()",
+                       file: file, line: line)
+    }
+
     private func manager(_ verifier: PurchaseVerifying, defaults: UserDefaults? = nil) -> PurchaseManager {
         let pm = PurchaseManager(defaults: defaults ?? self.defaults, verifier: verifier,
                                  salesStatusProvider: CountingProvider(answer: nil))
@@ -60,40 +96,63 @@ final class StoreKitLifecycleTests: XCTestCase {
         return pm
     }
 
-    @available(iOS 17.0, *)
-    private func buy(_ productID: String, token: UUID?) async throws -> UInt64 {
-        var options: Set<Product.PurchaseOption> = []
-        if let token { options.insert(.appAccountToken(token)) }
-        return try await session.buyProduct(identifier: productID, options: options).id
+    /// One purchase made by this test. Transaction IDs are reused after every
+    /// clearTransactions(), so an ID alone can also match a stale copy left over
+    /// from an earlier test (same ID, other product or purchase).
+    private struct Purchase {
+        let id: UInt64
+        let productID: String
+        let purchaseDate: Date
+
+        func matches(_ result: VerificationResult<Transaction>) -> Bool {
+            let transaction = result.unsafePayloadValue
+            return transaction.id == id && transaction.productID == productID
+                && abs(transaction.purchaseDate.timeIntervalSince(purchaseDate)) < 0.002
+        }
     }
 
-    private func verification(for id: UInt64) async -> VerificationResult<Transaction>? {
-        for await result in Transaction.unfinished where result.unsafePayloadValue.id == id { return result }
-        for await result in Transaction.all where result.unsafePayloadValue.id == id { return result }
+    @available(iOS 17.0, *)
+    private func buy(_ productID: String, token: UUID?) async throws -> Purchase {
+        var options: Set<Product.PurchaseOption> = []
+        if let token { options.insert(.appAccountToken(token)) }
+        let transaction = try await session.buyProduct(identifier: productID, options: options)
+        return Purchase(id: transaction.id, productID: transaction.productID, purchaseDate: transaction.purchaseDate)
+    }
+
+    /// One pass over the client's current view (no waiting).
+    private func verification(for purchase: Purchase) async -> VerificationResult<Transaction>? {
+        for await result in Transaction.unfinished where purchase.matches(result) { return result }
+        for await result in Transaction.all where purchase.matches(result) { return result }
         return nil
     }
 
-    private func signed(_ id: UInt64, file: StaticString = #filePath, line: UInt = #line) async throws
+    /// The signed copy of a purchase. SKTestSession.buyProduct returns once the test
+    /// server recorded it; storekitd's client cache only picks it up on a later sync,
+    /// so wait for it to appear instead of reading once.
+    private func signed(_ purchase: Purchase, file: StaticString = #filePath, line: UInt = #line) async throws
         -> VerificationResult<Transaction> {
-        let result = await verification(for: id)
-        return try XCTUnwrap(result, "no StoreKit transaction \(id)", file: file, line: line)
+        let result = try await waitFor { await self.verification(for: purchase) }
+        return try XCTUnwrap(result, "no StoreKit transaction \(purchase.id) (\(purchase.productID))",
+                             file: file, line: line)
     }
 
     /// The refunded, re-signed copy of a non-consumable (StoreKitTest updates it asynchronously).
-    private func revokedCopy(productID: String, id: UInt64, file: StaticString = #filePath,
-                             line: UInt = #line) async throws -> VerificationResult<Transaction> {
-        for _ in 0..<50 {
-            if let latest = await Transaction.latest(for: productID),
-               latest.unsafePayloadValue.id == id, latest.unsafePayloadValue.revocationDate != nil { return latest }
-            for await result in Transaction.all where result.unsafePayloadValue.id == id
+    private func revokedCopy(_ purchase: Purchase) async throws -> VerificationResult<Transaction> {
+        let revoked = try await waitFor { () async -> VerificationResult<Transaction>? in
+            if let latest = await Transaction.latest(for: purchase.productID), purchase.matches(latest),
+               latest.unsafePayloadValue.revocationDate != nil { return latest }
+            for await result in Transaction.all where purchase.matches(result)
                 && result.unsafePayloadValue.revocationDate != nil { return result }
-            try await Task.sleep(nanoseconds: 100_000_000)
+            return nil
         }
-        throw XCTSkip("StoreKitTest did not surface the revoked transaction \(id) on this runtime")
+        guard let revoked else {
+            throw XCTSkip("StoreKitTest did not surface the revoked transaction \(purchase.id) on this runtime")
+        }
+        return revoked
     }
 
-    private func isUnfinished(_ id: UInt64) async -> Bool {
-        for await result in Transaction.unfinished where result.unsafePayloadValue.id == id { return true }
+    private func isUnfinished(_ purchase: Purchase) async -> Bool {
+        for await result in Transaction.unfinished where purchase.matches(result) { return true }
         return false
     }
 
@@ -186,14 +245,14 @@ final class StoreKitLifecycleTests: XCTestCase {
         let ads = await pm.handleForTesting(try await signed(adsID))
         XCTAssertEqual(ads, .provisional([.grantNoAds]), "Apple-signed history unlocks even while the server is down")
         XCTAssertTrue(profile().noAds)
-        XCTAssertTrue(pm.ledgerSnapshot.needsServerAcknowledgement(adsID))
+        XCTAssertTrue(pm.ledgerSnapshot.needsServerAcknowledgement(adsID.id))
         let adsUnfinished = await isUnfinished(adsID)
         XCTAssertTrue(adsUnfinished, "finished only after server acknowledgement")
 
         verifier.answer = .verified
         let acked = await pm.handleForTesting(try await signed(adsID))
         XCTAssertEqual(acked, .delivered([]))
-        XCTAssertFalse(pm.ledgerSnapshot.needsServerAcknowledgement(adsID))
+        XCTAssertFalse(pm.ledgerSnapshot.needsServerAcknowledgement(adsID.id))
         let skin = await pm.handleForTesting(try await signed(skinID))
         XCTAssertEqual(skin, .delivered([.grantItem("theme_chrome")]))
 
@@ -255,10 +314,10 @@ final class StoreKitLifecycleTests: XCTestCase {
         _ = await pm.handleForTesting(try await signed(coinID))
         XCTAssertEqual(coins(), 600)
 
-        try session.refundTransaction(identifier: UInt(skinID))
-        try session.refundTransaction(identifier: UInt(coinID))
+        try session.refundTransaction(identifier: UInt(skinID.id))
+        try session.refundTransaction(identifier: UInt(coinID.id))
         verifier.answer = .unavailable   // refunds never wait for the server
-        let refundedSkin = try await revokedCopy(productID: "com.perfecttap.skin.neonpulse", id: skinID)
+        let refundedSkin = try await revokedCopy(skinID)
         let skinOutcome = await pm.handleForTesting(refundedSkin)
         XCTAssertEqual(skinOutcome, .delivered([.revokeItem("theme_neonpulse")]))
         XCTAssertFalse(profile().ownedItems.contains("theme_neonpulse"))
