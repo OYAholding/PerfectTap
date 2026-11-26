@@ -39,7 +39,7 @@ wrapper over a `security definer` function in `private` (same pattern as
 | `quest` | `{quest_id, difficulty, server_day}` | server_day ∈ {today, yesterday} UTC; max 3 per day; once per (day, quest_id); reward by difficulty from config. Progress itself is client-side (documented residual risk, bounded by cap). |
 | `achievement` | `{achievement_id}` | id must exist in config `achievement_rewards`; once per user forever. |
 | `challenge` | `{challenge_id}` | id in config `challenge_rewards` (coins and optional item); once per user forever. |
-| `season_tier` | `{season_id, tier}` | tier ≤ server-tracked/plausible tier; once per (season_id, tier); coins from config season cycle. |
+| `season_tier` | `{season_id, tier}` | season_id = current `season_calendar` season (or previous within `grace_hours`); tier ≤ server-tracked/plausible tier; once per (season_id, tier); coins from config season cycle. |
 | `wheel` | `{}` | once per UTC day; **server** picks the segment (`gen_random_uuid`-seeded / `random()`), returns `segment_index` + amount. |
 | `starter_item` | `{item_id}` | item must be config `starter_items` (Common); once per user; adds to `owned_items` without coins. |
 
@@ -87,6 +87,8 @@ Errors are raised as `private.fail(code)`; codes clients must handle:
 `score_coin_divisor`, `minimum_game_coins`, `combo_bonus` table, `mode_bonus`,
 `gameplay_daily_cap`, `home_rewarded_coins`, `season_ads_required`,
 `season_coin_cycle[]`, `achievement_rewards{id:coins}`,
-`challenge_rewards{id:{coins,item}}`, `starter_items[]`, `active_season{id,starts_at,ends_at}`.
+`challenge_rewards{id:{coins,item}}`, `starter_items[]`,
+`season_calendar{anchor,length_months,id_format,tiers,max_tiers_per_day,grace_hours}`
+(replaced `active_season`; see SUPABASE_ECONOMY_BACKEND.md "Season calendar").
 Swift `EconomyConfig.balancedPremiumRC1` must match the seeded JSON; a unit test
 and a pgTAP test pin the shared numbers.

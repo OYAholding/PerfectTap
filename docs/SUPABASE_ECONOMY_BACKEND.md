@@ -6,7 +6,8 @@ here is deployed, and `balanced-premium-rc1` stays `active = false`.
 | Piece | Location |
 |---|---|
 | Migration (additive) | `supabase/migrations/20261125200000_authoritative_economy_sources.sql` |
-| pgTAP | `supabase/tests/database/economy_sources.test.sql` (120 assertions) |
+| Season calendar (additive) | `supabase/migrations/20261126120000_season_calendar_alignment.sql` |
+| pgTAP | `supabase/tests/database/economy_sources.test.sql` (121 assertions), `season_calendar.test.sql` (33) |
 | AdMob SSV Edge Function | `supabase/functions/admob-ssv/index.ts`, logic in `_shared/admob.ts`, tests in `_shared/admob.test.ts` |
 
 ## Behaviour while no config is active (production today)
@@ -37,7 +38,7 @@ profile → **duplicate event_key** (answers `duplicate` with the original
 | quest | `quest_id, difficulty, server_day` | `server_day` must be today or yesterday (UTC). `difficulty` must match `quest_difficulties[quest_id]`. Pays `quest_rewards[difficulty]`, once per (day, quest), with at most `quest_daily_limit` (3) quests per day. |
 | achievement | `achievement_id` | Pays `achievement_rewards[id]`, once ever. |
 | challenge | `challenge_id` | Pays `challenge_rewards[id].coins` plus the optional `.item`, once ever. |
-| season_tier | `season_id, tier` | `season_id` must equal `active_season.id`, the current time must be inside the season window, and `tier` ≤ `tiers`. Tiers claimed so far cannot exceed `max_tiers_per_day` × days since the season started. Coins come from `season_coin_cycle[(tier-1) % len]`, once per tier. If the stored profile has `season_premium = true`, `season_premium_items[tier]` is granted too. A player who unlocks premium later sends the same tier again, and that call pays the item only. |
+| season_tier | `season_id, tier` | `season_id` must be the current season of the `season_calendar` rule (see "Season calendar"), or the previous season until its end + `grace_hours`, and `tier` ≤ `tiers`. Tiers claimed so far cannot exceed `max_tiers_per_day` × days since that season started. Coins come from `season_coin_cycle[(tier-1) % len]`, once per tier. If the stored profile has `season_premium = true`, `season_premium_items[tier]` is granted too. A player who unlocks premium later sends the same tier again, and that call pays the item only. |
 | wheel | `{}` (ignored) | Once per UTC day. The server picks `floor(random()*8)` and pays `wheel_rewards[segment]`. The response carries `segmentIndex`. |
 | starter_item | `item_id` | The item must be in `starter_items`. One pick per player, and it adds the item to `owned_items`. If the player already owns that item, the response is `already_owned` and the pick stays unused. A 1.1 starter grant (`grant_starter_v1` marker plus a starter item) counts as the pick and returns `already_claimed`. |
 
@@ -47,6 +48,40 @@ above the cap are not paid. The response is `status: "capped"` with the partial
 
 Response: `{status, granted, balance, coinDebt, segmentIndex?, itemID?}`, where
 `status` is one of `applied | duplicate | capped | already_owned | recorded`.
+
+## Season calendar (shared with iOS)
+
+`active_season` (one placeholder season, `season_1_neon_nights`
+2026-12-01..2027-03-01) is replaced by a deterministic rule that the server
+(`private.season_at`, `private.season_tier_verdict`) and iOS
+(`EconomyConfig.SeasonCalendarRule`, `SeasonSchedule` in
+`ios/PerfectTap/Models/SeasonPass.swift`) compute identically, in UTC:
+
+```
+season_calendar = {anchor: "2026-03-01", length_months: 3, id_format: "season_<n>",
+                   tiers: 30, max_tiers_per_day: 15, grace_hours: 72}
+n = floor(whole months since anchor / length_months) + 1
+start = anchor + (n-1)·length_months months (inclusive), end = start + length_months (exclusive)
+```
+
+So 2026-11-26 is `season_3` (Sep 1 – Nov 30) and 2026-12-01 00:00 UTC starts
+`season_4` (Dec 1 – Feb 28). A `season_tier` claim for the previous season is
+accepted for `grace_hours` after the boundary (offline claims). Outside that
+window it fails `invalid_payload`. The iOS outbox drops a `season_tier` refused
+with `invalid_payload` only once its season is outside the window by the same
+rule. Inside the window it keeps the event and retries without blocking other
+events, since the refusal there can only come from clock skew. Grant keys stay
+`season:<id>:<tier>`, so earned tiers and rewards are never reset or deleted.
+The anchor must be the 1st of a month. A malformed calendar fails closed (no
+claim accepted). The shared date → id and claim-window tables live in
+`supabase/tests/database/season_calendar.test.sql` and
+`SeasonCalendarAlignmentTests` (iOS). Change both together.
+
+**Pending owner approval:** the season length (`length_months = 3`), the anchor
+(`2026-03-01`) and `grace_hours = 72` are owner-tunable values that are not
+approved yet. Changing them requires the same change in
+`EconomyConfig.SeasonCalendarRule.balancedPremiumRC1` (pinned by unit test and
+pgTAP).
 
 ## Service-role functions
 
@@ -128,14 +163,14 @@ Response: `{status, granted, balance, coinDebt, segmentIndex?, itemID?}`, where
    - `gameplay_max_age_hours`, `gameplay_clock_skew_seconds`
    - `quest_daily_limit`, `quest_difficulties`
    - `season_premium_items`
-   - `active_season.tiers`, `active_season.max_tiers_per_day`
+   - `season_calendar{anchor, length_months, id_format, tiers, max_tiers_per_day, grace_hours}` (replaces `active_season`, migration 20261126120000)
    - `combo_bonus` has the shape `[{min, coins}]`; `mode_bonus` has the shape `{classic: 2, duel: 6}`
    - `challenge_rewards` has the shape `{id: {coins, item|null}}`
 7. **Achievements:** Swift `Achievement.all` has **36** entries (its comment
    says 37). All 36 are mirrored with the Swift coin values.
 8. **Values awaiting owner approval:**
    - `gameplay_daily_cap = 1500`
-   - `active_season` dates: placeholders `2026-12-01` to `2027-03-01`
+   - season calendar: `anchor = 2026-03-01`, `length_months = 3`, `grace_hours = 72`
    - `max_tiers_per_day = 15`
    - the reconciliation thresholds
 

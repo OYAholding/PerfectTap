@@ -454,13 +454,15 @@ final class LedgerEconomyService: EconomyService {
     private enum Delivery {
         case accepted(EconomyRPCResult)
         case alreadyHeld
-        case queued
+        /// Kept in the outbox. `blocking`: stop the flush (offline / refused);
+        /// otherwise later events are still sent.
+        case queued(blocking: Bool = true)
         case dropped(String)
     }
 
     /// Sends one queued event now and settles it in the outbox.
     private func deliverNow(_ event: EconomyEvent, outbox: EconomyOutbox) async -> Delivery {
-        guard currentUserID()?.lowercased() == outbox.userID else { return .queued }
+        guard currentUserID()?.lowercased() == outbox.userID else { return .queued() }
         let outcome = await remote.submit(event)
         // The user may have switched while the request was in flight: the
         // result belongs to the outbox's user, never to the new one.
@@ -480,17 +482,18 @@ final class LedgerEconomyService: EconomyService {
             return .dropped(result.status)
         case .failure(let failure):
             if failure == .server("economy_disabled"), stillSameUser { status.serverEconomyDisabled = true }
-            switch EconomyErrorPolicy.disposition(for: failure) {
+            let disposition = EconomyErrorPolicy.disposition(for: failure, event: event, now: now())
+            switch disposition {
             case .success:
                 outbox.remove(event.eventKey)
                 refreshPending()
                 return .alreadyHeld
-            case .retry:
+            case .retry, .retryNonBlocking:
                 var retried = event
                 retried.attempts += 1
                 retried.nextAttemptAt = now().addingTimeInterval(EconomyErrorPolicy.backoff(attempts: retried.attempts))
                 outbox.update(retried)
-                return .queued
+                return .queued(blocking: disposition == .retry)
             case .drop:
                 outbox.remove(event.eventKey)
                 refreshPending()
@@ -552,7 +555,7 @@ final class LedgerEconomyService: EconomyService {
                 continue
             }
             if let next = event.nextAttemptAt, next > now(), reason != .manual { continue }
-            if case .queued = await deliverNow(event, outbox: outbox) {
+            if case .queued(let blocking) = await deliverNow(event, outbox: outbox), blocking {
                 hitNetworkFailure = true
                 break   // offline or temporarily refused: keep order, back off
             }

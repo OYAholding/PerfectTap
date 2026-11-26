@@ -51,22 +51,20 @@ extension SeasonTier {
 
 // MARK: - Season schedule
 //
-// Season 1 ("Neon Nights") ran Mar 1 – May 31, 2026 and the header was
-// hard-coded, so it showed an expired season. Seasons now repeat on a fixed
-// three-month cycle anchored at Season 1 (UTC): Mar–May, Jun–Aug, Sep–Nov,
-// Dec–Feb. Computing a new cycle never touches the player's earned tiers,
-// claimed rewards or premium state.
+// Season 1 ("Neon Nights") ran Mar 1 – May 31, 2026. Seasons repeat on the
+// deterministic calendar rule `EconomyConfig.SeasonCalendarRule` (server
+// config key `season_calendar`): a fixed three-month cycle anchored at
+// 2026-03-01 UTC — Mar–May, Jun–Aug, Sep–Nov, Dec–Feb — with ids
+// `season_<n>`. The server (`private.season_at` / `season_tier_verdict`)
+// computes exactly the same ids and boundaries. Computing a new cycle never
+// touches the player's earned tiers, claimed rewards or premium state.
 struct SeasonSchedule: Equatable {
     let number: Int
     let startsAt: Date
     /// Exclusive end (first instant of the next season).
     let endsAt: Date
-    /// Server season (`active_season`) covering this date, when configured.
-    var configured: EconomyConfig.SeasonDefinition? = nil
-
-    static let cycleMonths = 3
-    private static let anchorYear = 2026
-    private static let anchorMonth = 3
+    /// Identifier used in `season_tier` events (`season_<n>`).
+    let id: String
 
     private static var utc: Calendar {
         var calendar = Calendar(identifier: .gregorian)
@@ -74,13 +72,8 @@ struct SeasonSchedule: Equatable {
         return calendar
     }
 
-    /// Identifier used in `season_tier` events: the server's `active_season.id`
-    /// when it covers the date, else the computed cycle (`season_<n>`).
-    var id: String { configured?.id ?? "season_\(number)" }
-
     var title: String {
-        if let configured { return "Season \(number): \(configured.title)" }
-        return number == 1 ? "Season 1: Neon Nights" : "Season \(number)"
+        number == 1 ? "Season 1: Neon Nights" : "Season \(number)"
     }
 
     var displayRange: String {
@@ -95,31 +88,64 @@ struct SeasonSchedule: Equatable {
 
     func contains(_ date: Date) -> Bool { date >= startsAt && date < endsAt }
 
+    /// Season shown in the UI. Dates before the anchor (wrong device clock)
+    /// display Season 1 rather than nothing.
     static func current(now: Date = Date(),
-                        configuredSeasons: [EconomyConfig.SeasonDefinition] =
-                            [EconomyConfig.balancedPremiumRC1.activeSeason].compactMap { $0 }) -> SeasonSchedule {
-        if let season = configuredSeasons.first(where: { def in
-            guard let start = def.startsAt, let end = def.endsAt else { return false }
-            return now >= start && now < end
-        }), let start = season.startsAt, let end = season.endsAt {
-            var computed = cycle(containing: now)
-            computed = SeasonSchedule(number: computed.number, startsAt: start, endsAt: end, configured: season)
-            return computed
-        }
-        return cycle(containing: now)
+                        rule: EconomyConfig.SeasonCalendarRule = EconomyConfig.current.seasonCalendar) -> SeasonSchedule {
+        if let season = season(at: now, rule: rule) { return season }
+        if let anchor = anchorDate(rule), let first = season(at: anchor, rule: rule) { return first }
+        // Malformed rule (never shipped): keep the screen working.
+        return SeasonSchedule(number: 1, startsAt: now, endsAt: now.addingTimeInterval(90 * 86_400),
+                              id: rule.seasonID(number: 1))
     }
 
-    private static func cycle(containing now: Date) -> SeasonSchedule {
+    /// Server parity (`private.season_at`): the season containing `date` in
+    /// UTC, or nil before the anchor / for a malformed rule.
+    static func season(at date: Date,
+                       rule: EconomyConfig.SeasonCalendarRule = EconomyConfig.current.seasonCalendar) -> SeasonSchedule? {
+        guard let anchorYM = rule.anchorYearMonth, let anchor = anchorDate(rule), date >= anchor else { return nil }
         let calendar = utc
-        let c = calendar.dateComponents([.year, .month], from: now)
-        let monthsSinceAnchor = ((c.year ?? anchorYear) - anchorYear) * 12 + ((c.month ?? anchorMonth) - anchorMonth)
-        // Floor division so dates before the anchor still map to a cycle.
-        let index = monthsSinceAnchor >= 0
-            ? monthsSinceAnchor / cycleMonths
-            : -((-monthsSinceAnchor + cycleMonths - 1) / cycleMonths)
-        let anchor = calendar.date(from: DateComponents(year: anchorYear, month: anchorMonth, day: 1)) ?? now
-        let start = calendar.date(byAdding: .month, value: index * cycleMonths, to: anchor) ?? anchor
-        let end = calendar.date(byAdding: .month, value: cycleMonths, to: start) ?? start
-        return SeasonSchedule(number: max(1, index + 1), startsAt: start, endsAt: end)
+        let c = calendar.dateComponents([.year, .month], from: date)
+        guard let year = c.year, let month = c.month else { return nil }
+        let monthsSinceAnchor = (year - anchorYM.year) * 12 + (month - anchorYM.month)
+        let index = monthsSinceAnchor / rule.lengthMonths      // >= 0
+        guard let start = calendar.date(byAdding: .month, value: index * rule.lengthMonths, to: anchor),
+              let end = calendar.date(byAdding: .month, value: rule.lengthMonths, to: start) else { return nil }
+        return SeasonSchedule(number: index + 1, startsAt: start, endsAt: end, id: rule.seasonID(number: index + 1))
+    }
+
+    /// Server parity (`private.season_tier_verdict`): nil when a `season_tier`
+    /// claim is acceptable at `now`, else the server error code
+    /// (`invalid_payload` or `implausible_result`). Accepts the current season,
+    /// or the previous season until its end + `graceHours`.
+    static func claimVerdict(seasonID: String, tier: Int, now: Date,
+                             rule: EconomyConfig.SeasonCalendarRule = EconomyConfig.current.seasonCalendar) -> String? {
+        guard let current = season(at: now, rule: rule), tier >= 1 else { return "invalid_payload" }
+        let start: Date
+        if seasonID == current.id {
+            start = current.startsAt
+        } else if let previous = season(at: current.startsAt.addingTimeInterval(-1), rule: rule),
+                  previous.id == seasonID,
+                  now < previous.endsAt.addingTimeInterval(TimeInterval(rule.graceHours) * 3_600) {
+            start = previous.startsAt
+        } else {
+            return "invalid_payload"
+        }
+        guard tier <= rule.tiers else { return "invalid_payload" }
+        let days = Int(floor(now.timeIntervalSince(start) / 86_400)) + 1
+        guard tier <= rule.maxTiersPerDay * days else { return "implausible_result" }
+        return nil
+    }
+
+    /// True while a claim naming `seasonID` can still be accepted: the current
+    /// season or the previous one inside the grace window (tier rules aside).
+    static func isClaimable(seasonID: String, now: Date,
+                            rule: EconomyConfig.SeasonCalendarRule = EconomyConfig.current.seasonCalendar) -> Bool {
+        claimVerdict(seasonID: seasonID, tier: 1, now: now, rule: rule) == nil
+    }
+
+    private static func anchorDate(_ rule: EconomyConfig.SeasonCalendarRule) -> Date? {
+        guard let ym = rule.anchorYearMonth else { return nil }
+        return utc.date(from: DateComponents(year: ym.year, month: ym.month, day: 1))
     }
 }

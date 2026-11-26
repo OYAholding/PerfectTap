@@ -499,12 +499,17 @@ final class EconomyContractPinTests: XCTestCase {
         XCTAssertEqual(values["minimum_game_coins"] as? Int, 4)
         XCTAssertEqual(values["starter_items"] as? [String], ["theme_neon", "fx_ripple", "avatar_cool"])
         XCTAssertEqual(values["gameplay_daily_cap"] as? Int, 1_500)
-        let season = values["active_season"] as? [String: Any]
-        XCTAssertEqual(season?["id"] as? String, "season_1_neon_nights")
-        XCTAssertEqual(season?["starts_at"] as? String, "2026-12-01T00:00:00Z")
-        XCTAssertEqual(season?["ends_at"] as? String, "2027-03-01T00:00:00Z")
+        XCTAssertNil(values["active_season"], "single placeholder season replaced by the calendar rule")
+        // Same JSON as season_calendar.test.sql ("season_calendar rule pinned").
+        let season = values["season_calendar"] as? [String: Any]
+        XCTAssertEqual(season?["anchor"] as? String, "2026-03-01")
+        XCTAssertEqual(season?["length_months"] as? Int, 3)
+        XCTAssertEqual(season?["id_format"] as? String, "season_<n>")
         XCTAssertEqual(season?["tiers"] as? Int, 30)
         XCTAssertEqual(season?["max_tiers_per_day"] as? Int, 15)
+        XCTAssertEqual(season?["grace_hours"] as? Int, 72)
+        XCTAssertEqual(EconomyConfig.legacy.seasonCalendar, EconomyConfig.balancedPremiumRC1.seasonCalendar,
+                       "one calendar whatever the flag")
         XCTAssertEqual(Achievement.all.count, 36)
         XCTAssertEqual(EconomyConfig.achievementRewards.count, 36)
         XCTAssertEqual(EconomyConfig.comboBonusTable.map(\.minCombo), [20, 10, 5, 0])
@@ -540,14 +545,16 @@ final class EconomyContractPinTests: XCTestCase {
         XCTAssertEqual(today.displayRange, "Sep 1 – Nov 30, 2026")
         XCTAssertTrue(today.contains(date(2026, 11, 25)))
 
-        // The server's configured season (active_season) names the cycle it covers.
+        // The calendar rule names every season the same way the server does.
         let winter = SeasonSchedule.current(now: date(2027, 1, 15))
         XCTAssertEqual(winter.number, 4)
-        XCTAssertEqual(winter.id, "season_1_neon_nights")
+        XCTAssertEqual(winter.id, "season_4")
+        XCTAssertEqual(winter.title, "Season 4")
         XCTAssertEqual(winter.displayRange, "Dec 1 – Feb 28, 2027")
-        let unconfigured = SeasonSchedule.current(now: date(2027, 1, 15), configuredSeasons: [])
-        XCTAssertEqual(unconfigured.id, "season_4")
         XCTAssertEqual(SeasonSchedule.current(now: date(2027, 3, 2)).id, "season_5")
+        // A device clock before the anchor still shows Season 1 (UI only).
+        XCTAssertEqual(SeasonSchedule.current(now: date(2025, 12, 1)).id, "season_1")
+        XCTAssertNil(SeasonSchedule.season(at: date(2025, 12, 1)), "server parity: no season before the anchor")
 
         // Rolling the cycle is a pure date computation: earned tiers stay.
         var profile = PlayerProfile()
@@ -556,5 +563,169 @@ final class EconomyContractPinTests: XCTestCase {
         _ = SeasonSchedule.current(now: date(2027, 6, 1))
         XCTAssertEqual(profile.seasonTier, 12)
         XCTAssertEqual(profile.seasonClaimedTiers, [1, 2, 3])
+    }
+}
+
+// MARK: - Season calendar shared with the server
+
+/// Mirrors supabase/tests/database/season_calendar.test.sql one-to-one: same
+/// UTC instants → same ids / boundaries / claim verdicts. Change both together.
+@MainActor
+final class SeasonCalendarAlignmentTests: XCTestCase {
+    private let rule = EconomyConfig.SeasonCalendarRule.balancedPremiumRC1
+
+    private func t(_ iso: String) -> Date {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: iso)!
+    }
+
+    private func describe(_ s: SeasonSchedule?) -> String? {
+        guard let s else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd"
+        return "\(s.id) \(f.string(from: s.startsAt)) \(f.string(from: s.endsAt))"
+    }
+
+    func testDateToSeasonTableMatchesServer() {
+        let table: [(String, String?)] = [
+            ("2026-03-01T00:00:00Z", "season_1 2026-03-01 2026-06-01"),
+            ("2026-05-31T23:59:59Z", "season_1 2026-03-01 2026-06-01"),
+            ("2026-06-01T00:00:00Z", "season_2 2026-06-01 2026-09-01"),
+            ("2026-11-26T12:00:00Z", "season_3 2026-09-01 2026-12-01"),
+            ("2026-11-30T23:59:59Z", "season_3 2026-09-01 2026-12-01"),
+            ("2026-12-01T00:00:00Z", "season_4 2026-12-01 2027-03-01"),
+            ("2027-02-28T23:59:59Z", "season_4 2026-12-01 2027-03-01"),
+            ("2027-03-01T00:00:00Z", "season_5 2027-03-01 2027-06-01"),
+            ("2028-02-29T12:00:00Z", "season_8 2027-12-01 2028-03-01"),
+            ("2026-02-28T23:59:59Z", nil),
+            ("2026-12-01T03:00:00+05:00", "season_3 2026-09-01 2026-12-01"),
+        ]
+        for (instant, expected) in table {
+            XCTAssertEqual(describe(SeasonSchedule.season(at: t(instant), rule: rule)), expected, instant)
+        }
+    }
+
+    func testClaimWindowTableMatchesServer() {
+        let table: [(String, Int, String, String?)] = [
+            ("season_3", 1, "2026-11-26T12:00:00Z", nil),
+            ("season_3", 1, "2026-12-01T00:00:00Z", nil),
+            ("season_3", 1, "2026-12-03T23:59:59Z", nil),
+            ("season_3", 1, "2026-12-04T00:00:00Z", "invalid_payload"),
+            ("season_4", 1, "2026-11-30T23:59:59Z", "invalid_payload"),
+            ("season_4", 1, "2026-12-01T00:00:00Z", nil),
+            ("season_2", 1, "2026-11-26T12:00:00Z", "invalid_payload"),
+            ("season_2", 1, "2026-09-02T00:00:00Z", nil),
+            ("season_1_neon_nights", 1, "2026-12-15T00:00:00Z", "invalid_payload"),
+            ("season_4", 15, "2026-12-01T10:00:00Z", nil),
+            ("season_4", 16, "2026-12-01T10:00:00Z", "implausible_result"),
+            ("season_4", 16, "2026-12-02T00:00:00Z", nil),
+            ("season_3", 30, "2026-12-02T00:00:00Z", nil),
+            ("season_3", 31, "2026-11-26T12:00:00Z", "invalid_payload"),
+        ]
+        for (id, tier, instant, expected) in table {
+            XCTAssertEqual(SeasonSchedule.claimVerdict(seasonID: id, tier: tier, now: t(instant), rule: rule),
+                           expected, "\(id) tier \(tier) @ \(instant)")
+        }
+        // Owner-tunable values behave like the server's.
+        let grace24 = EconomyConfig.SeasonCalendarRule(anchor: "2026-03-01", lengthMonths: 3, idFormat: "season_<n>",
+                                                      tiers: 30, maxTiersPerDay: 15, graceHours: 24)
+        XCTAssertNil(SeasonSchedule.claimVerdict(seasonID: "season_3", tier: 1, now: t("2026-12-01T23:59:59Z"),
+                                                 rule: grace24))
+        XCTAssertEqual(SeasonSchedule.claimVerdict(seasonID: "season_3", tier: 1, now: t("2026-12-02T00:00:00Z"),
+                                                   rule: grace24), "invalid_payload")
+        let monthly = EconomyConfig.SeasonCalendarRule(anchor: "2026-03-01", lengthMonths: 1, idFormat: "season_<n>",
+                                                      tiers: 30, maxTiersPerDay: 15, graceHours: 24)
+        XCTAssertEqual(describe(SeasonSchedule.season(at: t("2026-11-26T12:00:00Z"), rule: monthly)),
+                       "season_9 2026-11-01 2026-12-01")
+        let malformed = EconomyConfig.SeasonCalendarRule(anchor: "2026-03-15", lengthMonths: 1, idFormat: "season_<n>",
+                                                        tiers: 30, maxTiersPerDay: 15, graceHours: 24)
+        XCTAssertEqual(SeasonSchedule.claimVerdict(seasonID: "season_9", tier: 1, now: t("2026-11-26T12:00:00Z"),
+                                                   rule: malformed), "invalid_payload")
+    }
+
+    private func seasonEvent(_ id: String) -> EconomyEvent {
+        EconomyEvent(eventKey: UUID(), source: .seasonTier,
+                     payload: ["season_id": .string(id), "tier": .int(3)], createdAt: t("2026-11-30T20:00:00Z"))
+    }
+
+    func testRejectedSeasonClaimIsDroppedOnlyOutsideTheGraceWindow() {
+        let refused = EconomyRemoteFailure.server("invalid_payload")
+        // Previous season inside the grace window, or a season the server has
+        // not opened yet (client clock ahead): kept, never blocks the outbox.
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: refused, event: seasonEvent("season_3"),
+                                                      now: t("2026-12-02T00:00:00Z"), rule: rule), .retryNonBlocking)
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: refused, event: seasonEvent("season_4"),
+                                                      now: t("2026-12-01T00:00:05Z"), rule: rule), .retryNonBlocking)
+        // Outside the window: terminal, dropped like before.
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: refused, event: seasonEvent("season_3"),
+                                                      now: t("2026-12-04T00:00:00Z"), rule: rule), .drop)
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: refused, event: seasonEvent("season_1_neon_nights"),
+                                                      now: t("2026-12-02T00:00:00Z"), rule: rule), .drop)
+        // Other codes and other sources are unchanged.
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("implausible_result"), event: seasonEvent("season_3"),
+                                                      now: t("2026-11-30T21:00:00Z"), rule: rule), .drop)
+        let achievement = EconomyEvent(eventKey: UUID(), source: .achievement,
+                                       payload: ["achievement_id": .string("games_1"), "season_id": .string("season_3")],
+                                       createdAt: t("2026-11-30T20:00:00Z"))
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: refused, event: achievement,
+                                                      now: t("2026-11-30T21:00:00Z"), rule: rule), .drop)
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("already_claimed"), event: seasonEvent("season_3"),
+                                                      now: t("2026-12-10T00:00:00Z"), rule: rule), .success)
+    }
+
+    func testFlagOnFlushKeepsInGraceSeasonClaimAndDropsExpiredOne() async {
+        let h = EconomyHarness(authoritative: true)
+        defer { h.cleanUp() }
+        var profile = PlayerProfile()
+        h.clock = t("2026-11-30T23:00:00Z")
+        let season = SeasonSchedule.current(now: h.clock, rule: rule)
+        XCTAssertEqual(season.id, "season_3")
+        let key = h.service.recordGrant(.seasonTier(seasonID: season.id, tier: 3), legacyCoins: 75,
+                                        countsTowardTotalEarned: true, profile: &profile)!
+        h.service.recordGrant(.achievement(id: "games_1"), legacyCoins: 25,
+                              countsTowardTotalEarned: false, profile: &profile)
+        XCTAssertEqual(EconomyOutbox(userID: userA, directory: h.directory).events.first?.payload["season_id"],
+                       .string("season_3"))
+
+        // Delivered after the boundary but inside the grace window: a refusal
+        // keeps the tier and does not hold up the achievement behind it.
+        h.clock = t("2026-12-01T00:00:10Z")
+        h.remote.submitResponses = [.failure(.server("invalid_payload")),
+                                    .success(.init(status: "applied", granted: 25, balance: 25))]
+        await h.service.flush(reason: .manual)
+        var left = EconomyOutbox(userID: userA, directory: h.directory).events
+        XCTAssertEqual(left.map(\.eventKey), [key], "season claim kept, achievement delivered")
+        XCTAssertEqual(h.remote.submitted.count, 2)
+
+        // Retry after the grace window: the same refusal is terminal.
+        h.clock = t("2026-12-04T00:00:00Z")
+        h.remote.submitResponses = [.failure(.server("invalid_payload"))]
+        await h.service.flush(reason: .manual)
+        left = EconomyOutbox(userID: userA, directory: h.directory).events
+        XCTAssertTrue(left.isEmpty, "outside the grace window the claim is dropped")
+        XCTAssertEqual(h.remote.submitted.last?.eventKey, key, "same event key on retry")
+    }
+
+    func testFlagOffSeasonClaimIsLocalAndUnchanged() {
+        let h = EconomyHarness(authoritative: false)
+        defer { h.cleanUp() }
+        var profile = PlayerProfile()
+        profile.coins = 100
+        profile.seasonTier = 12
+        profile.seasonClaimedTiers = [1, 2]
+        let season = SeasonSchedule.current(now: t("2026-11-26T12:00:00Z"))
+        XCTAssertEqual(season.id, "season_3")
+        let key = h.service.recordGrant(.seasonTier(seasonID: season.id, tier: 3), legacyCoins: 75,
+                                        countsTowardTotalEarned: true, profile: &profile)
+        XCTAssertNil(key)
+        XCTAssertEqual(profile.coins, 175, "flag OFF credits the tier locally exactly as before")
+        XCTAssertEqual(profile.stats.totalCoinsEarned, 75)
+        XCTAssertEqual(profile.seasonTier, 12, "earned tiers are never reset")
+        XCTAssertEqual(profile.seasonClaimedTiers, [1, 2])
+        XCTAssertEqual(h.remote.totalCalls, 0, "no network with flag OFF")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: h.directory.path), "no outbox with flag OFF")
     }
 }

@@ -7,7 +7,7 @@ begin
   select n.nspname into s from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pgtap';
   perform set_config('search_path', 'public, ' || quote_ident(coalesce(s, 'extensions')), false);
 end $$;
-select plan(120);
+select plan(121);
 
 insert into auth.users (id, email, aud, role) values
   ('cccccccc-0000-0000-0000-000000000001', 'src1@test.local', 'authenticated', 'authenticated'),
@@ -47,6 +47,11 @@ $$;
 create function pg_temp.today() returns text language sql as $$
   select to_char((now() at time zone 'utc')::date, 'YYYY-MM-DD')
 $$;
+-- season_tier payload for the season the calendar rule says is current now.
+create function pg_temp.season_claim(tier int) returns jsonb language sql security definer as $f$
+  select jsonb_build_object('season_id', s.season_id, 'tier', tier)
+  from private.economy_configs c, private.season_at(c.config, now()) s where c.version = 'balanced-premium-rc1'
+$f$;
 create function pg_temp.set_cfg(path text[], val jsonb) returns void language sql as $$
   update private.economy_configs set config = jsonb_set(config, path, val) where version = 'balanced-premium-rc1';
 $$;
@@ -56,7 +61,7 @@ select pg_temp.as_admin();
 select ok(not (select active from private.economy_configs where version = 'balanced-premium-rc1'),
   'rc1 config stays inactive after the sources migration');
 select ok((select config ?& array['achievement_rewards','challenge_rewards','starter_items','score_coin_divisor',
-  'minimum_game_coins','combo_bonus','mode_bonus','gameplay_daily_cap','active_season','season_coin_cycle',
+  'minimum_game_coins','combo_bonus','mode_bonus','gameplay_daily_cap','season_calendar','season_coin_cycle',
   'wheel_rewards','daily_rewards','quest_rewards','home_rewarded_coins','season_ads_required']
   from private.economy_configs where version = 'balanced-premium-rc1'), 'config carries every contract key');
 select is((select (config->'achievement_rewards'->>'games_1')::int + (config->>'score_coin_divisor')::int
@@ -126,8 +131,6 @@ select pg_temp.as_admin();
 update private.economy_configs set active = true, approved_by = 'pgtap', approved_at = now()
 where version = 'balanced-premium-rc1';
 update private.economy_shop_items set enabled = true;
-select pg_temp.set_cfg('{active_season}', jsonb_build_object('id', 'season_test', 'starts_at', now() - interval '1 hour',
-  'ends_at', now() + interval '30 days', 'tiers', 30, 'max_tiers_per_day', 15));
 
 select pg_temp.as_user('cccccccc-0000-0000-0000-000000000001');
 select save_profile('{"username":"src_one","coins":99999}'::jsonb);
@@ -236,22 +239,24 @@ select throws_ok($$ select pg_temp.ev('challenge', '{"challenge_id":"c1"}') $$, 
   'a challenge pays once forever');
 
 -- =========================== SEASON ===========================
-select is(pg_temp.ev('season_tier', '{"season_id":"season_test","tier":1}')->>'granted', '25', 'tier 1 pays cycle[0]');
-select throws_ok($$ select pg_temp.ev('season_tier', '{"season_id":"season_test","tier":1}') $$, 'P0001', 'already_claimed',
+select is(pg_temp.ev('season_tier', pg_temp.season_claim(1))->>'granted', '25', 'tier 1 of the calendar season pays cycle[0]');
+select throws_ok($$ select pg_temp.ev('season_tier', pg_temp.season_claim(1)) $$, 'P0001', 'already_claimed',
   'a tier pays once per season');
-select throws_ok($$ select pg_temp.ev('season_tier', '{"season_id":"season_test","tier":16}') $$, 'P0001', 'implausible_result',
-  'tier beyond the daily pace is rejected');
+select throws_ok($$ select pg_temp.ev('season_tier', pg_temp.season_claim(31)) $$, 'P0001', 'invalid_payload',
+  'tier above the calendar tier count is rejected (pace: season_calendar.test.sql)');
 select throws_ok($$ select pg_temp.ev('season_tier', '{"season_id":"season_old","tier":2}') $$, 'P0001', 'invalid_payload',
   'another season is refused');
+select throws_ok($$ select pg_temp.ev('season_tier', '{"season_id":"season_1_neon_nights","tier":2}') $$, 'P0001', 'invalid_payload',
+  'the old placeholder season id is refused');
 select pg_temp.as_admin();
 update private.profile_data set data = data || '{"season_premium": true}'::jsonb
 where id = 'cccccccc-0000-0000-0000-000000000001';
 select pg_temp.as_user('cccccccc-0000-0000-0000-000000000001');
-select is(pg_temp.ev('season_tier', '{"season_id":"season_test","tier":1}') - 'balance' - 'coinDebt',
+select is(pg_temp.ev('season_tier', pg_temp.season_claim(1)) - 'balance' - 'coinDebt',
   '{"status":"applied","granted":0,"itemID":"avatar_cool"}'::jsonb, 'premium unlocked later: tier pays its premium item');
-select throws_ok($$ select pg_temp.ev('season_tier', '{"season_id":"season_test","tier":1}') $$, 'P0001', 'already_claimed',
+select throws_ok($$ select pg_temp.ev('season_tier', pg_temp.season_claim(1)) $$, 'P0001', 'already_claimed',
   'premium item pays once');
-select is(pg_temp.ev('season_tier', '{"season_id":"season_test","tier":3}') - 'balance' - 'coinDebt',
+select is(pg_temp.ev('season_tier', pg_temp.season_claim(3)) - 'balance' - 'coinDebt',
   '{"status":"applied","granted":75,"itemID":"theme_neon"}'::jsonb, 'premium player gets coins + item together');
 
 -- =========================== WHEEL ===========================
