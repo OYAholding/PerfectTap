@@ -3,7 +3,7 @@
 #
 #   ./scripts/deploy-supabase.sh            # dry run: verifies target, prints plan
 #   ./scripts/deploy-supabase.sh --apply              # DB + existing auth functions
-#   ./scripts/deploy-supabase.sh --apply-purchases    # Apple secrets + purchase functions
+#   ./scripts/deploy-supabase.sh --apply-purchases    # Apple secrets + purchase + rewarded-ad SSV functions
 # Target ref: $PERFECTTAP_REF or supabase/.perfecttap-ref (set by use-supabase-project.sh).
 #
 # Guards (scripts/lib/perfecttap-target.sh): OYA Games org, EU region,
@@ -55,8 +55,10 @@ if [[ "${1:-}" == "--apply-purchases" ]]; then
     APPLE_ROOT_CAS_B64="$APPLE_ROOT_CAS_B64" \
     APPLE_APP_APPLE_ID="$APPLE_APP_APPLE_ID" \
     APPLE_ENABLED_ENVIRONMENTS="Production,Sandbox"
-  supabase functions deploy verify-purchase app-store-notifications --project-ref "$PERFECTTAP_REF"
-  echo "Purchase backend deployed with both Apple environments. Catalog rows remain disabled until explicitly enabled in SQL."
+  # admob-ssv (verify_jwt=false: Google calls it) only records rewards while an
+  # approved economy config is active; until then every callback fails closed.
+  supabase functions deploy verify-purchase app-store-notifications admob-ssv --project-ref "$PERFECTTAP_REF"
+  echo "Purchase + SSV backend deployed with both Apple environments. Catalog rows and sales switches remain disabled until explicitly enabled in SQL."
   exit 0
 fi
 

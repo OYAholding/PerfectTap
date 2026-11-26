@@ -3,7 +3,7 @@ import XCTest
 /// Guideline 5.1.2(i): the ATT prompt must appear before any tracking, and the app must
 /// keep working whatever the user answers. Runs the real system prompt (Springboard).
 /// Real ads stay off (`-PTUITestNoAds`); `-PTUITestConsentFlow` enables the consent flow.
-/// Uses the Debug backend like ModeRuntimeQATests (one anonymous test player).
+/// Uses the offline backend: nothing is written to the production Supabase project.
 final class TrackingConsentUITests: XCTestCase {
 
     private let app = XCUIApplication()
@@ -12,7 +12,7 @@ final class TrackingConsentUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app.resetAuthorizationStatus(for: .userTracking)
-        app.launchArguments += ["-PTUITestNoAds", "-PTUITestConsentFlow"]
+        app.launchArguments += ["-PTUITestNoAds", "-PTUITestConsentFlow", "-PTUITestOfflineBackend"]
     }
 
     func test_deny_tracking_gameplay_still_available() {

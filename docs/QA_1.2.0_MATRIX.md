@@ -22,7 +22,7 @@ A row is PASSED only if it was actually executed in this pass. Earlier results f
 | Performance (simulator, idle host) | **PASSED ×2** | `docs/perf/qa-1.2.0-e424776-iphone16pro-run{1,2}.json`; round end → Game Over avg 39 / 35 ms (baseline 55.5), 0 frames ≥250 ms. The earlier 229 ms was host load |
 | ASC reconciler (Ruby) | **PASSED 7/7** | dry-run only |
 | Apple Sandbox / device / TestFlight / Ask to Buy / refunds on device | **BLOCKED** | 0/9 ASC products, owner gates G4–G10 |
-| ATT/UMP consent UI tests | **NOT RUN** | they write to production Supabase |
+| ATT/UMP consent UI tests | **PASSED 3/3** | now on the offline backend (no production writes) |
 | iPad, audio interruptions, AirPods | **NOT RUN / BLOCKED** | device-only |
 
 
