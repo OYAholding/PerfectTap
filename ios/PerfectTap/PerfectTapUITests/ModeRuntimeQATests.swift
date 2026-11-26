@@ -211,16 +211,30 @@ final class ModeRuntimeQATests: XCTestCase {
             let continueButton = app.buttons["WATCH OPTIONAL AD TO CONTINUE"]
             if continueButton.waitForExistence(timeout: 3) {
                 continueButton.tap()
-                if !app.buttons["TAP!"].waitForExistence(timeout: 6),
-                   app.staticTexts["CONTINUE?"].exists, app.buttons["Give Up"].exists {
-                    app.buttons["Give Up"].tap()
+                // `TAP!` stays in the hierarchy behind the modal, so it cannot
+                // signal a revive. Wait for the modal to either close (revived)
+                // or report why no ad ran, then give up if it is still open.
+                let closed = NSPredicate(format: "exists == false")
+                let modalClosed = expectation(for: closed, evaluatedWith: app.staticTexts["CONTINUE?"])
+                _ = XCTWaiter.wait(for: [modalClosed], timeout: 6)
+                if app.staticTexts["CONTINUE?"].exists {
+                    rushDeclinedRevive = true
+                    let giveUp = app.buttons["Give Up"]
+                    let enabled = NSPredicate(format: "isEnabled == true")
+                    _ = XCTWaiter.wait(for: [expectation(for: enabled, evaluatedWith: giveUp)], timeout: 6)
+                    giveUp.tap()
                 }
             } else {
                 failures.append("rush_revive_continue_button_missing")
-                if app.buttons["Give Up"].exists { app.buttons["Give Up"].tap() }
+                if app.buttons["Give Up"].exists {
+                    rushDeclinedRevive = true
+                    app.buttons["Give Up"].tap()
+                }
             }
 
-            if let before = timerBefore, let after = currentTimerSeconds(), after > before + 2 {
+            // The no-time-bonus policy can only be observed after a real revive.
+            if !rushDeclinedRevive, let before = timerBefore, let after = currentTimerSeconds(),
+               after > before + 2 {
                 failures.append("rush_revive_time_bonus_detected_unexpected")
             }
         } else {
@@ -231,10 +245,15 @@ final class ModeRuntimeQATests: XCTestCase {
             failures.append("rush_did_not_end")
             return
         }
-        if !app.staticTexts["TIME'S UP!"].exists {
+        // Declining the revive ends the round on lives, not on the timer, so the
+        // timed title is only expected when the round actually ran out of time.
+        if !rushDeclinedRevive, !app.staticTexts["TIME'S UP!"].exists {
             failures.append("rush_game_over_title_mismatch")
         }
     }
+
+    /// Set when the Rush check had to decline the revive (UI tests run without ads).
+    private var rushDeclinedRevive = false
 
     private func verifyLifeModesRevivePolicy(modeName: String, failures: inout [String]) {
         var sawRevive = false
@@ -353,15 +372,11 @@ final class ModeRuntimeQATests: XCTestCase {
     }
 
     private func currentTimerSeconds() -> Int? {
-        let labels = app.staticTexts.allElementsBoundByIndex.map(\.label)
-        for label in labels {
-            guard label.hasSuffix("s") else { continue }
-            let digits = label.dropLast()
-            if let value = Int(digits) {
-                return value
-            }
-        }
-        return nil
+        // One query instead of indexing every StaticText: the screen can change
+        // (e.g. round end → Game Over) between counting and reading by index.
+        let timer = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+s$")).firstMatch
+        guard timer.exists else { return nil }
+        return Int(timer.label.dropLast())
     }
 
     private func emitResult(mode: String, pass: Bool, notes: [String]) {
