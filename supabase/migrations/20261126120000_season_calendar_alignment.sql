@@ -18,9 +18,11 @@
 --            (Sep 1 – Nov 30), 2026-12-01 → season_4 (Dec 1 – Feb 28).
 --
 -- `season_tier` accepts the current season, or the previous season while
--- now < previous end + grace_hours (offline claims across a boundary). Tier
--- bound and per-day pace (max_tiers_per_day × days since that season began)
--- are kept. No grant, balance, item or ledger row is touched; the config
+-- now < previous end + grace_hours (offline claims across a boundary). The
+-- absolute tier must be ≤ tiers. Pacing is a per-season claim rate: the
+-- season_tier claims already made for THIS season id + 1 must be
+-- ≤ (whole days since that season began + 1) × max_tiers_per_day, so tiers
+-- carried over from an earlier season (tier 26 on day 1) are accepted. No grant, balance, item or ledger row is touched; the config
 -- update only applies to the inactive row. anchor / length_months /
 -- grace_hours are owner-tunable values still pending approval.
 -- ============================================================================
@@ -80,8 +82,11 @@ revoke all on function private.season_at(jsonb, timestamptz) from public, anon, 
 
 -- Validates a season_tier claim at p_now. Returns null when it is acceptable,
 -- else the error code to raise: `invalid_payload` (unknown / closed / future
--- season, tier above `tiers`) or `implausible_result` (tier beyond the pace).
-create or replace function private.season_tier_verdict(c jsonb, p_season_id text, p_tier bigint, p_now timestamptz)
+-- season, tier above `tiers`) or `implausible_result` (claim rate above the
+-- pace). p_claimed = season_tier claims this player already holds for
+-- p_season_id (other tiers; grant keys `season:<id>:<tier>`).
+create or replace function private.season_tier_verdict(c jsonb, p_season_id text, p_tier bigint,
+                                                       p_claimed bigint, p_now timestamptz)
 returns text
 language plpgsql stable set search_path = '' as $$
 declare
@@ -92,7 +97,9 @@ declare
   v_days bigint;
 begin
   select * into cur from private.season_at(c, p_now);
-  if not found or p_season_id is null or p_tier is null or p_tier < 1 then return 'invalid_payload'; end if;
+  if not found or p_season_id is null or p_tier is null or p_tier < 1 or p_claimed is null or p_claimed < 0 then
+    return 'invalid_payload';
+  end if;
   if p_season_id = cur.season_id then
     v_start := cur.starts_at;
   else
@@ -105,14 +112,14 @@ begin
     end if;
   end if;
   if p_tier > coalesce((cal->>'tiers')::bigint, 30) then return 'invalid_payload'; end if;
-  -- Plausibility: tiers unlocked so far cannot exceed the season's daily pace.
+  -- Pace: claims for this season (incl. this one) ≤ (days since start + 1) × max_tiers_per_day.
   v_days := floor(extract(epoch from p_now - v_start) / 86400)::bigint + 1;
-  if p_tier > coalesce((cal->>'max_tiers_per_day')::bigint, 15) * v_days then
+  if p_claimed + 1 > coalesce((cal->>'max_tiers_per_day')::bigint, 15) * v_days then
     return 'implausible_result';
   end if;
   return null;
 end $$;
-revoke all on function private.season_tier_verdict(jsonb, text, bigint, timestamptz) from public, anon, authenticated;
+revoke all on function private.season_tier_verdict(jsonb, text, bigint, bigint, timestamptz) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- submit_economy_event_for: body of 20261125200000 with only the season_tier
@@ -265,8 +272,14 @@ begin
     v_id := private.payload_text(p, 'season_id', '^[A-Za-z0-9_.-]{1,64}$');
     v_tier := private.payload_int(p, 'tier', 1, 1000);
     -- Season calendar rule (current season, or the previous one inside the
-    -- grace window) + tier bound + per-day pace. Same rule as iOS SeasonCalendar.
-    v_verdict := private.season_tier_verdict(c, v_id, v_tier, now());
+    -- grace window) + tier bound + per-season claim rate. Same rule as iOS
+    -- SeasonSchedule.claimVerdict. Claims of other tiers of this season count
+    -- (a premium-only replay of an already paid tier does not count twice).
+    select count(*) into v_count from private.economy_grants
+    where user_id = p_user and source = 'season_tier'
+      and left(grant_key, char_length('season:' || v_id || ':')) = 'season:' || v_id || ':'
+      and grant_key <> 'season:' || v_id || ':' || v_tier::text;
+    v_verdict := private.season_tier_verdict(c, v_id, v_tier, v_count, now());
     if v_verdict is not null then perform private.fail(v_verdict); end if;
     coins := (c->'season_coin_cycle'->>(((v_tier - 1) % greatest(1, jsonb_array_length(c->'season_coin_cycle')))::int))::bigint;
     v_key := 'season:' || v_id || ':' || v_tier::text;

@@ -7,7 +7,7 @@ begin
   select n.nspname into s from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pgtap';
   perform set_config('search_path', 'public, ' || quote_ident(coalesce(s, 'extensions')), false);
 end $$;
-select plan(121);
+select plan(122);
 
 insert into auth.users (id, email, aud, role) values
   ('cccccccc-0000-0000-0000-000000000001', 'src1@test.local', 'authenticated', 'authenticated'),
@@ -243,11 +243,13 @@ select is(pg_temp.ev('season_tier', pg_temp.season_claim(1))->>'granted', '25', 
 select throws_ok($$ select pg_temp.ev('season_tier', pg_temp.season_claim(1)) $$, 'P0001', 'already_claimed',
   'a tier pays once per season');
 select throws_ok($$ select pg_temp.ev('season_tier', pg_temp.season_claim(31)) $$, 'P0001', 'invalid_payload',
-  'tier above the calendar tier count is rejected (pace: season_calendar.test.sql)');
+  'tier above the calendar tier count is rejected (rate: season_calendar.test.sql)');
 select throws_ok($$ select pg_temp.ev('season_tier', '{"season_id":"season_old","tier":2}') $$, 'P0001', 'invalid_payload',
   'another season is refused');
 select throws_ok($$ select pg_temp.ev('season_tier', '{"season_id":"season_1_neon_nights","tier":2}') $$, 'P0001', 'invalid_payload',
   'the old placeholder season id is refused');
+select is(pg_temp.ev('season_tier', pg_temp.season_claim(26))->>'granted', '25',
+  'carried-over high tier is paced by claim count, not tier index (tier 26 pays cycle[0])');
 select pg_temp.as_admin();
 update private.profile_data set data = data || '{"season_premium": true}'::jsonb
 where id = 'cccccccc-0000-0000-0000-000000000001';

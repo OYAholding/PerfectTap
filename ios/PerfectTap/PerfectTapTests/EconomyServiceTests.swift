@@ -619,15 +619,26 @@ final class SeasonCalendarAlignmentTests: XCTestCase {
             ("season_2", 1, "2026-11-26T12:00:00Z", "invalid_payload"),
             ("season_2", 1, "2026-09-02T00:00:00Z", nil),
             ("season_1_neon_nights", 1, "2026-12-15T00:00:00Z", "invalid_payload"),
-            ("season_4", 15, "2026-12-01T10:00:00Z", nil),
-            ("season_4", 16, "2026-12-01T10:00:00Z", "implausible_result"),
-            ("season_4", 16, "2026-12-02T00:00:00Z", nil),
-            ("season_3", 30, "2026-12-02T00:00:00Z", nil),
-            ("season_3", 31, "2026-11-26T12:00:00Z", "invalid_payload"),
         ]
         for (id, tier, instant, expected) in table {
             XCTAssertEqual(SeasonSchedule.claimVerdict(seasonID: id, tier: tier, now: t(instant), rule: rule),
                            expected, "\(id) tier \(tier) @ \(instant)")
+        }
+        // Tier bound + per-season claim rate: (claims already made for this
+        // season id) + 1 ≤ (days since that season began + 1) × maxTiersPerDay.
+        let rate: [(String, Int, String, Int, String?)] = [
+            ("season_4", 26, "2026-12-01T00:00:00Z", 0, nil),   // carried over: tier 25 → 26 on Dec 1
+            ("season_4", 30, "2026-12-01T10:00:00Z", 14, nil),
+            ("season_4", 16, "2026-12-01T10:00:00Z", 15, "implausible_result"),
+            ("season_4", 16, "2026-12-02T00:00:00Z", 15, nil),
+            ("season_4", 5, "2026-12-02T00:00:00Z", 30, "implausible_result"),
+            ("season_3", 30, "2026-12-02T00:00:00Z", 29, nil),
+            ("season_3", 31, "2026-11-26T12:00:00Z", 0, "invalid_payload"),
+        ]
+        for (id, tier, instant, claimed, expected) in rate {
+            XCTAssertEqual(SeasonSchedule.claimVerdict(seasonID: id, tier: tier, claimedThisSeason: claimed,
+                                                       now: t(instant), rule: rule),
+                           expected, "\(id) tier \(tier) claimed \(claimed) @ \(instant)")
         }
         // Owner-tunable values behave like the server's.
         let grace24 = EconomyConfig.SeasonCalendarRule(anchor: "2026-03-01", lengthMonths: 3, idFormat: "season_<n>",

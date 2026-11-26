@@ -117,10 +117,16 @@ struct SeasonSchedule: Equatable {
     /// Server parity (`private.season_tier_verdict`): nil when a `season_tier`
     /// claim is acceptable at `now`, else the server error code
     /// (`invalid_payload` or `implausible_result`). Accepts the current season,
-    /// or the previous season until its end + `graceHours`.
-    static func claimVerdict(seasonID: String, tier: Int, now: Date,
+    /// or the previous season until its end + `graceHours`; the absolute tier
+    /// must be ≤ `tiers`. Pacing is a per-season claim rate:
+    /// `claimedThisSeason` (claims of other tiers already made for this season
+    /// id) + 1 ≤ (whole days since that season began + 1) × `maxTiersPerDay`,
+    /// so tiers carried over from an earlier season are accepted.
+    static func claimVerdict(seasonID: String, tier: Int, claimedThisSeason: Int = 0, now: Date,
                              rule: EconomyConfig.SeasonCalendarRule = EconomyConfig.current.seasonCalendar) -> String? {
-        guard let current = season(at: now, rule: rule), tier >= 1 else { return "invalid_payload" }
+        guard let current = season(at: now, rule: rule), tier >= 1, claimedThisSeason >= 0 else {
+            return "invalid_payload"
+        }
         let start: Date
         if seasonID == current.id {
             start = current.startsAt
@@ -133,7 +139,7 @@ struct SeasonSchedule: Equatable {
         }
         guard tier <= rule.tiers else { return "invalid_payload" }
         let days = Int(floor(now.timeIntervalSince(start) / 86_400)) + 1
-        guard tier <= rule.maxTiersPerDay * days else { return "implausible_result" }
+        guard claimedThisSeason + 1 <= rule.maxTiersPerDay * days else { return "implausible_result" }
         return nil
     }
 

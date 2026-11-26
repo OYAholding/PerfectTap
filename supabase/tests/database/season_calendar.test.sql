@@ -12,7 +12,7 @@ begin
   select n.nspname into s from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pgtap';
   perform set_config('search_path', 'public, ' || quote_ident(coalesce(s, 'extensions')), false);
 end $$;
-select plan(33);
+select plan(35);
 
 create function pg_temp.cfg() returns jsonb language sql as $$
   select config from private.economy_configs where version = 'balanced-premium-rc1'
@@ -22,8 +22,8 @@ create function pg_temp.season(t timestamptz) returns text language sql as $$
          || to_char(ends_at at time zone 'utc', 'YYYY-MM-DD')
   from private.season_at(pg_temp.cfg(), t)
 $$;
-create function pg_temp.verdict(season_id text, tier int, t timestamptz) returns text language sql as $$
-  select coalesce(private.season_tier_verdict(pg_temp.cfg(), season_id, tier, t), 'ok')
+create function pg_temp.verdict(season_id text, tier int, t timestamptz, claimed int default 0) returns text language sql as $$
+  select coalesce(private.season_tier_verdict(pg_temp.cfg(), season_id, tier, claimed, t), 'ok')
 $$;
 
 -- Config shape (inactive, rule instead of a single placeholder season).
@@ -33,7 +33,7 @@ select ok(not pg_temp.cfg() ? 'active_season', 'placeholder active_season remove
 select is(pg_temp.cfg()->'season_calendar',
   '{"anchor":"2026-03-01","length_months":3,"id_format":"season_<n>","tiers":30,"max_tiers_per_day":15,"grace_hours":72}'::jsonb,
   'season_calendar rule pinned (mirrors EconomyConfig.SeasonCalendarRule.balancedPremiumRC1)');
-select ok(not has_function_privilege('authenticated', 'private.season_tier_verdict(jsonb,text,bigint,timestamptz)', 'EXECUTE')
+select ok(not has_function_privilege('authenticated', 'private.season_tier_verdict(jsonb,text,bigint,bigint,timestamptz)', 'EXECUTE')
   and not has_function_privilege('anon', 'private.season_at(jsonb,timestamptz)', 'EXECUTE'),
   'calendar helpers are internal');
 
@@ -63,12 +63,17 @@ select is(pg_temp.verdict('season_2', 1, '2026-09-02T00:00:00Z'), 'ok', 'season_
 select is(pg_temp.verdict('season_1_neon_nights', 1, '2026-12-15T00:00:00Z'), 'invalid_payload',
   'old placeholder id refused');
 
--- Tier bound and per-day pace (max_tiers_per_day × days since that season began).
-select is(pg_temp.verdict('season_4', 15, '2026-12-01T10:00:00Z'), 'ok', 'pace: 15 tiers on day 1');
-select is(pg_temp.verdict('season_4', 16, '2026-12-01T10:00:00Z'), 'implausible_result', 'pace: 16 tiers on day 1 refused');
-select is(pg_temp.verdict('season_4', 16, '2026-12-02T00:00:00Z'), 'ok', 'pace: 16 tiers on day 2');
-select is(pg_temp.verdict('season_3', 30, '2026-12-02T00:00:00Z'), 'ok', 'grace claim paced from the previous season start');
-select is(pg_temp.verdict('season_3', 31, '2026-11-26T12:00:00Z'), 'invalid_payload', 'tier above tiers refused');
+-- Tier bound and per-season claim rate: (claims already made for this season
+-- id) + 1 ≤ (days since that season began + 1) × max_tiers_per_day.
+-- Columns: season_id, tier, instant, claims already made → verdict.
+select is(pg_temp.verdict('season_4', 26, '2026-12-01T00:00:00Z', 0), 'ok',
+  'carried over: a tier-25 player reaching tier 26 on Dec 1 is accepted for season_4');
+select is(pg_temp.verdict('season_4', 30, '2026-12-01T10:00:00Z', 14), 'ok', 'rate: 15th claim on day 1');
+select is(pg_temp.verdict('season_4', 16, '2026-12-01T10:00:00Z', 15), 'implausible_result', 'rate: 16th claim on day 1 refused');
+select is(pg_temp.verdict('season_4', 16, '2026-12-02T00:00:00Z', 15), 'ok', 'rate: 16th claim on day 2');
+select is(pg_temp.verdict('season_4', 5, '2026-12-02T00:00:00Z', 30), 'implausible_result', 'rate: 31st claim on day 2 refused');
+select is(pg_temp.verdict('season_3', 30, '2026-12-02T00:00:00Z', 29), 'ok', 'grace claim paced from the previous season start');
+select is(pg_temp.verdict('season_3', 31, '2026-11-26T12:00:00Z', 0), 'invalid_payload', 'tier above tiers refused');
 
 -- Owner-tunable: grace_hours and the calendar itself are config values.
 update private.economy_configs set config = jsonb_set(config, '{season_calendar,grace_hours}', '24')

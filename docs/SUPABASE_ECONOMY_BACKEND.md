@@ -7,7 +7,7 @@ here is deployed, and `balanced-premium-rc1` stays `active = false`.
 |---|---|
 | Migration (additive) | `supabase/migrations/20261125200000_authoritative_economy_sources.sql` |
 | Season calendar (additive) | `supabase/migrations/20261126120000_season_calendar_alignment.sql` |
-| pgTAP | `supabase/tests/database/economy_sources.test.sql` (121 assertions), `season_calendar.test.sql` (33) |
+| pgTAP | `supabase/tests/database/economy_sources.test.sql` (122 assertions), `season_calendar.test.sql` (35) |
 | AdMob SSV Edge Function | `supabase/functions/admob-ssv/index.ts`, logic in `_shared/admob.ts`, tests in `_shared/admob.test.ts` |
 
 ## Behaviour while no config is active (production today)
@@ -38,7 +38,7 @@ profile → **duplicate event_key** (answers `duplicate` with the original
 | quest | `quest_id, difficulty, server_day` | `server_day` must be today or yesterday (UTC). `difficulty` must match `quest_difficulties[quest_id]`. Pays `quest_rewards[difficulty]`, once per (day, quest), with at most `quest_daily_limit` (3) quests per day. |
 | achievement | `achievement_id` | Pays `achievement_rewards[id]`, once ever. |
 | challenge | `challenge_id` | Pays `challenge_rewards[id].coins` plus the optional `.item`, once ever. |
-| season_tier | `season_id, tier` | `season_id` must be the current season of the `season_calendar` rule (see "Season calendar"), or the previous season until its end + `grace_hours`, and `tier` ≤ `tiers`. Tiers claimed so far cannot exceed `max_tiers_per_day` × days since that season started. Coins come from `season_coin_cycle[(tier-1) % len]`, once per tier. If the stored profile has `season_premium = true`, `season_premium_items[tier]` is granted too. A player who unlocks premium later sends the same tier again, and that call pays the item only. |
+| season_tier | `season_id, tier` | `season_id` must be the current season of the `season_calendar` rule (see "Season calendar"), or the previous season until its end + `grace_hours`, and `tier` ≤ `tiers`. Pacing is a per-season claim rate: the player's `season_tier` claims already made for that season id (grant keys `season:<id>:*`, other tiers) + 1 must be ≤ (whole days since that season started + 1) × `max_tiers_per_day`. A tier carried over from an earlier season (tier 26 on day 1) is accepted. Coins come from `season_coin_cycle[(tier-1) % len]`, once per tier. If the stored profile has `season_premium = true`, `season_premium_items[tier]` is granted too. A player who unlocks premium later sends the same tier again, and that call pays the item only. |
 | wheel | `{}` (ignored) | Once per UTC day. The server picks `floor(random()*8)` and pays `wheel_rewards[segment]`. The response carries `segmentIndex`. |
 | starter_item | `item_id` | The item must be in `starter_items`. One pick per player, and it adds the item to `owned_items`. If the player already owns that item, the response is `already_owned` and the pick stays unused. A 1.1 starter grant (`grant_starter_v1` marker plus a starter item) counts as the pick and returns `already_claimed`. |
 
@@ -202,6 +202,6 @@ pgTAP).
 - **Achievement and challenge conditions are client-reported.** Each pays once ever, with fixed amounts (27,450 coins in total for achievements). A cheater could claim all of them at once.
 - **Gameplay is plausibility-checked, not proven.** A modified client can send plausible runs up to `gameplay_daily_cap`.
 - **AdMob `user_id` is set by the client SDK.** A modified client could direct its own ad rewards to another uid. This needs real ad views, stays within daily limits, and gives the attacker nothing.
-- **The season pace check is time-based.** The server has no season XP of its own.
+- **The season pace check is a claim rate.** It limits claims per season id per day (`max_tiers_per_day`), not the tier index. The server has no season XP of its own, so a modified client can claim any tier ≤ `tiers` within that rate.
 - **`legacy_economy_reviews` support tooling** (manual accept, adjust, goodwill) is not built yet. Rejected and review accounts stay frozen until it exists.
 - **Concurrency is enforced by a row lock plus unique indexes.** pgTAP runs in one session, so it asserts the indexes rather than racing two connections.
