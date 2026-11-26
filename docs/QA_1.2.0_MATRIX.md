@@ -8,6 +8,24 @@
 **Status legend:** PASSED / FAILED / BLOCKED (cannot run yet: missing prerequisite, stated in the row) / NOT RUN (could run, was not run in this pass).
 A row is PASSED only if it was actually executed in this pass. Earlier results from other documents are quoted as "prior", never as PASSED.
 
+## Re-run 2026-11-26 — integrated `release/1.2.0` @ `e424776` (supersedes rows below)
+
+| Area | Result | Evidence |
+|---|---|---|
+| iOS unit (`PerfectTapTests`) | **PASSED 128/128** | iPhone 16 Pro sim; CI `ios-unit-tests` |
+| StoreKit local (`PerfectTapStoreKitTests`) | **PASSED 26/26** | flake fixed (`c331837`): 5 consecutive runs 26/26 |
+| UI mode runtime matrix | **PASSED 15/15 modes** | test fixed (`29e2f49`): Rush declines revive deterministically; all 15 `QA_RESULT … PASS` |
+| Release sim build + built flags | **PASSED** | all 6 flags NO in built Info.plist |
+| Monetization flag guard / secret guard | **PASSED** | Release-IAP-aware guard (`aa3a1d8`) |
+| Deno (5 functions + `_shared`) | **PASSED** | fmt/lint/check/test, 23 tests |
+| Backend pgTAP | **PASSED 319/319** | local stack after `db reset`; CI `backend` 282/282 at `90a6c66` |
+| Performance (simulator, idle host) | **PASSED ×2** | `docs/perf/qa-1.2.0-e424776-iphone16pro-run{1,2}.json`; round end → Game Over avg 39 / 35 ms (baseline 55.5), 0 frames ≥250 ms. The earlier 229 ms was host load |
+| ASC reconciler (Ruby) | **PASSED 7/7** | dry-run only |
+| Apple Sandbox / device / TestFlight / Ask to Buy / refunds on device | **BLOCKED** | 0/9 ASC products, owner gates G4–G10 |
+| ATT/UMP consent UI tests | **NOT RUN** | they write to production Supabase |
+| iPad, audio interruptions, AirPods | **NOT RUN / BLOCKED** | device-only |
+
+
 ## 1. Automated — executed in this pass
 
 | Area | What | Command / evidence | Status | Notes |

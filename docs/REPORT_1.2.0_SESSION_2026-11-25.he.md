@@ -36,3 +36,11 @@
 3. Paid Apps Agreement, מס ובנק. אחר כך `PT_CONFIRM=yes bundle exec fastlane iap_reconcile confirm_create:true`.
 4. פריסת המיגרציות ל-staging ואחר כך ל-production (G-gates ב-runbook).
 5. מדיניות refund ו-`coin_debt` (כרגע כבוי).
+
+## המשך — 26.11.2026 (`e424776`)
+- **לוח עונות:** האפליקציה והשרת מחשבים עונה זהה (רבעונית מ-1.3.2026, UTC), עם חלון חסד של 72 שעות. ה-pacing מגביל דרגות שנתבעו בעונה הנוכחית, ולא את מספר הדרגה, כך שהתקדמות שנצברה לא נדחית. הערכים עדיין מחכים לאישור.
+- **StoreKit flake:** נפתר. `clearTransactions()` חוזר לפני שה-cache מתנקה. 5 ריצות רצופות עברו 26/26.
+- **UI mode matrix:** 15/15 מצבים עוברים, אחרי תיקון הבדיקה.
+- **Perf במחשב פנוי:** עבר פעמיים. סוף סבב → Game Over: 35–39ms (baseline 55ms). ה-229ms הקודמים נבעו מעומס.
+- **pgTAP:** 319/319. iOS unit: 128/128.
+- **Production (קריאה בלבד):** ה-head הוא `20261114120000`. חמש מיגרציות 1.2.0 לא פרוסות. Edge Functions פרוסות: `claim-legacy-account` v2 ו-`delete-account` v1 בלבד.
