@@ -94,6 +94,9 @@ enum EconomyErrorDisposition: Equatable {
     case retry
     /// Terminal rejection: drop the event and log it.
     case drop
+    /// Keep the event and retry with backoff, without stopping the flush of
+    /// the events queued after it (season claims across a boundary).
+    case retryNonBlocking
 }
 
 enum EconomyErrorPolicy {
@@ -138,6 +141,22 @@ enum EconomyErrorPolicy {
             // yet) keep the earned event; `maximumEventAge` bounds the retries.
             return .retry
         }
+    }
+
+    /// Event-aware disposition. A `season_tier` refused as `invalid_payload`
+    /// (wrong / closed / not-yet-open season) is dropped only once its season
+    /// is outside the claim window by the shared calendar rule (current season,
+    /// or the previous one until end + `grace_hours`). Inside the window the
+    /// refusal can only be clock skew around a boundary, so the earned tier is
+    /// kept and retried (`retryNonBlocking`: it never holds up other events).
+    static func disposition(for failure: EconomyRemoteFailure, event: EconomyEvent, now: Date,
+                            rule: EconomyConfig.SeasonCalendarRule = EconomyConfig.current.seasonCalendar)
+        -> EconomyErrorDisposition {
+        let base = disposition(for: failure)
+        guard base == .drop, event.source == .seasonTier, failure == .server("invalid_payload"),
+              case .string(let seasonID)? = event.payload["season_id"],
+              SeasonSchedule.isClaimable(seasonID: seasonID, now: now, rule: rule) else { return base }
+        return .retryNonBlocking
     }
 
     /// Exponential backoff: 5 s, 10 s, 20 s … capped at one hour.

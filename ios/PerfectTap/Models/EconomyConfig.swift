@@ -21,33 +21,48 @@ struct EconomyConfig: Equatable {
     var starterItems: [String] = []
     /// Contract key `gameplay_daily_cap` (server enforced; 0 = none).
     var gameplayDailyCap: Int = 0
-    /// Contract key `active_season` (server season the `season_tier` events name).
-    var activeSeason: SeasonDefinition? = nil
+    /// Contract key `season_calendar`: the deterministic season rule the
+    /// server validates `season_tier` events against (see `SeasonSchedule`).
+    var seasonCalendar: SeasonCalendarRule = .balancedPremiumRC1
 
     /// Contract key `combo_bonus`: `(minCombo, bonus)` evaluated highest first.
     static let comboBonusTable: [(minCombo: Int, bonus: Int)] = [(20, 8), (10, 5), (5, 3), (0, 1)]
     /// Contract key `mode_bonus`.
     static let modeBonus: [GameMode: Int] = [.classic: 2, .duel: 6]
 
-    struct SeasonDefinition: Equatable {
-        let id: String
-        let title: String
-        let startsAtISO: String
-        let endsAtISO: String
+    /// Season calendar rule shared byte-for-byte with the server config key
+    /// `season_calendar` (migration 20261126120000_season_calendar_alignment.sql).
+    /// Season n starts `anchor + (n-1) * lengthMonths` months (00:00 UTC,
+    /// inclusive) and ends `lengthMonths` later (exclusive). The anchor must be
+    /// the 1st of a month. anchor / lengthMonths / graceHours are owner-tunable
+    /// values still pending approval.
+    struct SeasonCalendarRule: Equatable {
+        /// `YYYY-MM-01` (UTC).
+        let anchor: String
+        let lengthMonths: Int
+        /// `<n>` is replaced by the season number.
+        let idFormat: String
         let tiers: Int
         let maxTiersPerDay: Int
+        /// A claim for the previous season is accepted this long after its end.
+        let graceHours: Int
 
-        init(id: String, title: String, startsAt: String, endsAt: String, tiers: Int, maxTiersPerDay: Int) {
-            self.id = id
-            self.title = title
-            self.startsAtISO = startsAt
-            self.endsAtISO = endsAt
-            self.tiers = tiers
-            self.maxTiersPerDay = maxTiersPerDay
+        static let balancedPremiumRC1 = SeasonCalendarRule(
+            anchor: "2026-03-01", lengthMonths: 3, idFormat: "season_<n>",
+            tiers: 30, maxTiersPerDay: 15, graceHours: 72)
+
+        func seasonID(number: Int) -> String {
+            idFormat.replacingOccurrences(of: "<n>", with: String(number))
         }
 
-        var startsAt: Date? { ISO8601DateFormatter().date(from: startsAtISO) }
-        var endsAt: Date? { ISO8601DateFormatter().date(from: endsAtISO) }
+        /// (year, month) of the anchor, or nil when malformed (fails closed,
+        /// like the server).
+        var anchorYearMonth: (year: Int, month: Int)? {
+            let parts = anchor.split(separator: "-").compactMap { Int($0) }
+            guard parts.count == 3, parts[2] == 1, (1...12).contains(parts[1]),
+                  lengthMonths >= 1, idFormat.contains("<n>") else { return nil }
+            return (parts[0], parts[1])
+        }
     }
 
     /// Shipping behavior while owner approval and rollout remain off.
@@ -93,11 +108,8 @@ struct EconomyConfig: Equatable {
         ],
         starterItems: ["theme_neon", "fx_ripple", "avatar_cool"],
         gameplayDailyCap: 1_500,
-        // Placeholder pending the owner's season calendar (seeded by migration
-        // 20261125200000_authoritative_economy_sources.sql).
-        activeSeason: SeasonDefinition(id: "season_1_neon_nights", title: "Neon Nights",
-                                       startsAt: "2026-12-01T00:00:00Z", endsAt: "2027-03-01T00:00:00Z",
-                                       tiers: 30, maxTiersPerDay: 15)
+        // Seeded by migration 20261126120000_season_calendar_alignment.sql.
+        seasonCalendar: .balancedPremiumRC1
     )
 
     static var current: EconomyConfig {
@@ -168,10 +180,11 @@ struct EconomyConfig: Equatable {
             "season_coin_cycle": seasonCoinCycle,
             "starter_items": starterItems,
             "gameplay_daily_cap": gameplayDailyCap,
-            "active_season": activeSeason.map {
-                ["id": $0.id, "starts_at": $0.startsAtISO, "ends_at": $0.endsAtISO,
-                 "tiers": $0.tiers, "max_tiers_per_day": $0.maxTiersPerDay] as [String: Any]
-            } ?? [:],
+            "season_calendar": [
+                "anchor": seasonCalendar.anchor, "length_months": seasonCalendar.lengthMonths,
+                "id_format": seasonCalendar.idFormat, "tiers": seasonCalendar.tiers,
+                "max_tiers_per_day": seasonCalendar.maxTiersPerDay, "grace_hours": seasonCalendar.graceHours,
+            ] as [String: Any],
         ]
     }
 }
