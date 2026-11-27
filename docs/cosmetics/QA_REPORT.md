@@ -242,6 +242,44 @@ Defects: QA-04, QA-09, QA-10, QA-11, QA-19, QA-20.
   `cosmetic-studio-rc1` needs an explicit enable step for the existing catalog too.
 - Secrets: none (gitleaks + grep). StoreKit: unchanged.
 
+## Lead follow-up (after Agent E's review)
+
+Fixed on `feature/modular-cosmetic-studio` after this report (commits after `b7e0be9`):
+
+| ID | Status | Change |
+|---|---|---|
+| QA-02 | **Mitigated, still open** | Effect canvas cropped to the burst square and redrawn at 30 Hz (`CosmeticEffectLayer.swift`). Needs a physical-device check before the flag goes on. |
+| QA-03 | Fixed | Preview Studio plays the previewed haptic style (`HapticsEngine.previewTapOutcome`); the gameplay style is untouched. |
+| QA-04 | Fixed | Life-lost burst anchored to the real lives HUD (anchor preference) — correct on iPad. |
+| QA-05 | Fixed | `xcschemes/` restored from release/1.2.0 (StoreKit config reference back in the UI-test scheme). |
+| QA-06 | Fixed | QUIT no longer plays the themed game-over sting or effect (`GameResult.endedByQuit`). |
+| QA-07 | Fixed | Themed game-over sting falls back to the classic miss tone while the pack is still decoding. |
+| QA-11 | Fixed | Tap bursts start above the TAP label (origin y 0.79). |
+| QA-14 | Fixed | `audio_manifest.json` excluded from the app target; the QA test reads it from the source tree and asserts it is not bundled. |
+| QA-01 | Open — release session | Pre-existing server bug; see `RELEASE_INTEGRATION_NOTES.md` §2. |
+| QA-08, 09, 10, 12, 13, 15–20 | Open (Low/Info) | Documented; QA-09 needs production art, QA-12 is an owner decision. |
+
+### QA-02 measurements (simulator, iPhone 17 Pro, `scripts/perf-run.sh`, `-PTForceCosmeticCollection`)
+
+| configuration | runs | hitch ratio % mean (range) | p99 ms mean | frames ≥25 ms |
+|---|---|---|---|---|
+| base `f0e2091` (default look) | 3 | 0.81 (0.40–1.17) | 22.2 | 45 |
+| themed, before fix | 7 | 1.62 (0.38–2.46) | 31.0 | 90 |
+| cropped canvas + `drawingGroup()` | 3 | 2.92 (2.17–3.32) | 33.4 | 162 — **rejected** |
+| cropped canvas only (Quack) | 1 | 1.17 | 33.3 | 67 |
+| cropped, normal blend instead of plusLighter (Quack) | 1 | 1.31 | 33.3 | 70 — rejected |
+| cropped, no button outer shadow (Quack) | 1 | 1.42 | 33.3 | 76 — rejected (shadow is not the cause) |
+| **cropped + 30 Hz bursts (shipped)** — Quack ×2, Boom, Purrfect | 4 | **0.89 (0.57–1.10)** | 20.8 | 48 |
+| default loadout after fixes | 1 | 0.29 | 16.7 | 16 |
+
+Reading: themed hitches roughly halved and now sit inside the base build's own run-to-run range
+on this Mac, but the mean is still above the 0.6 % gate. Simulator Canvas rasterisation is CPU-bound
+and not representative of a device GPU — a device Instruments capture decides whether this is closed.
+Raw JSON: `docs/cosmetics/qa/perf/{fix,crop,noblend,noshadow,fps30}-*.json`.
+
+Unit tests after the fixes: **223 executed, 222 passed, 1 skipped, 0 failures** (iPhone 17 Pro simulator).
+UI suites were not re-run after these fixes.
+
 ## Items needing owner decisions
 
 1. Fix QA-01 in the economy/hardening migration (economy session) before enabling any cosmetic server-side.

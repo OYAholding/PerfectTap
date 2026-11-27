@@ -38,16 +38,20 @@ struct CosmeticEffectLayer: View {
     var body: some View {
         GeometryReader { geo in
             if !queue.isEmpty {
-                // Performance (QA-02): the canvas covers only the square the
-                // burst can reach — R from the *full* layer width, so bursts look
-                // identical — not the whole screen. drawingGroup() composites the
-                // additive (plusLighter) primitives on the GPU in one pass.
-                // Measured on simulator: a full-screen canvas per layer pushed
-                // hitch ratio from 0.26 % to 1.3–2.4 % with themed effects.
+                // Performance (QA-02). Canvas rasterises on the main thread, so:
+                //  * the canvas covers only the square the burst can reach (R from
+                //    the *full* layer width, so bursts look identical);
+                //  * bursts redraw at 30 Hz — the timing indicator keeps its own
+                //    60 Hz TapBarIndicator, only these ≤1.2 s flourishes step at 30.
+                // Simulator, themed loadout: hitch ratio 1.62 % → 0.89 % (base 1.2.0:
+                // 0.81 %). Tried and rejected (measured worse or no better):
+                // drawingGroup() (offscreen texture per frame), normal blending
+                // instead of plusLighter, removing the button's outer shadow.
+                // docs/cosmetics/QA_REPORT.md "Lead follow-up".
                 let R = CosmeticEffectBounds.radius(for: geo.size)
                 let side = Self.canvasSide(radius: R)
                 let center = CGPoint(x: geo.size.width * origin.x, y: geo.size.height * origin.y)
-                TimelineView(.animation) { timeline in
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                     let now = timeline.date.timeIntervalSinceReferenceDate
                     Canvas { context, _ in
                         for burst in queue.bursts {
@@ -56,7 +60,6 @@ struct CosmeticEffectLayer: View {
                         }
                     }
                     .frame(width: side, height: side)
-                    .drawingGroup()
                     .position(center)
                     .onChange(of: queue.isExpired(at: now)) { expired in
                         if expired { queue.removeAll() }
