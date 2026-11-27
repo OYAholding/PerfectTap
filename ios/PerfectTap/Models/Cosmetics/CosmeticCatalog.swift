@@ -133,7 +133,8 @@ enum CosmeticCatalog {
             slots: [
                 SlotSpec(slot: .tapButton, name: "Bomb Button", rarity: .epic, price: 300,
                          assets: CosmeticAssetRefs(imageName: "cos_boom_button", secondaryImageName: "cos_boom_button_pressed",
-                                                   emblemImageName: "cos_boom_emblem", palette: [steel, ember, gold])),
+                                                   emblemImageName: "cos_boom_emblem", palette: [steel, ember, gold],
+                                                   pressStyle: .fuseGlow)),
                 SlotSpec(slot: .tapSound, name: "Boom Pack", rarity: .epic, price: 250,
                          assets: CosmeticAssetRefs(soundPackID: "boom_mode")),
                 SlotSpec(slot: .lifeIcon, name: "Bomb Lives", rarity: .rare, price: 200,

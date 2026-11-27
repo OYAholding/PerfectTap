@@ -15,6 +15,13 @@ struct GameView: View {
     @State private var showQuitConfirm: Bool = false
     @State private var hasBootstrapped: Bool = false
     @State private var equippedTapFX: String = "fx_default"
+    /// Equipped cosmetics, resolved once per round at bootstrap (never per tap).
+    @State private var cosmetics: ResolvedCosmetics = .defaults
+    @State private var tapEffectTrigger: CosmeticEffectTrigger? = nil
+    @State private var lifeLostTrigger: CosmeticEffectTrigger? = nil
+    @State private var cosmeticEffectSequence: Int = 0
+    /// Lives as of the last scored tap, to detect a life lost on this tap.
+    @State private var trackedLives: Int = 0
 
     var body: some View {
         ZStack {
@@ -34,11 +41,18 @@ struct GameView: View {
                 countdownOverlay(number: n)
             }
 
-            // Particle effects for PERFECT/GREAT (Effects setting: Full only)
-            if effects.showsParticles {
-                ParticleEffectView(accuracy: vm.lastTapAccuracy, trigger: feedbackID, equippedFX: equippedTapFX,
+            // Particle effects for PERFECT/GREAT (Effects setting: Full only).
+            // Kept exactly as before while the Perfect Effect slot is the
+            // default "Classic Particles"; a themed Perfect Effect replaces them.
+            if effects.showsParticles && usesLegacyParticles {
+                ParticleEffectView(accuracy: legacyParticleAccuracy, trigger: feedbackID, equippedFX: equippedTapFX,
                                    themeColors: themeManager.current.particleColors)
                     .allowsHitTesting(false)
+            }
+
+            // Themed cosmetic effects (not mounted at all for the default loadout).
+            if hasThemedEffects {
+                cosmeticEffectLayers
             }
 
             if vm.showReviveModal {
@@ -68,13 +82,20 @@ struct GameView: View {
             defer { bootstrap.end() }
             let profile = PlayerProfile.load() ?? PlayerProfile()
             equippedTapFX = profile.equippedTapFX
+            // One resolve per round: picks up purchases/refunds/account switches
+            // made since the last round; image lookups happen here, not on tap.
+            let store = CosmeticLoadoutStore.shared
+            store.refresh()
+            cosmetics = store.resolved
+            CosmeticImageCache.shared.preload(cosmetics)
             vm.soundEngine = SoundEngine.shared
             vm.hapticsEngine = HapticsEngine.shared
             vm.onGameFinished = { [weak router] result in
                 // Single stack replacement: bounded stack, Home is never re-shown.
                 router?.replaceStack(with: [.gameOver(result)])
             }
-            vm.setup(mode: mode, profile: profile)
+            vm.setup(mode: mode, profile: profile, cosmetics: cosmetics)
+            trackedLives = vm.lives
             SoundEngine.shared.startBgMusic()
         }
         .onDisappear {
@@ -96,6 +117,11 @@ struct GameView: View {
             let work = DispatchWorkItem { showAccuracy = false }
             hideAccuracyWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+            emitCosmeticEffects()
+        }
+        // Revive refills lives: re-baseline so the refill isn't seen as a change.
+        .onChange(of: vm.lives) { newLives in
+            if newLives > trackedLives { trackedLives = newLives }
         }
         .onChange(of: scenePhase) { phase in
             switch phase {
@@ -258,14 +284,7 @@ struct GameView: View {
     }
 
     private var livesView: some View {
-        let maxLives = mode.initialLives ?? 3
-        return HStack(spacing: 4) {
-            ForEach(0..<maxLives, id: \.self) { i in
-                Circle()
-                    .frame(width: 10, height: 10)
-                    .foregroundColor(i < vm.lives ? Color(red: 0.92, green: 0.27, blue: 0.27) : Color.white.opacity(0.15))
-            }
-        }
+        CosmeticLivesView(item: cosmetics.item(for: .lifeIcon), maxLives: mode.initialLives ?? 3, lives: vm.lives)
     }
 
     private var timerView: some View {
@@ -346,20 +365,80 @@ struct GameView: View {
     private var tapButton: some View {
         // Touch-DOWN input: scores the instant the finger lands, using the
         // touch's own timestamp (a SwiftUI Button only fires on release).
-        TouchDownTapArea(accessibilityLabel: "TAP!", onTouchDown: { timestamp in
+        //
+        // The skin only draws; the hit area is still this 80 pt full-width
+        // area. The default skin keeps the generic press feedback it always
+        // had, a themed skin draws its own press from the same touch state.
+        let skin = cosmetics.item(for: .tapButton)
+        return TouchDownTapArea(accessibilityLabel: "TAP!", appliesDefaultPressStyle: skin.isDefault,
+                                onTouchDown: { timestamp in
             vm.handleTap(touchTimestamp: timestamp)
-        }) {
-            RoundedRectangle(cornerRadius: 20)
-                .fill(buttonGradient)
-                .frame(height: 80)
-                .overlay(
-                    Text("TAP!")
-                        .font(.system(size: 24, weight: .black))
-                        .tracking(4)
-                        .foregroundColor(.white)
-                )
-                .shadow(color: modeShadowColor.opacity(0.3), radius: 20)
+        }) { isPressed in
+            CosmeticTapButtonSkin(item: skin, fallbackColors: modeColors, isPressed: isPressed)
+                .shadow(color: tapButtonShadowColor(for: skin).opacity(0.3),
+                        radius: skin.isDefault ? 20 : 20 * effects.glowStrength)
                 .accessibilityHidden(true)
+        }
+    }
+
+    private func tapButtonShadowColor(for skin: CosmeticItem) -> Color {
+        guard !skin.isDefault, let first = skin.assets.palette.first else { return modeShadowColor }
+        return first.color
+    }
+
+    // MARK: - Cosmetic effects
+
+    /// Default Perfect Effect = the pre-Studio ParticleEffectView.
+    private var usesLegacyParticles: Bool {
+        cosmetics.item(for: .perfectEffect).assets.effectStyle == .legacyParticles
+    }
+
+    /// Accuracy fed to the legacy particles. With a themed Tap Effect, GREAT is
+    /// drawn by that effect, so the legacy view only keeps PERFECT (one burst
+    /// per tap, never two stacked).
+    private var legacyParticleAccuracy: TapAccuracy? {
+        guard hasThemedStyle(.tapEffect) else { return vm.lastTapAccuracy }
+        return vm.lastTapAccuracy == .perfect ? .perfect : nil
+    }
+
+    private func hasThemedStyle(_ slot: CosmeticSlot) -> Bool {
+        switch cosmetics.item(for: slot).assets.effectStyle {
+        case nil, .some(CosmeticEffectStyle.none), .some(.legacyParticles): return false
+        default: return true
+        }
+    }
+
+    private var hasThemedEffects: Bool {
+        [CosmeticSlot.tapEffect, .perfectEffect, .missEffect, .lifeLostEffect].contains(where: hasThemedStyle)
+    }
+
+    /// Accuracy events burst from the TAP button (short, low on screen, so the
+    /// timing zones stay readable); a lost life bursts at the lives HUD.
+    @ViewBuilder private var cosmeticEffectLayers: some View {
+        CosmeticEffectLayer(resolved: cosmetics, trigger: tapEffectTrigger,
+                            origin: UnitPoint(x: 0.5, y: 0.86))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        CosmeticEffectLayer(resolved: cosmetics, trigger: lifeLostTrigger,
+                            origin: mode.usesLives ? UnitPoint(x: 0.82, y: 0.08) : UnitPoint(x: 0.5, y: 0.86))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    /// Called once per scored tap (after scoring). Emits the accuracy event and,
+    /// when this tap cost a life, a separate life-lost event on its own layer.
+    private func emitCosmeticEffects() {
+        let lostLife = vm.lives < trackedLives
+        trackedLives = vm.lives
+        guard hasThemedEffects, let accuracy = vm.lastTapAccuracy else { return }
+        let event = CosmeticEvent(accuracy: accuracy)
+        if let slot = event.effectSlot, hasThemedStyle(slot) {
+            cosmeticEffectSequence &+= 1
+            tapEffectTrigger = CosmeticEffectTrigger(event: event, sequence: cosmeticEffectSequence)
+        }
+        if lostLife, hasThemedStyle(.lifeLostEffect) {
+            cosmeticEffectSequence &+= 1
+            lifeLostTrigger = CosmeticEffectTrigger(event: .lifeLost, sequence: cosmeticEffectSequence)
         }
     }
 

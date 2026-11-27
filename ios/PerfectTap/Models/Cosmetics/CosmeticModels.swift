@@ -133,6 +133,18 @@ struct CosmeticAssetRefs: Codable, Hashable {
     /// Haptic style id (haptics slot).
     var hapticStyleID: String? = nil
     var palette: [CosmeticRGBA] = []
+    /// Tap button only: how the skin reacts to touch-down (nil = `.squish`).
+    var pressStyle: CosmeticPressStyle? = nil
+}
+
+/// Touch-down feedback of a themed tap button. Purely visual: the hit area and
+/// the moment a tap is scored are owned by `TouchDownTapArea`, not the skin.
+enum CosmeticPressStyle: String, Codable, Hashable {
+    /// Scale down slightly and darken the body.
+    case squish
+    /// Squish plus a short warm glow at the emblem (a lit fuse). Drawn only
+    /// when EffectsLevel allows glow.
+    case fuseGlow
 }
 
 enum CosmeticAvailability: String, Codable {
@@ -190,6 +202,33 @@ struct CosmeticLoadout: Codable, Equatable {
     var selections: [CosmeticSlot: String] = [:]
 
     static let `default` = CosmeticLoadout()
+
+    init(selections: [CosmeticSlot: String] = [:]) {
+        self.selections = selections
+    }
+
+    // Persisted as `{"selections": {"tapButton": "quack_attack.tapButton"}}`.
+    // A synthesized `[CosmeticSlot: String]` encodes as a flat key/value array
+    // and fails to decode as a whole when a single slot name is unknown (e.g. a
+    // slot added by a newer build, then a downgrade). Decoding per entry and
+    // dropping what we don't understand keeps every other selection.
+    private enum CodingKeys: String, CodingKey { case selections }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try container.decodeIfPresent([String: String].self, forKey: .selections) ?? [:]
+        var out: [CosmeticSlot: String] = [:]
+        for (key, value) in raw {
+            if let slot = CosmeticSlot(rawValue: key) { out[slot] = value }
+        }
+        selections = out
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        let raw = Dictionary(uniqueKeysWithValues: selections.map { ($0.key.rawValue, $0.value) })
+        try container.encode(raw, forKey: .selections)
+    }
 
     func itemID(for slot: CosmeticSlot) -> String {
         selections[slot] ?? CosmeticCatalog.defaultItemID(for: slot)
