@@ -154,8 +154,28 @@ final class CosmeticLoadoutStore: ObservableObject {
 
     private static func resolve(_ loadout: CosmeticLoadout, profile: PlayerProfile, enabled: Bool) -> ResolvedCosmetics {
         guard enabled else { return .defaults }
+        #if DEBUG
+        if let forced = forcedFromLaunchArguments { return forced }
+        #endif
         return ResolvedCosmetics.resolve(loadout, isOwned: { isOwned($0, profile: profile) })
     }
+
+    #if DEBUG
+    // QA / perf only (docs/cosmetics/QA_REPORT.md): `-PTForceCosmeticCollection <id>`
+    // resolves every slot of one collection, like ThemeManager's `-PTForceTheme`.
+    // Ownership is bypassed and nothing is persisted. Compiled out of Release.
+    static let forceCollectionArgument = "-PTForceCosmeticCollection"
+
+    private static let forcedFromLaunchArguments = forcedResolved(arguments: ProcessInfo.processInfo.arguments)
+
+    static func forcedResolved(arguments: [String]) -> ResolvedCosmetics? {
+        guard let i = arguments.firstIndex(of: forceCollectionArgument), i + 1 < arguments.count,
+              let collection = CosmeticCatalog.collection(id: arguments[i + 1]) else { return nil }
+        var loadout = CosmeticLoadout()
+        loadout.apply(collection: collection)
+        return ResolvedCosmetics.resolve(loadout, isOwned: { _ in true })
+    }
+    #endif
 
     private static func readLoadout(defaults: UserDefaults, key: String) -> CosmeticLoadout {
         // Corrupt or foreign data reads as "nothing selected", never as an error
