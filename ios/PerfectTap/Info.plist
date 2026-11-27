@@ -36,6 +36,8 @@
 	<string>$(PT_AUTHORITATIVE_ECONOMY_ENABLED)</string>
 	<key>PT_BACKEND</key>
 	<string>$(PT_BACKEND)</string>
+	<key>PT_COSMETIC_STUDIO_ENABLED</key>
+	<string>$(PT_COSMETIC_STUDIO_ENABLED)</string>
 	<key>PT_EMAIL_OTP_ENABLED</key>
 	<string>$(PT_EMAIL_OTP_ENABLED)</string>
 	<key>PT_IAP_CATALOG_ENABLED</key>

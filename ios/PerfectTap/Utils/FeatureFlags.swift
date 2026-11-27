@@ -237,6 +237,12 @@ enum FeatureFlags {
     static var premiumSkinsEnabled: Bool { enabled("PT_IAP_PREMIUM_SKINS_ENABLED") }
     static var authoritativeEconomyEnabled: Bool { enabled("PT_AUTHORITATIVE_ECONOMY_ENABLED") }
 
+    /// Cosmetic Studio (shop tab, Preview Studio, gameplay loadout).
+    /// project.yml: Debug / Debug-StoreKit = YES, Release / Release-IAP = NO.
+    /// OFF ⇒ no Studio entry in the shop and gameplay resolves the default loadout.
+    /// docs/cosmetics/INTEGRATION_CONTRACT.md §4.
+    static var cosmeticStudioEnabled: Bool { enabled("PT_COSMETIC_STUDIO_ENABLED") }
+
     /// Debug-StoreKit configuration only; always false in release builds.
     static var localStoreKitTesting: Bool {
         #if DEBUG

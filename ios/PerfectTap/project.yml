@@ -106,20 +106,27 @@ targets:
         # written to Supabase after cutover does NOT flow back to Firestore).
         # PT_EMAIL_OTP_ENABLED: Cloud Backup sign-up needs verified email delivery (custom
         # SMTP). Keep NO until SMTP is configured and tested; never bypass verification.
+        # PT_COSMETIC_STUDIO_ENABLED: Cosmetic Studio shop tab + gameplay loadout
+        # (docs/cosmetics/INTEGRATION_CONTRACT.md §4). Debug builds YES; release NO until the
+        # owner approves prices and assets.
         # PT_IAP_* / PT_AUTHORITATIVE_ECONOMY_ENABLED come ONLY from Config/Monetization.*.xcconfig
         # (configFiles below). Never set them here: target settings override xcconfig values.
         Debug:
           PT_BACKEND: supabase
           PT_EMAIL_OTP_ENABLED: "NO"
+          PT_COSMETIC_STUDIO_ENABLED: "YES"
         Debug-StoreKit:
           PT_BACKEND: supabase
           PT_EMAIL_OTP_ENABLED: "NO"
+          PT_COSMETIC_STUDIO_ENABLED: "YES"
         Release:
           PT_BACKEND: supabase
           PT_EMAIL_OTP_ENABLED: "NO"
+          PT_COSMETIC_STUDIO_ENABLED: "NO"
         Release-IAP:
           PT_BACKEND: supabase
           PT_EMAIL_OTP_ENABLED: "NO"
+          PT_COSMETIC_STUDIO_ENABLED: "NO"
     configFiles:
       Debug: Config/Monetization.Off.xcconfig
       Debug-StoreKit: Config/Monetization.LocalStoreKit.xcconfig
@@ -145,6 +152,7 @@ targets:
         GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS: false
         PT_BACKEND: $(PT_BACKEND)
         PT_EMAIL_OTP_ENABLED: $(PT_EMAIL_OTP_ENABLED)
+        PT_COSMETIC_STUDIO_ENABLED: $(PT_COSMETIC_STUDIO_ENABLED)
         PT_IAP_CATALOG_ENABLED: $(PT_IAP_CATALOG_ENABLED)
         PT_IAP_SERVER_VERIFICATION_ENABLED: $(PT_IAP_SERVER_VERIFICATION_ENABLED)
         PT_IAP_COIN_PACKS_ENABLED: $(PT_IAP_COIN_PACKS_ENABLED)
