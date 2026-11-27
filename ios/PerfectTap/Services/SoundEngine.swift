@@ -331,6 +331,11 @@ final class SoundEngine {
     }
 
     /// Round ended (Game Over screen about to show). Default pack: silent.
+    /// The active pack plays a sting at round end (themed packs; classic is silent).
+    var activePackHasGameOverSound: Bool {
+        CosmeticAudioPolicy.gameOverCue(packID: activeSoundPackID) != .silent
+    }
+
     func playGameOverCosmetic() {
         guard isSoundEnabled else { return }
         let packID = activeSoundPackID

@@ -2,13 +2,9 @@ import Foundation
 
 // MARK: - Cosmetic Studio flag shim
 //
-// LEAD: replace reads of `CosmeticStudioFlag.isEnabled` with
-// `FeatureFlags.cosmeticStudioEnabled` at integration (Agent D owns the real
-// flag, same Info.plist key) — or keep this as a thin forwarder so the test
-// override below keeps working.
-//
-// Same parsing as FeatureFlags: YES / TRUE / 1, case-insensitive. A missing key
-// means OFF, so a build without the key behaves exactly like the pre-Studio game.
+// Thin forwarder to `FeatureFlags.cosmeticStudioEnabled` (Info.plist
+// `PT_COSMETIC_STUDIO_ENABLED`). A missing key means OFF, so a build without
+// the key behaves exactly like the pre-Studio game.
 
 enum CosmeticStudioFlag {
     static let infoPlistKey = "PT_COSMETIC_STUDIO_ENABLED"
@@ -16,11 +12,9 @@ enum CosmeticStudioFlag {
     /// Tests set this to force the flag; nil = read Info.plist.
     static var overrideForTesting: Bool? = nil
 
+    /// Forwards to the real flag (FeatureFlags owns the Info.plist key);
+    /// kept so tests can force the flag without a custom Info.plist.
     static var isEnabled: Bool {
-        if let forced = overrideForTesting { return forced }
-        let raw = (Bundle.main.object(forInfoDictionaryKey: infoPlistKey) as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .uppercased()
-        return raw == "YES" || raw == "TRUE" || raw == "1"
+        overrideForTesting ?? FeatureFlags.cosmeticStudioEnabled
     }
 }

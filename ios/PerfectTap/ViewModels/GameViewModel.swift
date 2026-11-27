@@ -682,7 +682,13 @@ final class GameViewModel: ObservableObject {
         // pack / haptic style decide what plays (default = pre-Studio feedback).
         let outcome = Self.tapOutcome(accuracy: accuracy, prevCombo: prevCombo, combo: comboRef,
                                       didHardcoreBreak: didHardcoreBreak, usesLives: mode.usesLives)
-        soundEngine?.playTapOutcome(outcome)
+        // A round that ended on this tap has already queued the pack's game-over
+        // sting in finish(); don't stack this tap's sound on top of it (one
+        // primary voice). Default pack has no sting, so it keeps the old sound.
+        let endedOnThisTap = phase == .finished
+        if !(endedOnThisTap && (soundEngine?.activePackHasGameOverSound ?? false)) {
+            soundEngine?.playTapOutcome(outcome)
+        }
         hapticsEngine?.playTapOutcome(outcome)
 
         lastTapAccuracy = accuracy

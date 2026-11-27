@@ -25,7 +25,7 @@ Consequences:
   in UserDefaults keyed by account id (`pt_cosmetic_loadout.<uid|anon>`).
   Cross-device loadout sync is a follow-up (§6).
 - **Ownership = `PlayerProfile.ownedItems`** (unchanged schema). Cosmetic item ids
-  (`<collection>.<slot>`, e.g. `quack_attack.tap_button`) are ordinary owned-item
+  (`<collection>.<slotRawValue>`, e.g. `quack_attack.tapButton` — decided at integration; these strings live in `ownedItems` forever, do not change them) are ordinary owned-item
   strings, so existing sync, restore, account switching and server `set_profile_item`
   work without schema changes.
 - Coin purchases go through the **existing** `EconomyManager.buyItemForCurrentRollout(ShopItem)`
