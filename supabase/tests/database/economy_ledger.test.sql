@@ -81,7 +81,7 @@ select is((get_my_economy_state()->>'confirmedBalance')::bigint, 50::bigint,
   'shop purchase debits the configured price');
 select ok(get_my_profile()->'owned_items' ? 'theme_neon', 'purchased item granted');
 select is((purchase_economy_item('20000000-0000-0000-0000-000000000001', 'theme_neon')->>'status'),
-  'already_owned', 'repeat item purchase does not debit again');
+  'duplicate', 'replaying the same purchase key does not debit again (C1)');
 select throws_ok($$ select * from private.economy_configs $$, '42501', null,
   'client cannot read private economy configuration directly');
 select throws_ok($$ select private.apply_economy_delta(

@@ -19,8 +19,8 @@ alter table private.economy
 
 -- Mirror, but do not change, the balance already stored for each player.
 update private.economy e
-set confirmed_balance = greatest(0, coalesce((pd.data->>'coins')::bigint, 0)),
-    legacy_opening_balance = greatest(0, coalesce((pd.data->>'coins')::bigint, 0))
+set confirmed_balance = case when pd.data->>'coins' ~ '^[0-9]{1,15}$' then (pd.data->>'coins')::bigint else 0 end,
+    legacy_opening_balance = case when pd.data->>'coins' ~ '^[0-9]{1,15}$' then (pd.data->>'coins')::bigint else 0 end
 from private.profile_data pd
 where pd.id = e.user_id;
 
@@ -147,7 +147,7 @@ for each row execute function private.prepare_new_economy_profile();
 create or replace function private.capture_legacy_economy_profile()
 returns trigger
 language plpgsql security definer set search_path = '' as $$
-declare opening bigint := greatest(0, coalesce((new.data->>'coins')::bigint, 0));
+declare opening bigint := case when new.data->>'coins' ~ '^[0-9]{1,15}$' then (new.data->>'coins')::bigint else 0 end;
         status_value text;
 begin
   insert into private.economy

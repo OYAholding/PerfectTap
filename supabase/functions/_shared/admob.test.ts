@@ -7,6 +7,7 @@ import {
   importVerifierKey,
   type KeyLookup,
   makeGoogleKeyLookup,
+  parseAllowedAdUnits,
   parseCustomData,
   verifySignedQuery,
 } from "./admob.ts";
@@ -306,4 +307,41 @@ Deno.test("verifier keys are fetched once, cached, and refetched for new ids", a
   clock += 86_400_001;
   assert(await cached(KEY_ID)); // TTL expiry
   assertEquals(fetches, 3);
+});
+
+Deno.test("handler only pays allow-listed ad units when configured", async () => {
+  const { rpc, calls } = fakeClaim({
+    data: { status: "applied" },
+    error: null,
+  });
+  const other = await handleAdMobCallback(
+    req(await signQuery(baseMessage({ ad_unit: "999" }))),
+    {
+      lookup,
+      claim: () => rpc,
+      now: () => NOW,
+      allowedAdUnits: new Set(["1234567890"]),
+    },
+  );
+  assertEquals(await other.json(), {
+    status: "rejected",
+    reason: "ad_unit_not_allowed",
+  });
+  assertEquals(calls.length, 0);
+  const ours = await handleAdMobCallback(req(await signQuery(baseMessage())), {
+    lookup,
+    claim: () => rpc,
+    now: () => NOW,
+    allowedAdUnits: new Set(["1234567890"]),
+  });
+  assertEquals(await ours.json(), { status: "applied" });
+  assertEquals(calls.length, 1);
+});
+
+Deno.test("allowed ad units parse ids and full unit paths", () => {
+  assertEquals(
+    [...parseAllowedAdUnits(" ca-app-pub-123~1/1234567890 , 42,bad id,")],
+    ["1234567890", "42"],
+  );
+  assertEquals(parseAllowedAdUnits(undefined).size, 0);
 });

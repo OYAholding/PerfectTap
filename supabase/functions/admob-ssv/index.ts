@@ -7,13 +7,21 @@
 // reward_amount is ignored). Terminal outcomes answer 200 so Google stops
 // retrying; transient failures answer 5xx so Google retries.
 import { serviceClient } from "../_shared/auth.ts";
-import { handleAdMobCallback, makeGoogleKeyLookup } from "../_shared/admob.ts";
+import {
+  handleAdMobCallback,
+  makeGoogleKeyLookup,
+  parseAllowedAdUnits,
+} from "../_shared/admob.ts";
 
 const lookup = makeGoogleKeyLookup();
+const allowedAdUnits = parseAllowedAdUnits(
+  Deno.env.get("ADMOB_ALLOWED_AD_UNITS"),
+);
 
 Deno.serve((req) =>
   handleAdMobCallback(req, {
     lookup,
+    allowedAdUnits,
     claim: () => {
       const admin = serviceClient();
       if (admin instanceof Response) return null;

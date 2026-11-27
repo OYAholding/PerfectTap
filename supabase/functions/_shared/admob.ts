@@ -251,6 +251,22 @@ export interface HandlerDeps {
   claim: () => ClaimRpc | null;
   now?: () => number;
   maxAgeMs?: number;
+  /**
+   * AdMob ad unit ids allowed to grant (ADMOB_ALLOWED_AD_UNITS). Empty or
+   * unset = every ad unit of the account (callbacks are Google-signed either
+   * way); set it so other apps' / test ad units on the same account never pay.
+   */
+  allowedAdUnits?: ReadonlySet<string>;
+}
+
+/** Parses ADMOB_ALLOWED_AD_UNITS ("123,456" or "ca-app-pub-x/123"): numeric unit ids. */
+export function parseAllowedAdUnits(
+  raw: string | undefined | null,
+): Set<string> {
+  return new Set(
+    (raw ?? "").split(",").map((s) => s.trim().split("/").pop() ?? "")
+      .filter((s) => /^[0-9]{1,32}$/.test(s)),
+  );
 }
 
 // Outcomes Google must not retry (the claim can never succeed later).
@@ -303,6 +319,12 @@ export async function handleAdMobCallback(
   // AdMob's "verify URL" console test sends a signed callback without them.
   if (!userId && !customData) {
     return reply(200, { status: "verified_no_claim" });
+  }
+  const allowed = deps.allowedAdUnits;
+  if (
+    allowed && allowed.size > 0 && !allowed.has(params.get("ad_unit") ?? "")
+  ) {
+    return reply(200, { status: "rejected", reason: "ad_unit_not_allowed" });
   }
   const claim = parseCustomData(customData);
   const transactionId = params.get("transaction_id") ?? "";
