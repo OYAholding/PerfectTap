@@ -105,7 +105,7 @@ struct GameOverView: View {
     /// Arms the equipped Game Over effect once. The default item (style
     /// `.none`) and EffectsLevel.off mount nothing, so the screen is unchanged.
     private func prepareGameOverEffect() {
-        guard gameOverCosmetics == nil, effects != .off else { return }
+        guard gameOverCosmetics == nil, effects != .off, !result.endedByQuit else { return }
         let cosmetics = CosmeticLoadoutStore.shared.resolved
         let item = cosmetics.item(for: .gameOverEffect)
         guard !item.isDefault, let style = item.assets.effectStyle,

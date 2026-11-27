@@ -88,6 +88,34 @@ final class HapticsEngine {
         }
     }
 
+    /// Preview Studio: feel a style without equipping it. Does not touch the
+    /// active (gameplay) style; respects the haptics setting.
+    func previewTapOutcome(_ outcome: TapSoundOutcome, styleID: String) {
+        guard isHapticsEnabled else { return }
+        for pulse in CosmeticHapticPolicy.pulses(for: outcome, styleID: CosmeticHapticPolicy.resolvedStyleID(styleID)) {
+            if pulse.delay <= 0 {
+                fire(pulse)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + pulse.delay) { [weak self] in
+                    guard let self, self.isHapticsEnabled else { return }
+                    self.fire(pulse)
+                }
+            }
+        }
+    }
+
+    /// The tap outcome a Preview Studio moment stands for (nil = no haptic).
+    static func previewOutcome(for event: CosmeticEvent) -> TapSoundOutcome? {
+        switch event {
+        case .tap, .good: return TapSoundOutcome(accuracy: .good)
+        case .great:      return TapSoundOutcome(accuracy: .great)
+        case .perfect:    return TapSoundOutcome(accuracy: .perfect)
+        case .miss:       return TapSoundOutcome(accuracy: .miss)
+        case .lifeLost:   return TapSoundOutcome(accuracy: .miss, lostLife: true)
+        case .gameOver:   return nil
+        }
+    }
+
     private func fire(_ pulse: HapticPulse) {
         guard let gen = generators[pulse.style] else { return }
         if let intensity = pulse.intensity {

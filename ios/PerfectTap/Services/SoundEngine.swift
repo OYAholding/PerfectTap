@@ -340,8 +340,10 @@ final class SoundEngine {
         guard isSoundEnabled else { return }
         let packID = activeSoundPackID
         guard case .pack(let event) = CosmeticAudioPolicy.gameOverCue(packID: packID) else { return }
-        // No fallback: the classic game over has always been silent.
-        enqueuePackEvent(event, packID: packID, fallback: nil)
+        // Only themed packs get here. If the pack is still decoding, play the
+        // classic miss tone: the tap that ended the round skipped its own sound
+        // in favour of this sting, so it must never be silent (QA-07).
+        enqueuePackEvent(event, packID: packID, fallback: .miss)
     }
 
     /// Select and preload the pack used in gameplay. Call before a round starts

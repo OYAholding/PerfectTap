@@ -59,6 +59,8 @@ targets:
           - Config/**
           - "*.xcodeproj"
           - "*.xcworkspace"
+          # Generation record for scripts/audio (tests read it from the source tree).
+          - Resources/Sounds/audio_manifest.json
     dependencies:
       - package: GoogleMobileAds
       - package: GoogleUserMessagingPlatform

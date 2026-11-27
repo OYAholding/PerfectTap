@@ -90,8 +90,13 @@ final class CosmeticQATests: XCTestCase {
     }
 
     func testAudioManifestMatchesSoundPackCatalogAndBundledFiles() throws {
-        let manifestURL = try XCTUnwrap(Bundle.main.url(forResource: "audio_manifest", withExtension: "json"),
-                                        "audio_manifest.json not in the app bundle")
+        // Not shipped in the app (QA-14); read from the source tree (simulator
+        // tests can see the host file system).
+        let manifestURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Resources/Sounds/audio_manifest.json")
+        XCTAssertNil(Bundle.main.url(forResource: "audio_manifest", withExtension: "json"),
+                     "audio_manifest.json must not ship in the app")
         let manifest = try JSONDecoder().decode(AudioManifest.self, from: Data(contentsOf: manifestURL))
         let manifestIDs = Set(manifest.sounds.map(\.id))
         let catalogFiles = Set(SoundPackCatalog.all.flatMap(\.allFileNames))

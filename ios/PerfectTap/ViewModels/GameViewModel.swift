@@ -43,6 +43,8 @@ struct GameResult {
     /// Authoritative economy only: outbox key of this round's gameplay/duel
     /// event (coins are pending until the server confirms). Nil on the legacy path.
     var economyEventKey: UUID? = nil
+    /// The player ended the round with QUIT (cosmetic game-over effects skip it).
+    var endedByQuit: Bool = false
 }
 
 // MARK: - Indicator relay (separate ObservableObject for 60fps updates)
@@ -349,7 +351,8 @@ final class GameViewModel: ObservableObject {
         }
         AdManager.shared.isGameplayActive = false
         // Equipped pack's game-over sting (default pack: silent). Enqueue only.
-        soundEngine?.playGameOverCosmetic()
+        // Not on QUIT: a deliberate exit is not a "game over" moment.
+        if !endedByQuit { soundEngine?.playGameOverCosmetic() }
         PerfRoundEnd.pending = Perf.begin("nav.roundEndToGameOver")
         Perf.measure("game.finish") {
             finalizeAndReport()
@@ -831,8 +834,8 @@ final class GameViewModel: ObservableObject {
             coinsEarned: coinsEarned, xpEarned: xpEarned,
             leveledUp: leveledUp, newAchievements: newAchievements, isNewBest: isNewBest,
             isDuelSession: isDuelSession, metrics: metrics,
-            economyEventKey: economy.isAuthoritative ? gameplayEventKey : nil
-        )
+            economyEventKey: economy.isAuthoritative ? gameplayEventKey : nil,
+            endedByQuit: endedByQuit)
 
         Task {
             await Backend.shared.saveProfile(profile)

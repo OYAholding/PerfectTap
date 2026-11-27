@@ -67,6 +67,9 @@
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>
+      <StoreKitConfigurationFileReference
+         identifier = "../../StoreKit/PerfectTap.storekit">
+      </StoreKitConfigurationFileReference>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -88,8 +91,6 @@
             ReferencedContainer = "container:PerfectTap.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <CommandLineArguments>
-      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

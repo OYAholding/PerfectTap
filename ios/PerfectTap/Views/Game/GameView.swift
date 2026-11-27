@@ -64,6 +64,16 @@ struct GameView: View {
                 .transition(.opacity)
             }
         }
+        .overlayPreferenceValue(LivesCenterAnchorKey.self) { anchor in
+            if hasThemedEffects {
+                GeometryReader { geo in
+                    CosmeticEffectLayer(resolved: cosmetics, trigger: lifeLostTrigger,
+                                        origin: lifeLostOrigin(anchor: anchor, in: geo))
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
         .navigationBarHidden(true)
         // The TAP button sits just above the home indicator: make the first
         // edge swipe not leave/pause the game (each pause forced a 3-2-1 that
@@ -286,6 +296,9 @@ struct GameView: View {
 
     private var livesView: some View {
         CosmeticLivesView(item: cosmetics.item(for: .lifeIcon), maxLives: mode.initialLives ?? 3, lives: vm.lives)
+            // Where the life-lost burst starts, on every screen size (QA-04: a
+            // fixed fraction of the screen missed the icons on iPad).
+            .anchorPreference(key: LivesCenterAnchorKey.self, value: .center) { $0 }
     }
 
     private var timerView: some View {
@@ -417,13 +430,20 @@ struct GameView: View {
     /// timing zones stay readable); a lost life bursts at the lives HUD.
     @ViewBuilder private var cosmeticEffectLayers: some View {
         CosmeticEffectLayer(resolved: cosmetics, trigger: tapEffectTrigger,
-                            origin: UnitPoint(x: 0.5, y: 0.86))
+                            origin: UnitPoint(x: 0.5, y: 0.79))   // above the TAP label (QA-11)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-        CosmeticEffectLayer(resolved: cosmetics, trigger: lifeLostTrigger,
-                            origin: mode.usesLives ? UnitPoint(x: 0.82, y: 0.08) : UnitPoint(x: 0.5, y: 0.86))
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+
+    }
+
+    /// Unit-space origin of the life-lost burst: the lives HUD when it is on
+    /// screen, otherwise the TAP button.
+    private func lifeLostOrigin(anchor: Anchor<CGPoint>?, in geo: GeometryProxy) -> UnitPoint {
+        guard mode.usesLives, let anchor, geo.size.width > 0, geo.size.height > 0 else {
+            return UnitPoint(x: 0.5, y: 0.86)
+        }
+        let p = geo[anchor]
+        return UnitPoint(x: p.x / geo.size.width, y: p.y / geo.size.height)
     }
 
     /// Called once per scored tap (after scoring). Emits the accuracy event and,
@@ -552,5 +572,14 @@ struct TapButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
             .opacity(configuration.isPressed ? 0.85 : 1.0)
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+    }
+}
+
+
+/// Centre of the lives HUD, for placing the life-lost burst.
+private struct LivesCenterAnchorKey: PreferenceKey {
+    static var defaultValue: Anchor<CGPoint>? = nil
+    static func reduce(value: inout Anchor<CGPoint>?, nextValue: () -> Anchor<CGPoint>?) {
+        value = value ?? nextValue()
     }
 }

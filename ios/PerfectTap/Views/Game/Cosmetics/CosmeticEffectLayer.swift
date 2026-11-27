@@ -36,15 +36,28 @@ struct CosmeticEffectLayer: View {
     private var level: EffectsLevel { effects.effective(reduceMotion: reduceMotion) }
 
     var body: some View {
-        ZStack {
+        GeometryReader { geo in
             if !queue.isEmpty {
+                // Performance (QA-02): the canvas covers only the square the
+                // burst can reach — R from the *full* layer width, so bursts look
+                // identical — not the whole screen. drawingGroup() composites the
+                // additive (plusLighter) primitives on the GPU in one pass.
+                // Measured on simulator: a full-screen canvas per layer pushed
+                // hitch ratio from 0.26 % to 1.3–2.4 % with themed effects.
+                let R = CosmeticEffectBounds.radius(for: geo.size)
+                let side = Self.canvasSide(radius: R)
+                let center = CGPoint(x: geo.size.width * origin.x, y: geo.size.height * origin.y)
                 TimelineView(.animation) { timeline in
                     let now = timeline.date.timeIntervalSinceReferenceDate
-                    Canvas { context, size in
+                    Canvas { context, _ in
                         for burst in queue.bursts {
-                            CosmeticEffectPainter.draw(burst, now: now, in: &context, size: size, origin: origin)
+                            CosmeticEffectPainter.draw(burst, now: now, in: &context, radius: Double(R),
+                                                       center: CGPoint(x: side / 2, y: side / 2))
                         }
                     }
+                    .frame(width: side, height: side)
+                    .drawingGroup()
+                    .position(center)
                     .onChange(of: queue.isExpired(at: now)) { expired in
                         if expired { queue.removeAll() }
                     }
@@ -55,6 +68,12 @@ struct CosmeticEffectLayer: View {
         .accessibilityHidden(true)
         .onChange(of: trigger) { fire($0) }
         .onChange(of: effects) { if $0 == .off { queue.removeAll() } }
+    }
+
+    /// Primitives stay within `maxExtent`·R of the origin; halos and sprite
+    /// sizes add up to ~0.8 R more, so 2 × 1.9 R (+ edge slack) never clips.
+    static func canvasSide(radius: CGFloat) -> CGFloat {
+        ceil(radius * 2 * (CGFloat(CosmeticEffectBounds.maxExtent) + 0.9) + 8)
     }
 
     private func fire(_ trigger: CosmeticEffectTrigger?) {

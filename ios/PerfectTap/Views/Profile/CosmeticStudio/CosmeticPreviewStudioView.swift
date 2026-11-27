@@ -43,14 +43,21 @@ final class CosmeticPreviewModel: ObservableObject {
     private var sequence = 0
     private let playSound: (CosmeticEvent, String) -> Void
     private let stopSound: () -> Void
+    private let playHaptic: (CosmeticEvent, String) -> Void
 
     init(start: CosmeticLoadout,
          playSound: @escaping (CosmeticEvent, String) -> Void = { SoundEngine.shared.previewSound($0, packID: $1) },
-         stopSound: @escaping () -> Void = { SoundEngine.shared.stopPreview() }) {
+         stopSound: @escaping () -> Void = { SoundEngine.shared.stopPreview() },
+         playHaptic: @escaping (CosmeticEvent, String) -> Void = { event, style in
+             if let outcome = HapticsEngine.previewOutcome(for: event) {
+                 HapticsEngine.shared.previewTapOutcome(outcome, styleID: style)
+             }
+         }) {
         self.startingLoadout = start
         self.draft = start
         self.playSound = playSound
         self.stopSound = stopSound
+        self.playHaptic = playHaptic
     }
 
     /// Starts from what gameplay renders now (ownership-validated), then applies the focus.
@@ -108,6 +115,8 @@ final class CosmeticPreviewModel: ObservableObject {
             legacyParticleTrigger = UUID()
         }
         playSound(event, resolved.soundPackID)
+        // Haptic styles are sold too, so they must be feelable here (QA-03).
+        playHaptic(event, resolved.hapticStyleID)
     }
 
     func tap() { fire(.tap) }

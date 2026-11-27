@@ -45,9 +45,23 @@ enum CosmeticEffectPainter {
 
     static func draw(spec: CosmeticBurstSpec, progress t: Double, in context: inout GraphicsContext,
                      size: CGSize, origin: UnitPoint) {
-        let R = Double(CosmeticEffectBounds.radius(for: size))
+        draw(spec: spec, progress: t, in: &context,
+             radius: Double(CosmeticEffectBounds.radius(for: size)),
+             center: CGPoint(x: size.width * origin.x, y: size.height * origin.y))
+    }
+
+    /// Explicit geometry: lets the layer draw into a canvas cropped around the
+    /// burst (same R as the full layer) instead of a full-screen canvas.
+    static func draw(_ burst: CosmeticBurst, now: TimeInterval, in context: inout GraphicsContext,
+                     radius: Double, center: CGPoint) {
+        let t = burst.progress(at: now)
+        guard t >= 0, t < 1 else { return }
+        draw(spec: burst.spec, progress: t, in: &context, radius: radius, center: center)
+    }
+
+    static func draw(spec: CosmeticBurstSpec, progress t: Double, in context: inout GraphicsContext,
+                     radius R: Double, center: CGPoint) {
         guard R > 0 else { return }
-        let center = CGPoint(x: size.width * origin.x, y: size.height * origin.y)
         let sprite: Image? = spec.spriteName.flatMap { CosmeticSpriteCache.shared.image(named: $0) }.map { Image(uiImage: $0) }
 
         for p in CosmeticEffectFrames.primitives(for: spec, progress: t) where p.opacity > 0.003 {
