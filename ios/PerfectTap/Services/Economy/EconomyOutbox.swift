@@ -13,6 +13,10 @@ final class EconomyOutbox {
     let userID: String
     let fileURL: URL
     private(set) var events: [EconomyEvent]
+    /// False when the file exists but could not be read (e.g. before first
+    /// unlock, I/O error). The outbox then never writes, so the stored events
+    /// are not overwritten; the service re-opens it on the next access.
+    private(set) var isReadable = true
 
     private static let log = Logger(subsystem: "com.perfecttap.app", category: "EconomyOutbox")
 
@@ -32,11 +36,32 @@ final class EconomyOutbox {
     init(userID: String, directory: URL = EconomyOutbox.defaultDirectory) {
         self.userID = userID
         self.fileURL = directory.appendingPathComponent(Self.fileName(for: userID))
-        if let data = try? Data(contentsOf: fileURL),
-           let decoded = try? Self.decoder.decode([EconomyEvent].self, from: data) {
-            events = decoded
+        events = []
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        guard let data = try? Data(contentsOf: fileURL) else {
+            isReadable = false
+            Self.log.error("outbox unreadable; kept on disk, not overwritten")
+            return
+        }
+        if let lossy = try? Self.decoder.decode([LossyEvent].self, from: data) {
+            // One undecodable entry never takes the others with it.
+            events = lossy.compactMap(\.event)
+            if events.count != lossy.count {
+                Self.log.error("outbox: skipped \(lossy.count - self.events.count) undecodable event(s)")
+            }
         } else {
-            events = []
+            // Not an outbox at all: keep the bytes aside for diagnosis and start empty.
+            let aside = fileURL.deletingPathExtension()
+                .appendingPathExtension("corrupt-\(Int(Date().timeIntervalSince1970)).json")
+            try? FileManager.default.moveItem(at: fileURL, to: aside)
+            Self.log.error("outbox corrupt; moved aside")
+        }
+    }
+
+    private struct LossyEvent: Decodable {
+        let event: EconomyEvent?
+        init(from decoder: Decoder) throws {
+            event = try? decoder.singleValueContainer().decode(EconomyEvent.self)
         }
     }
 
@@ -70,7 +95,16 @@ final class EconomyOutbox {
         return persist()
     }
 
+    /// Empties the outbox (after its events were adopted elsewhere).
+    @discardableResult
+    func removeAll() -> Bool {
+        guard !events.isEmpty else { return true }
+        events.removeAll()
+        return persist()
+    }
+
     private func persist() -> Bool {
+        guard isReadable else { return false }
         do {
             let directory = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

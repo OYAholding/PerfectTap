@@ -232,8 +232,37 @@ final class LedgerEconomyService: EconomyService {
         guard let uid = currentUserID()?.lowercased(), !uid.isEmpty else { return nil }
         if let cached = outboxCache, cached.userID == uid { return cached }
         let outbox = EconomyOutbox(userID: uid, directory: outboxDirectory)
-        outboxCache = outbox
+        adoptUnattributedEvents(into: outbox)
+        // An unreadable file (before first unlock, I/O error) is re-opened on
+        // the next access instead of being cached empty and overwritten.
+        if outbox.isReadable { outboxCache = outbox }
         return outbox
+    }
+
+    // MARK: Events earned before the device had any account
+
+    /// Outbox id for events earned before this device ever had a backend
+    /// user (first launch offline, anonymous sign-in failing). Not a valid
+    /// Supabase id, so it can never collide with a real account.
+    static let unattributedOutboxID = "unattributed"
+    private static let identitySeenKey = "perfecttap.economy.identitySeen"
+
+    /// Events earned before the device's FIRST account exist are adopted by
+    /// that account. Once any account has been seen, events without a user
+    /// (e.g. between sign-out and the next sign-in) are dropped instead: they
+    /// could belong to someone else.
+    private func adoptUnattributedEvents(into outbox: EconomyOutbox) {
+        let firstIdentity = !defaults.bool(forKey: Self.identitySeenKey)
+        defaults.set(true, forKey: Self.identitySeenKey)
+        let pending = EconomyOutbox(userID: Self.unattributedOutboxID, directory: outboxDirectory)
+        guard !pending.isEmpty, outbox.isReadable else { return }
+        if firstIdentity {
+            pending.events.forEach { outbox.enqueue($0) }
+            Self.analytics("economy_events_adopted", ["count": "\(pending.events.count)"])
+        } else {
+            Self.analytics("economy_event_unattributed", ["count": "\(pending.events.count)"])
+        }
+        pending.removeAll()
     }
 
     private func refreshPending() {
@@ -258,13 +287,20 @@ final class LedgerEconomyService: EconomyService {
         // Earned-coins statistic stays a local stat; the balance does not move.
         if countsTowardTotalEarned, legacyCoins > 0 { profile.stats.totalCoinsEarned += legacyCoins }
         guard let source = grant.outboxSource else { return nil }
+        let event = EconomyEvent(eventKey: UUID(), source: source, payload: grant.payload,
+                                 createdAt: now(), estimatedCoins: max(0, legacyCoins))
         guard let outbox = currentOutbox() else {
+            // No backend user yet. Before the device's first account, keep
+            // it for that account (adopted in currentOutbox); afterwards an
+            // event without a user cannot be attributed safely.
+            if !defaults.bool(forKey: Self.identitySeenKey) {
+                EconomyOutbox(userID: Self.unattributedOutboxID, directory: outboxDirectory).enqueue(event)
+                return event.eventKey
+            }
             Self.log.error("economy event without signed-in user dropped: \(source.rawValue, privacy: .public)")
             Self.analytics("economy_event_unattributed", ["source": source.rawValue])
             return nil
         }
-        let event = EconomyEvent(eventKey: UUID(), source: source, payload: grant.payload,
-                                 createdAt: now(), estimatedCoins: max(0, legacyCoins))
         outbox.enqueue(event)
         refreshPending()
         return event.eventKey
@@ -319,9 +355,16 @@ final class LedgerEconomyService: EconomyService {
         switch await deliverNow(event, outbox: outbox) {
         case .accepted(let result):
             if let serverProfile = await remote.loadProfile(), currentUserID()?.lowercased() == outbox.userID {
-                var merged = serverProfile
-                if let balance = result.balance { merged.coins = balance }
-                saveProfile(merged)
+                // Take only what the claim changed server side; never replace
+                // unsynced local progress (season XP, bests, quests…).
+                var profile = loadProfile()
+                profile.coins = result.balance ?? serverProfile.coins
+                profile.dailyRewardStreak = serverProfile.dailyRewardStreak
+                profile.dailyRewardLastClaim = serverProfile.dailyRewardLastClaim
+                for item in serverProfile.ownedItems where !profile.ownedItems.contains(item) {
+                    profile.ownedItems.append(item)
+                }
+                saveProfile(profile)
             }
             return .claimed(coins: result.granted ?? estimatedCoins)
         case .alreadyHeld: return .alreadyClaimed
@@ -489,9 +532,13 @@ final class LedgerEconomyService: EconomyService {
                 refreshPending()
                 return .alreadyHeld
             case .retry, .retryNonBlocking:
+                // A flush cancelled mid-request (account change, newer flush)
+                // is not a failed attempt: keep the event due immediately.
+                if failure == .network, Task.isCancelled { return .queued() }
                 var retried = event
                 retried.attempts += 1
-                retried.nextAttemptAt = now().addingTimeInterval(EconomyErrorPolicy.backoff(attempts: retried.attempts))
+                retried.nextAttemptAt = now().addingTimeInterval(
+                    EconomyErrorPolicy.backoff(attempts: retried.attempts, failure: failure))
                 outbox.update(retried)
                 return .queued(blocking: disposition == .retry)
             case .drop:
@@ -549,7 +596,8 @@ final class LedgerEconomyService: EconomyService {
             if Task.isCancelled { break }
             // Never send one account's events under another account.
             guard currentUserID()?.lowercased() == outbox.userID else { break }
-            if now().timeIntervalSince(event.createdAt) > EconomyErrorPolicy.maximumEventAge {
+            if EconomyErrorPolicy.expires(event),
+               now().timeIntervalSince(event.createdAt) > EconomyErrorPolicy.maximumEventAge {
                 outbox.remove(event.eventKey)
                 logDrop(source: event.source.rawValue, failure: .server("expired_client_event"))
                 continue

@@ -118,6 +118,7 @@ enum BackendCodec {
         p.seasonPremium    = data["season_premium"] as? Bool ?? false
         p.seasonAdProgress = intValue(data["season_ad_progress"]) ?? 0
         p.seasonClaimedTiers = (data["season_claimed_tiers"] as? [Any] ?? []).compactMap { intValue($0) }
+        p.seasonProgressNumber = intValue(data["season_progress_number"])
         p.questsJSON       = data["quests_json"] as? String ?? "{}"
         p.achievements     = data["achievements"] as? [String] ?? []
         p.completedChallenges = data["completed_challenges"] as? [String] ?? []
@@ -200,6 +201,7 @@ enum BackendCodec {
             "season_premium": p.seasonPremium,
             "season_ad_progress": p.seasonAdProgress,
             "season_claimed_tiers": p.seasonClaimedTiers,
+            "season_progress_number": p.seasonProgressNumber ?? SeasonSchedule.current().number,
             "quests_json": p.questsJSON,
             "achievements": p.achievements,
             "completed_challenges": p.completedChallenges,

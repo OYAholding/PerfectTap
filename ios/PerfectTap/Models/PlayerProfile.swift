@@ -35,6 +35,10 @@ struct PlayerProfile: Codable {
     var seasonPremium: Bool = false
     var seasonAdProgress: Int = 0          // number of completed rewarded ads toward premium unlock
     var seasonClaimedTiers: [Int] = []     // tier IDs whose rewards have been granted
+    /// Season number (`SeasonSchedule.number`) the season fields above belong
+    /// to. nil = written by a build before seasonal reset (1.1.x / early 1.2):
+    /// adopted as the current season without a reset.
+    var seasonProgressNumber: Int? = nil
 
     // Daily rewards
     var dailyRewardStreak: Int = 0
@@ -97,6 +101,30 @@ struct PlayerProfile: Codable {
             }
             achievements.removeAll { Self.legacyChallengeIDs.contains($0) }
         }
+
+        applySeasonRollover(currentSeason: SeasonSchedule.current().number)
+    }
+
+    /// Seasonal reset (owner decision RC, 2026-11-27): when a new season
+    /// starts, season XP, tier, claimed tiers, ad progress and the ad-unlocked
+    /// premium track start over. Coins, owned items (including cosmetics and
+    /// historical season rewards), achievements, challenges and lifetime
+    /// stats are untouched. Only rolls forward: a device clock set back to an
+    /// earlier season never wipes progress. Returns true when it reset.
+    @discardableResult
+    mutating func applySeasonRollover(currentSeason: Int) -> Bool {
+        guard let stored = seasonProgressNumber else {
+            seasonProgressNumber = currentSeason
+            return false
+        }
+        guard currentSeason > stored else { return false }
+        seasonXP = 0
+        seasonTier = 0
+        seasonClaimedTiers = []
+        seasonAdProgress = 0
+        seasonPremium = false
+        seasonProgressNumber = currentSeason
+        return true
     }
 
     func bestScore(for mode: GameMode) -> Int {

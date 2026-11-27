@@ -103,7 +103,18 @@ struct EntitlementLedger: Codable, Equatable {
     mutating func process(_ event: PurchaseEvent, serverAcknowledged: Bool = true) -> [EntitlementEffect] {
         guard let kind = PurchaseProductKind.kind(for: event.productID) else { return [] }
         let id = event.transactionID
-        if legacyProcessed.contains(id) { return [] }
+        if legacyProcessed.contains(id) {
+            // 1.1.x / v1 granted this already. A non-consumable seen again
+            // becomes a full record (no second grant) so Restore and the
+            // launch reconcile can re-apply it on another account or after a
+            // cloud merge, and a refund can revoke it. Coins stay immutable
+            // dedupe markers (never re-credited, never debited from here).
+            guard !kind.isConsumable else { return [] }
+            legacyProcessed.remove(id)
+            records[id] = Record(productID: event.productID, isRevoked: event.isRevoked,
+                                 lastSignedDate: event.signedDate, serverAcknowledged: false)
+            return event.isRevoked ? revocationEffects(kind, productID: event.productID) : []
+        }
         if event.isRevoked {
             guard var record = records[id] else {
                 // Refund before delivery: a tombstone blocks a late grant.
@@ -143,6 +154,13 @@ struct EntitlementLedger: Codable, Equatable {
         guard !event.isRevoked, let record = records[event.transactionID], record.isRevoked,
               let signed = event.signedDate, let revokedAt = record.lastSignedDate else { return false }
         return signed > revokedAt
+    }
+
+    /// A 1.1.x / v1 marker for a non-consumable, upgraded by `process`.
+    func isLegacyNonConsumable(_ event: PurchaseEvent) -> Bool {
+        guard legacyProcessed.contains(event.transactionID),
+              let kind = PurchaseProductKind.kind(for: event.productID) else { return false }
+        return !kind.isConsumable
     }
 
     func hasProcessed(_ transactionID: UInt64) -> Bool {

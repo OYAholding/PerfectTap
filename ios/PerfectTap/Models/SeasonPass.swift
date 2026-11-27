@@ -56,8 +56,11 @@ extension SeasonTier {
 // config key `season_calendar`): a fixed three-month cycle anchored at
 // 2026-03-01 UTC — Mar–May, Jun–Aug, Sep–Nov, Dec–Feb — with ids
 // `season_<n>`. The server (`private.season_at` / `season_tier_verdict`)
-// computes exactly the same ids and boundaries. Computing a new cycle never
-// touches the player's earned tiers, claimed rewards or premium state.
+// computes exactly the same ids and boundaries. Seasonal progression (XP,
+// tier, claimed tiers, ad-unlocked premium) resets when a new season starts
+// (`PlayerProfile.applySeasonRollover`); coins, owned items, achievements and
+// stats never do. Claims still queued for the previous season are accepted by
+// the server during the grace window.
 struct SeasonSchedule: Equatable {
     let number: Int
     let startsAt: Date

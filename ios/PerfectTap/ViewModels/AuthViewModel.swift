@@ -440,7 +440,14 @@ final class AuthViewModel: ObservableObject {
         return result
     }
 
-    private func mergeProfiles(local: PlayerProfile, cloud: PlayerProfile, firebaseUID: String) -> PlayerProfile {
+    private func mergeProfiles(local localIn: PlayerProfile, cloud cloudIn: PlayerProfile, firebaseUID: String) -> PlayerProfile {
+        // Season fields are only comparable within one season: roll both
+        // sides forward to the current season before the max/union merge.
+        let currentSeason = SeasonSchedule.current().number
+        var local = localIn
+        var cloud = cloudIn
+        local.applySeasonRollover(currentSeason: currentSeason)
+        cloud.applySeasonRollover(currentSeason: currentSeason)
         var merged = local
         merged.uid = firebaseUID
 
@@ -481,15 +488,27 @@ final class AuthViewModel: ObservableObject {
         merged.ownedItems = Self.mergedOwnedItems(local: local.ownedItems, cloud: cloud.ownedItems,
                                                   authoritative: authoritative)
         merged.friends = unionPreservingOrder(local.friends, cloud.friends)
-        merged.achievements = unionPreservingOrder(local.achievements, cloud.achievements)
-        merged.completedChallenges = unionPreservingOrder(local.completedChallenges, cloud.completedChallenges)
-        merged.seasonClaimedTiers = unionPreservingOrder(local.seasonClaimedTiers, cloud.seasonClaimedTiers)
+        if authoritative {
+            // Claim markers decide which reward events are sent. The server
+            // paid them to the account that sent them, so a guest's markers
+            // must not suppress this account's own claims: keep the cloud
+            // copy (a marker lost here only re-sends an event the server
+            // answers `already_claimed`).
+            merged.achievements = cloud.achievements
+            merged.completedChallenges = cloud.completedChallenges
+            merged.seasonClaimedTiers = cloud.seasonClaimedTiers
+        } else {
+            merged.achievements = unionPreservingOrder(local.achievements, cloud.achievements)
+            merged.completedChallenges = unionPreservingOrder(local.completedChallenges, cloud.completedChallenges)
+            merged.seasonClaimedTiers = unionPreservingOrder(local.seasonClaimedTiers, cloud.seasonClaimedTiers)
+        }
 
         // 6) Season fields
         merged.seasonXP = max(local.seasonXP, cloud.seasonXP)
         merged.seasonTier = max(local.seasonTier, cloud.seasonTier)
         merged.seasonAdProgress = max(local.seasonAdProgress, cloud.seasonAdProgress)
         merged.seasonPremium = local.seasonPremium || cloud.seasonPremium
+        merged.seasonProgressNumber = currentSeason
         // With server verification the purchase ledger owns Remove Ads (a
         // refund must be able to turn it off); until then keep the OR merge.
         merged.noAds = FeatureFlags.serverPurchaseVerification ? cloud.noAds : (local.noAds || cloud.noAds)

@@ -103,15 +103,22 @@ enum EconomyErrorPolicy {
     /// Contract: `duplicate`, `already_claimed`, `already_owned` are terminal-success.
     static let terminalSuccess: Set<String> = ["duplicate", "already_claimed", "already_owned"]
     /// Temporary server states: the event stays valid and is retried.
-    static let retryable: Set<String> = ["economy_disabled", "rate_limited", "profile_required",
-                                          "duel_score_pending"]
+    static let retryable: Set<String> = ["economy_disabled", "rate_limited", "profile_required"]
+    /// Kept and retried without holding up the events behind them:
+    /// - `legacy_review_required`: the account's legacy balance is waiting
+    ///   for reconciliation / support. Earned events stay valid and are paid
+    ///   once it is resolved; retried slowly (`reviewBackoff`) so an
+    ///   unreconciled account never causes a retry storm.
+    /// - `duel_score_pending`: the duel score lands after the coin event.
+    /// - `progress_daily_limit`: achievement/challenge payouts over today's
+    ///   server cap are paid on a later day.
+    static let retryLater: Set<String> = ["legacy_review_required", "duel_score_pending",
+                                           "progress_daily_limit"]
     /// Terminal rejections: the event can never succeed, drop it and log.
-    /// `legacy_review_required` is terminal-with-message: an unreconciled
-    /// account must not cause a retry storm (server facts, Agent B).
     static let terminal: Set<String> = ["insufficient_coins", "claim_limit", "item_unavailable",
                                          "invalid_payload", "implausible_result", "invalid_metadata",
                                          "invalid_source", "wrong_day", "invalid_response",
-                                         "duel_not_found", "legacy_review_required"]
+                                         "duel_not_found"]
 
     /// Player-facing text for interactive failures.
     static func userMessage(for code: String) -> String {
@@ -137,6 +144,7 @@ enum EconomyErrorPolicy {
         case .server(let code):
             if terminalSuccess.contains(code) { return .success }
             if terminal.contains(code) { return .drop }
+            if retryLater.contains(code) { return .retryNonBlocking }
             // Retryable codes and anything unknown (e.g. an RPC not deployed
             // yet) keep the earned event; `maximumEventAge` bounds the retries.
             return .retry
@@ -165,9 +173,27 @@ enum EconomyErrorPolicy {
         return min(3_600, 5 * pow(2, Double(exponent)))
     }
 
+    /// Retry delay after a failure. A pending legacy review is retried at
+    /// most every six hours.
+    static func backoff(attempts: Int, failure: EconomyRemoteFailure) -> TimeInterval {
+        let base = backoff(attempts: attempts)
+        return failure == .server("legacy_review_required") ? max(base, reviewBackoff) : base
+    }
+    static let reviewBackoff: TimeInterval = 6 * 3_600
+
     /// Events older than this are dropped (the server rejects stale gameplay
     /// after 72 h anyway); prevents an unbounded outbox.
     static let maximumEventAge: TimeInterval = 7 * 24 * 3_600
+
+    /// Once-per-account events (bounded by their ids) never expire: the
+    /// server accepts them whenever they arrive, so dropping one would lose
+    /// an earned reward (e.g. while a legacy review is pending).
+    static func expires(_ event: EconomyEvent) -> Bool {
+        switch event.source {
+        case .achievement, .challenge, .starterItem: return false
+        default: return true
+        }
+    }
 }
 
 // MARK: - Rewarded-ad server-side verification payload

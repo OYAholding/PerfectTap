@@ -292,9 +292,9 @@ final class AuthoritativeEconomyTests: XCTestCase {
         XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("already_owned")), .success)
         XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("rate_limited")), .retry)
         XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("economy_disabled")), .retry)
-        XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("legacy_review_required")), .drop,
-                       "terminal-with-message, no retry storm")
-        XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("duel_score_pending")), .retry)
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("legacy_review_required")), .retryNonBlocking,
+                       "kept for after the review, retried slowly (no storm, no loss)")
+        XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("duel_score_pending")), .retryNonBlocking)
         XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("duel_not_found")), .drop)
         XCTAssertEqual(EconomyErrorPolicy.disposition(for: .network), .retry)
         XCTAssertEqual(EconomyErrorPolicy.disposition(for: .server("Could not find the function")), .retry,
@@ -556,13 +556,97 @@ final class EconomyContractPinTests: XCTestCase {
         XCTAssertEqual(SeasonSchedule.current(now: date(2025, 12, 1)).id, "season_1")
         XCTAssertNil(SeasonSchedule.season(at: date(2025, 12, 1)), "server parity: no season before the anchor")
 
-        // Rolling the cycle is a pure date computation: earned tiers stay.
+        // Computing the schedule is a pure date computation; resetting the
+        // profile is `applySeasonRollover`'s job (SeasonRolloverTests).
         var profile = PlayerProfile()
         profile.seasonTier = 12
         profile.seasonClaimedTiers = [1, 2, 3]
         _ = SeasonSchedule.current(now: date(2027, 6, 1))
         XCTAssertEqual(profile.seasonTier, 12)
         XCTAssertEqual(profile.seasonClaimedTiers, [1, 2, 3])
+    }
+}
+
+// MARK: - Seasonal reset (owner RC decision 2026-11-27)
+
+final class SeasonRolloverTests: XCTestCase {
+    private func seasonalProfile(season: Int?) -> PlayerProfile {
+        var p = PlayerProfile()
+        p.coins = 900
+        p.ownedItems = ["theme_neon", "avatar_cool", "sp_prem_1", "theme_fire"]
+        p.achievements = ["games_1"]
+        p.completedChallenges = ["c1"]
+        p.stats.totalGames = 40
+        p.stats.totalCoinsEarned = 3_000
+        p.seasonXP = 1_250
+        p.seasonTier = 12
+        p.seasonClaimedTiers = [1, 2, 3]
+        p.seasonAdProgress = 3
+        p.seasonPremium = true
+        p.seasonProgressNumber = season
+        return p
+    }
+
+    func testNewSeasonResetsSeasonalProgressOnly() {
+        var p = seasonalProfile(season: 3)
+        XCTAssertTrue(p.applySeasonRollover(currentSeason: 4))
+        XCTAssertEqual(p.seasonXP, 0)
+        XCTAssertEqual(p.seasonTier, 0)
+        XCTAssertEqual(p.seasonClaimedTiers, [])
+        XCTAssertEqual(p.seasonAdProgress, 0)
+        XCTAssertFalse(p.seasonPremium)
+        XCTAssertEqual(p.seasonProgressNumber, 4)
+        // Preserved: coins, cosmetics + historical season rewards, achievements, stats.
+        XCTAssertEqual(p.coins, 900)
+        XCTAssertEqual(p.ownedItems, ["theme_neon", "avatar_cool", "sp_prem_1", "theme_fire"])
+        XCTAssertEqual(p.achievements, ["games_1"])
+        XCTAssertEqual(p.completedChallenges, ["c1"])
+        XCTAssertEqual(p.stats.totalGames, 40)
+        XCTAssertEqual(p.stats.totalCoinsEarned, 3_000)
+    }
+
+    func testSameSeasonAndClockBackNeverReset() {
+        var same = seasonalProfile(season: 4)
+        XCTAssertFalse(same.applySeasonRollover(currentSeason: 4))
+        XCTAssertEqual(same.seasonTier, 12)
+        var clockBack = seasonalProfile(season: 4)
+        XCTAssertFalse(clockBack.applySeasonRollover(currentSeason: 3), "device clock set back must not wipe progress")
+        XCTAssertEqual(clockBack.seasonTier, 12)
+        XCTAssertEqual(clockBack.seasonProgressNumber, 4)
+    }
+
+    func testLegacyProfileWithoutSeasonIsAdoptedWithoutReset() {
+        // Written by 1.1.x (no season_progress_number): adopt, don't wipe.
+        var legacy = seasonalProfile(season: nil)
+        XCTAssertFalse(legacy.applySeasonRollover(currentSeason: 3))
+        XCTAssertEqual(legacy.seasonTier, 12)
+        XCTAssertEqual(legacy.seasonProgressNumber, 3)
+    }
+
+    func testCodecRoundTripsSeasonNumberAndAdoptsLegacyProfiles() throws {
+        var p = seasonalProfile(season: 3)
+        p.seasonProgressNumber = SeasonSchedule.current().number
+        let encoded = BackendCodec.encodeProfile(p)
+        XCTAssertEqual(encoded["season_progress_number"] as? Int, SeasonSchedule.current().number)
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: encoded))
+        XCTAssertEqual(BackendCodec.decodeProfile(encoded)?.seasonProgressNumber, SeasonSchedule.current().number)
+        var legacy = encoded
+        legacy.removeValue(forKey: "season_progress_number")
+        // A 1.1.x cloud profile (no key) is adopted as the current season on decode.
+        let adopted = BackendCodec.decodeProfile(legacy)
+        XCTAssertEqual(adopted?.seasonProgressNumber, SeasonSchedule.current().number)
+        XCTAssertEqual(adopted?.seasonTier, 12, "adopting a legacy profile never wipes it")
+    }
+
+    func testLoadAndSavePathRollsAnEarlierSeasonForward() throws {
+        // normalizeAndMigrate runs on every load() and save().
+        let current = SeasonSchedule.current().number
+        try XCTSkipIf(current < 2, "needs a previous season")
+        var old = seasonalProfile(season: current - 1)
+        old.normalizeAndMigrate()
+        XCTAssertEqual(old.seasonTier, 0)
+        XCTAssertEqual(old.seasonProgressNumber, current)
+        XCTAssertEqual(old.coins, 900)
     }
 }
 
@@ -734,9 +818,162 @@ final class SeasonCalendarAlignmentTests: XCTestCase {
         XCTAssertNil(key)
         XCTAssertEqual(profile.coins, 175, "flag OFF credits the tier locally exactly as before")
         XCTAssertEqual(profile.stats.totalCoinsEarned, 75)
-        XCTAssertEqual(profile.seasonTier, 12, "earned tiers are never reset")
+        XCTAssertEqual(profile.seasonTier, 12, "a grant never touches earned tiers")
         XCTAssertEqual(profile.seasonClaimedTiers, [1, 2])
         XCTAssertEqual(h.remote.totalCalls, 0, "no network with flag OFF")
         XCTAssertFalse(FileManager.default.fileExists(atPath: h.directory.path), "no outbox with flag OFF")
+    }
+}
+
+
+// MARK: - Security & durability hardening (adversarial review 2026-11-27)
+
+@MainActor
+final class EconomyHardeningTests: XCTestCase {
+    private let uid = "11111111-1111-1111-1111-111111111111"
+
+    func testLegacyReviewKeepsEventsRetriesSlowlyAndDoesNotBlockOthers() async {
+        let h = EconomyHarness(authoritative: true)
+        defer { h.cleanUp() }
+        var profile = PlayerProfile()
+        h.service.recordGrant(.achievement(id: "games_1"), legacyCoins: 25, countsTowardTotalEarned: true, profile: &profile)
+        h.service.recordGrant(.challenge(id: "c1"), legacyCoins: 50, countsTowardTotalEarned: true, profile: &profile)
+        h.remote.submitResponses = [.failure(.server("legacy_review_required")), .success(.init(status: "applied", balance: 50))]
+        await h.service.flush(reason: .manual)
+        XCTAssertEqual(h.remote.submitted.count, 2, "a pending review never blocks the next event")
+        let kept = h.service.currentOutbox()?.events ?? []
+        XCTAssertEqual(kept.count, 1, "the reviewed account's event is kept, not dropped")
+        XCTAssertEqual(kept.first?.source, .achievement)
+        if let next = kept.first?.nextAttemptAt {
+            XCTAssertGreaterThanOrEqual(next.timeIntervalSince(h.clock), EconomyErrorPolicy.reviewBackoff)
+        } else { XCTFail("backoff not set") }
+    }
+
+    func testOncePerAccountEventsNeverExpireButGameplayDoes() async {
+        let h = EconomyHarness(authoritative: true)
+        defer { h.cleanUp() }
+        var profile = PlayerProfile()
+        h.service.recordGrant(.duel(duelID: "d1"), legacyCoins: 10, countsTowardTotalEarned: true, profile: &profile)
+        h.service.recordGrant(.achievement(id: "games_1"), legacyCoins: 25, countsTowardTotalEarned: true, profile: &profile)
+        h.clock = h.clock.addingTimeInterval(EconomyErrorPolicy.maximumEventAge + 60)
+        h.remote.submitResponses = [.failure(.network)]
+        await h.service.flush(reason: .manual)
+        let sources = (h.service.currentOutbox()?.events ?? []).map(\.source)
+        XCTAssertEqual(sources, [.achievement], "achievement survives, stale duel event expires")
+    }
+
+    func testEventsEarnedBeforeTheFirstAccountAreAdoptedByIt() {
+        let h = EconomyHarness(authoritative: true, userID: nil)
+        defer { h.cleanUp() }
+        var profile = PlayerProfile()
+        let key = h.service.recordGrant(.achievement(id: "games_1"), legacyCoins: 25,
+                                        countsTowardTotalEarned: true, profile: &profile)
+        XCTAssertNotNil(key, "first launch offline: kept, not dropped")
+        h.userID = uid
+        XCTAssertEqual(h.service.currentOutbox()?.events.map(\.eventKey), [key!].compactMap { $0 })
+        XCTAssertTrue(EconomyOutbox(userID: LedgerEconomyService.unattributedOutboxID, directory: h.directory).isEmpty)
+    }
+
+    func testEventsWithoutAUserAfterAnAccountExistedAreNeverAdopted() {
+        let h = EconomyHarness(authoritative: true)
+        defer { h.cleanUp() }
+        _ = h.service.currentOutbox()            // device has had an account
+        h.userID = nil                            // signed out
+        var profile = PlayerProfile()
+        XCTAssertNil(h.service.recordGrant(.achievement(id: "games_1"), legacyCoins: 25,
+                                           countsTowardTotalEarned: true, profile: &profile))
+        h.userID = "22222222-2222-2222-2222-222222222222"
+        h.service.accountDidChange()
+        h.service.cancelPendingWork()
+        XCTAssertTrue(h.service.currentOutbox()?.isEmpty ?? false, "never credited to the next account")
+    }
+
+    func testOneUndecodableOutboxEntryDoesNotLoseTheOthers() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("outbox-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let good = EconomyOutbox(userID: uid, directory: dir)
+        let event = EconomyEvent(eventKey: UUID(), source: .quest, payload: ["quest_id": .string("q1")], createdAt: Date())
+        good.enqueue(event)
+        var json = try JSONSerialization.jsonObject(with: Data(contentsOf: good.fileURL)) as! [Any]
+        json.append(["eventKey": "not-a-uuid", "source": "nope"])
+        try JSONSerialization.data(withJSONObject: json).write(to: good.fileURL)
+        let reopened = EconomyOutbox(userID: uid, directory: dir)
+        XCTAssertEqual(reopened.events.map(\.eventKey), [event.eventKey])
+    }
+
+    func testCorruptOutboxIsMovedAsideAndUnreadableOneIsNeverOverwritten() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("outbox-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let outbox = EconomyOutbox(userID: uid, directory: dir)
+        outbox.enqueue(EconomyEvent(eventKey: UUID(), source: .quest, payload: [:], createdAt: Date()))
+
+        // Unreadable (e.g. before first unlock): no write may replace it.
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: outbox.fileURL.path)
+        let locked = EconomyOutbox(userID: uid, directory: dir)
+        XCTAssertFalse(locked.isReadable)
+        XCTAssertFalse(locked.enqueue(EconomyEvent(eventKey: UUID(), source: .wheel, payload: [:], createdAt: Date())))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outbox.fileURL.path)
+        XCTAssertEqual(EconomyOutbox(userID: uid, directory: dir).events.count, 1, "original events intact")
+
+        // Not JSON at all: kept aside for diagnosis, outbox starts empty.
+        try Data("garbage".utf8).write(to: outbox.fileURL)
+        XCTAssertTrue(EconomyOutbox(userID: uid, directory: dir).isEmpty)
+        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertTrue(names.contains { $0.contains("corrupt") })
+    }
+
+    func testDailyClaimNeverReplacesUnsyncedLocalProgress() async {
+        let h = EconomyHarness(authoritative: true)
+        defer { h.cleanUp() }
+        h.profile.seasonXP = 500
+        h.profile.bestClassic = 900
+        var server = PlayerProfile()
+        server.coins = 40
+        server.dailyRewardStreak = 3
+        server.dailyRewardLastClaim = "2026-11-27"
+        server.ownedItems = ["theme_neon"]
+        h.remote.serverProfile = server
+        h.remote.submitResponses = [.success(.init(status: "applied", granted: 20, balance: 60))]
+        _ = await h.service.claimDailyReward(estimatedCoins: 20)
+        XCTAssertEqual(h.profile.coins, 60)
+        XCTAssertEqual(h.profile.dailyRewardStreak, 3)
+        XCTAssertEqual(h.profile.seasonXP, 500, "local season XP kept")
+        XCTAssertEqual(h.profile.bestClassic, 900, "local best kept")
+        XCTAssertTrue(h.profile.ownedItems.contains("theme_neon"))
+    }
+
+    func testAuthoritativeBuildWithoutServerVerificationFailsClosed() {
+        XCTAssertEqual(PurchaseManager.verifierKind(serverVerification: true, authoritativeEconomy: true, supabaseBackend: true), .server)
+        XCTAssertEqual(PurchaseManager.verifierKind(serverVerification: false, authoritativeEconomy: true, supabaseBackend: true), .unavailable,
+                       "coins must never be finished without a server ledger credit")
+        XCTAssertEqual(PurchaseManager.verifierKind(serverVerification: true, authoritativeEconomy: true, supabaseBackend: false), .unavailable)
+        XCTAssertEqual(PurchaseManager.verifierKind(serverVerification: false, authoritativeEconomy: false, supabaseBackend: true), .onDevice,
+                       "flag OFF keeps the legacy on-device path")
+    }
+
+    func testLegacyNonConsumableBecomesRestorableWithoutASecondGrant() {
+        let defaults = UserDefaults(suiteName: "ledger-\(UUID().uuidString)")!
+        defaults.set(["901", "902"], forKey: EntitlementLedger.legacyKey)
+        var ledger = EntitlementLedger.load(from: defaults)
+        let removeAds = PurchaseEvent(transactionID: 901, productID: "com.perfecttap.removeads", isRevoked: false)
+        XCTAssertTrue(ledger.isLegacyNonConsumable(removeAds))
+        XCTAssertEqual(ledger.process(removeAds), [], "1.1.x already granted it")
+        XCTAssertEqual(ledger.restoreEffects(for: removeAds), [.grantNoAds], "now restorable on another account")
+        XCTAssertTrue(ledger.needsServerAcknowledgement(901), "server ledger learns it on next delivery")
+
+        let coins = PurchaseEvent(transactionID: 902, productID: "com.perfecttap.coins.500", isRevoked: false)
+        XCTAssertFalse(ledger.isLegacyNonConsumable(coins))
+        XCTAssertEqual(ledger.process(coins), [], "legacy coins are never re-credited")
+        XCTAssertEqual(ledger.process(PurchaseEvent(transactionID: 902, productID: "com.perfecttap.coins.500",
+                                                    isRevoked: true)), [], "nor debited from here")
+    }
+
+    func testRefundOfLegacyRemoveAdsRevokesIt() {
+        let defaults = UserDefaults(suiteName: "ledger-\(UUID().uuidString)")!
+        defaults.set(["903"], forKey: EntitlementLedger.legacyKey)
+        var ledger = EntitlementLedger.load(from: defaults)
+        let refund = PurchaseEvent(transactionID: 903, productID: "com.perfecttap.removeads", isRevoked: true,
+                                   signedDate: Date())
+        XCTAssertEqual(ledger.process(refund), [.revokeNoAds])
     }
 }

@@ -9,7 +9,8 @@ struct SeasonPassView: View {
     @State private var rewardUnavailableMessage = ""
 
     private static let adsRequired = EconomyConfig.current.seasonAdsRequired
-    /// Current season cycle, computed from the date (earned tiers are kept).
+    /// Current season cycle, computed from the date. The profile's season
+    /// fields are rolled over to it on load (`applySeasonRollover`).
     private let season = SeasonSchedule.current()
 
     private var currentTier: Int { profile.seasonTier }

@@ -172,10 +172,24 @@ final class PurchaseManager: ObservableObject {
     }
 
     private static func defaultVerifier() -> PurchaseVerifying {
-        if FeatureFlags.serverPurchaseVerification, Backend.shared is SupabaseService {
-            return SupabasePurchaseVerifier()
+        switch verifierKind(serverVerification: FeatureFlags.serverPurchaseVerification,
+                            authoritativeEconomy: FeatureFlags.authoritativeEconomyEnabled,
+                            supabaseBackend: Backend.shared is SupabaseService) {
+        case .server: return SupabasePurchaseVerifier()
+        case .onDevice: return OnDeviceVerifier()
+        case .unavailable: return UnavailableVerifier()
         }
-        return OnDeviceVerifier()
+    }
+
+    enum VerifierKind: Equatable { case server, onDevice, unavailable }
+
+    /// With the authoritative economy, coins exist only in the server ledger:
+    /// a build that cannot verify server side must never finish a coin
+    /// transaction (it would be paid and credited nowhere). Fail closed.
+    nonisolated static func verifierKind(serverVerification: Bool, authoritativeEconomy: Bool,
+                                         supabaseBackend: Bool) -> VerifierKind {
+        if serverVerification, supabaseBackend { return .server }
+        return authoritativeEconomy ? .unavailable : .onDevice
     }
 
     deinit {
@@ -526,6 +540,11 @@ final class PurchaseManager: ObservableObject {
     /// the current account (restore / launch reconcile), idempotently.
     func deliver(_ event: PurchaseEvent, jws: String, reapplyOwned: Bool = false) async -> DeliveryOutcome {
         guard let kind = PurchaseProductKind.kind(for: event.productID) else { return .deferred }
+        // Effects are applied to the signed-in profile: if the account
+        // changes while the server verifies, apply nothing (StoreKit
+        // re-delivers the unfinished transaction to the right account).
+        let accountAtStart = Backend.shared.currentUID
+        func accountChanged() -> Bool { Backend.shared.currentUID != accountAtStart }
 
         // Refunds and refund reversals are Apple-signed state changes, applied
         // without asking the server (it learns them from App Store Server
@@ -534,9 +553,14 @@ final class PurchaseManager: ObservableObject {
             return .delivered(commit(ledger.process(event)))
         }
 
+        if ledger.isLegacyNonConsumable(event) {
+            _ = commit(ledger.process(event))   // upgrade only, no second grant
+        }
         if ledger.hasProcessed(event.transactionID) {
             if ledger.needsServerAcknowledgement(event.transactionID) {
-                switch await verifier.verify(jws: jws) {
+                let verification = await verifier.verify(jws: jws)
+                if accountChanged() { return .deferred }
+                switch verification {
                 case .verified:
                     ledger.markServerAcknowledged(event.transactionID)
                 case .rejected(let reason):
@@ -549,7 +573,9 @@ final class PurchaseManager: ObservableObject {
             return .delivered(commit(reapplyOwned ? ownedEffects(for: event) : []))
         }
 
-        switch await verifier.verify(jws: jws) {
+        let verification = await verifier.verify(jws: jws)
+        if accountChanged() { return .deferred }
+        switch verification {
         case .verified:
             return .delivered(commit(ledger.process(event)))
         case .rejected(let reason):
@@ -623,6 +649,12 @@ final class PurchaseManager: ObservableObject {
     func consumeLastCoinPackCreditEvent() {
         lastCoinPackCreditEvent = nil
     }
+}
+
+/// Fail-closed verifier: coins are never finished, non-consumables unlock
+/// provisionally from Apple's signed history (see `verifierKind`).
+struct UnavailableVerifier: PurchaseVerifying {
+    func verify(jws: String) async -> PurchaseVerification { .unavailable }
 }
 
 /// Production verifier (enabled by FeatureFlags.serverPurchaseVerification).
