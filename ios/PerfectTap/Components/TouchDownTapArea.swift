@@ -9,17 +9,47 @@ import UIKit
 // Accessibility: exposed as a button labelled `accessibilityLabel` so VoiceOver,
 // Switch Control and XCUITest (`app.buttons["TAP!"]`) keep working.
 
+//
+// Pressed state: the original init applies the generic press feedback (scale
+// 0.94 + opacity 0.85). The `pressedContent` init hands the real touch-down
+// state to the content instead, so a cosmetic skin can draw its own press
+// (it is the same state that drives scoring, not a gesture approximation).
+// Either way the hit area is the catcher overlay, sized by the content's layout.
+
 struct TouchDownTapArea<Content: View>: View {
     let accessibilityLabel: String
     let onTouchDown: (CFTimeInterval) -> Void
-    @ViewBuilder let content: () -> Content
+    private let appliesDefaultPressStyle: Bool
+    private let content: (Bool) -> Content
 
     @State private var isPressed = false
 
+    init(accessibilityLabel: String,
+         onTouchDown: @escaping (CFTimeInterval) -> Void,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.accessibilityLabel = accessibilityLabel
+        self.onTouchDown = onTouchDown
+        self.appliesDefaultPressStyle = true
+        self.content = { _ in content() }
+    }
+
+    /// - Parameter appliesDefaultPressStyle: also apply the generic scale/opacity
+    ///   press feedback (true reproduces the original init's look).
+    init(accessibilityLabel: String,
+         appliesDefaultPressStyle: Bool = false,
+         onTouchDown: @escaping (CFTimeInterval) -> Void,
+         @ViewBuilder pressedContent: @escaping (_ isPressed: Bool) -> Content) {
+        self.accessibilityLabel = accessibilityLabel
+        self.onTouchDown = onTouchDown
+        self.appliesDefaultPressStyle = appliesDefaultPressStyle
+        self.content = pressedContent
+    }
+
     var body: some View {
-        content()
-            .scaleEffect(isPressed ? 0.94 : 1.0)
-            .opacity(isPressed ? 0.85 : 1.0)
+        let pressedLook = appliesDefaultPressStyle && isPressed
+        content(isPressed)
+            .scaleEffect(pressedLook ? 0.94 : 1.0)
+            .opacity(pressedLook ? 0.85 : 1.0)
             .animation(.easeOut(duration: 0.08), value: isPressed)
             .overlay(
                 TouchDownCatcher(
