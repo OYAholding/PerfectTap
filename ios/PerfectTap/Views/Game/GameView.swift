@@ -88,6 +88,7 @@ struct GameView: View {
             store.refresh()
             cosmetics = store.resolved
             CosmeticImageCache.shared.preload(cosmetics)
+            CosmeticSpriteCache.shared.preload(cosmetics)   // effect sprites: never loaded on the tap path
             vm.soundEngine = SoundEngine.shared
             vm.hapticsEngine = HapticsEngine.shared
             vm.onGameFinished = { [weak router] result in
