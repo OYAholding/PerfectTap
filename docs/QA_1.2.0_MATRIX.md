@@ -8,6 +8,26 @@
 **Status legend:** PASSED / FAILED / BLOCKED (cannot run yet: missing prerequisite, stated in the row) / NOT RUN (could run, was not run in this pass).
 A row is PASSED only if it was actually executed in this pass. Earlier results from other documents are quoted as "prior", never as PASSED.
 
+## Re-run 2026-11-27 — security hardening + support tooling (supersedes rows below)
+
+Base `f0e2091` + this commit (hardening, season reset, support, docs). iPhone 16 Pro sim (iOS 18.5), local Supabase stack.
+
+| Area | Result | Evidence |
+|---|---|---|
+| iOS unit (`PerfectTapTests`) | **PASSED 143/143** | incl. `SeasonRolloverTests` (5) and `EconomyHardeningTests` (10) |
+| StoreKit local (`PerfectTapStoreKitTests`) | **PASSED 26/26** | after verifier fail-closed + account re-check |
+| UI mode runtime matrix (`PerfectTapUITests` scheme) | **PASSED 15/15 modes** | all `QA_RESULT … PASS` |
+| ATT/UMP consent UI tests | **PASSED 3/3** | offline backend |
+| Release sim build + built flags | **PASSED** | `assert-built-flags.sh`: profile Off, all flags NO |
+| Release-IAP sim build + built flags | **PASSED** | `assert-built-flags.sh --release-iap`: profile AppStoreIAP, IAP ceiling YES, economy NO; Release mode rejects this build. Added to CI |
+| Backend pgTAP | **PASSED 374/374** (8 suites) | `db reset` of all 13 migrations; new `economy_hardening` (28), `support_operations` (27) |
+| Deno (functions + `_shared`) | **PASSED** 25 tests, fmt/lint/check | AdMob ad-unit allowlist tests |
+| Edge Functions served locally | **PASSED** (fail closed) | `admob-ssv` 400 invalid_signature, `verify-purchase` 401, `app-store-notifications` 503 without Apple secrets |
+| Support CLI smoke | **PASSED** | find / user / adjust (refused without `PT_CONFIRM`) / injection string → 0 rows / containment drill logged |
+| Flag guard, secret guard, backend target, gitleaks (history + working tree) | **PASSED** | no leaks |
+| Performance (simulator) | **NOT CONCLUSIVE — rerun pending** | run 1 failed 4 thresholds while another session built in parallel (load avg 6 → 489); run 2 aborted. No render-path code changed (economy/outbox/StoreKit/profile normalize only). Rerun on idle host required before G10 |
+| Production migration list (read-only) | head `20261114120000`, 7 pending | `supabase migration list --linked` |
+
 ## Re-run 2026-11-26 — integrated `release/1.2.0` @ `e424776` (supersedes rows below)
 
 | Area | Result | Evidence |

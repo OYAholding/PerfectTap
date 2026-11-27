@@ -1,13 +1,15 @@
 # PerfectTap 1.2.0 — Runbook שחרור מבוקר (gated)
 
-**גרסה:** 1.2.0 (build 6 ומעלה) · **תאריך:** 25.11.2026 · **בעלים:** OYA Holding · **מצב:** טיוטה תפעולית. שום שלב כאן לא בוצע מול Production.
+**גרסה:** 1.2.0 (build 6 ומעלה) · **עודכן:** 27.11.2026 · **בעלים:** OYA Holding · **מצב:** טיוטה תפעולית. שום שלב כאן לא בוצע מול Production (head ב-production: `20261114120000`).
+
+מסמכים קשורים: `docs/STAGING_AND_DEPLOY_PLAN_1.2.0.md` (סדר פריסה, secrets, staging), `docs/OWNER_CHECKLIST_1.2.0.he.md`, `docs/SECURITY_REVIEW_1.2.0.md`, `docs/SUPPORT_OPERATIONS.md`, `docs/PRODUCT_DECISIONS_1.2.0_RC.md`, `docs/MONETIZATION_ACTIVATION_STRATEGY.md`.
 
 ## עקרונות
 
 1. **כל שלב נפתח רק אחרי שהשלב הקודם נסגר עם ראיה.** אין דילוג ואין ביצוע במקביל של שלבים עם שער בעלים.
 2. 🔒 **שער בעלים** = נדרש אישור מפורש וכתוב של הבעלים (הודעה/תגובה ב-PR עם תאריך). סוכן או מפתח אינם רשאים לאשר במקומו.
-3. כל ששת המתגים נשארים `NO` ב-Release עד שלב 13: `PT_IAP_CATALOG_ENABLED`, `PT_IAP_SERVER_VERIFICATION_ENABLED`, `PT_IAP_COIN_PACKS_ENABLED`, `PT_IAP_REMOVE_ADS_ENABLED`, `PT_IAP_PREMIUM_SKINS_ENABLED`, `PT_AUTHORITATIVE_ECONOMY_ENABLED`. CI אוכף זאת (`scripts/security/check-monetization-flags.sh`, job `release-guards`, וגם `scripts/qa/assert-built-flags.sh` על ה-Info.plist הבנוי).
-4. ב-Supabase: `private.economy_configs` (`active`) ו-`private.iap_products` (`enabled`) נשארים `false` עד שלב 13.
+3. **שני בינאריים, שתי שכבות שנכשלות סגור.** `Release` (ברירת מחדל, `Monetization.Off.xcconfig`): כל מתגי ה-IAP `NO`, לא מוכר לעולם. `Release-IAP` (`Monetization.AppStoreIAP.xcconfig`): תקרת IAP פתוחה, **המכירה בפועל נפתחת רק בשרת** (`private.iap_sales_control` לכל סביבה + `iap_products.enabled`). זה הבינארי שנשלח ל-TestFlight ול-App Review עם ה-IAPs. `PT_AUTHORITATIVE_ECONOMY_ENABLED` נשאר `NO` **בשני** ה-Release ב-1.2.0. CI אוכף (`scripts/security/check-monetization-flags.sh` מודע לתצורה, ו-`scripts/qa/assert-built-flags.sh` על ה-Info.plist הבנוי).
+4. ב-Supabase: `private.economy_configs.active` נשאר `false` ב-1.2.0. `private.iap_products.enabled` ומתג ה-Sandbox נפתחים רק לקראת App Review (שלב 11), ומתג Production רק אחרי שחרור ובאישור (שלב 13).
 5. שום פקודה עם `--linked` / `db push` / `functions deploy` / `fastlane beta` לא רצה בלי השער שמעליה.
 6. בכל שלב רושמים בטבלת "יומן שערים" בסוף המסמך: מי, מתי, SHA, ראיה.
 
@@ -21,10 +23,10 @@
 | 3 | אישור מחירי IAP | 🔒 G3 | אישור כתוב ל-price tier של כל אחד מ-9 המוצרים |
 | 4 | יצירת מוצרים ב-App Store Connect | 🔒 G4 | `fastlane iap_check` מראה 9/9 קיימים |
 | 5 | Sign in with Apple + ASSN V2 URL | 🔒 G5 | Apple provider פעיל ב-Supabase, URL רשום ב-ASC, test notification התקבל |
-| 6 | Supabase staging dry-run | — (staging) | migration + reconcile dry-run על staging, 0 אובדן בעלות |
+| 6 | חזרה גנרלית (staging) | — / 🔒 אם נבחר פרויקט בתשלום | Supabase מקומי: כל המיגרציות + pgTAP + Edge Functions עברו; אופציונלי: פרויקט חד-פעמי משחזור גיבוי |
 | 7 | Supabase production migration | 🔒 G7 | גיבוי מאומת + `--apply` + pgTAP/smoke ירוקים, catalog disabled |
 | 8 | פריסת purchase backend ל-production | 🔒 G8 | `--apply-purchases`, catalog עדיין disabled |
-| 9 | Sandbox QA על מכשיר פיזי | — | 10 תרחישי `docs/STOREKIT_DEVICE_SANDBOX_QA.he.md` עברו |
+| 9 | Sandbox QA על מכשיר פיזי | — (הבעלים מבצע) | 10 תרחישי `docs/STOREKIT_DEVICE_SANDBOX_QA.he.md` עברו על build `Release-IAP` |
 | 10 | TestFlight | 🔒 G10 | build פנימי, QA ידני, אפס crash חדש |
 | 11 | הגשה ל-App Review | 🔒 G11 | Submit ידני ב-ASC, Manual release |
 | 12 | שחרור ידני לחנות | 🔒 G12 | Release ידני אחרי Approved |
@@ -49,14 +51,13 @@ scripts/qa/deno-functions.sh                       # ALL PASS
 
 ## 1. אינטגרציית קוד — 🔒 G1
 
-סדר מיזוג ל-`main` (נבדק ב-`git merge-tree`, ללא conflicts; ראו `docs/QA_1.2.0_MATRIX.md` §PR):
+מצב מאומת 27.11.2026 (`gh pr view` + `git merge-base`):
+- **PR #12** `docs/adhd-attention-research` → `main`, פתוח, head `777011b` (מסמכים בלבד).
+- **PR #13** `hotfix/1.1.1-stability` → `main`, פתוח, head `a3ee906`.
+- **PR #14** `release/1.2.0` → `main`, פתוח. `777011b` ו-`a3ee906` הם ancestors שלו, ולכן מיזוג #14 לבדו מכניס גם את #12 ו-#13, ו-GitHub יסמן אותם merged.
+- ענפי הסוכנים כבר מוזגו ל-`release/1.2.0`, והתיקיות שלהם נמחקו. הענפים עצמם נשמרו, וכך גם `backup/codex-wip-2026-11-25` ב-remote.
 
-1. **PR #12** `docs/adhd-attention-research` (`777011b`, מסמכים בלבד).
-2. **PR #13** `hotfix/1.1.1-stability` (`a3ee906`). רק אם מוציאים 1.1.1 בנפרד; אחרת אפשר לסגור אותו כ"נכלל ב-#14".
-3. **PR #14** `release/1.2.0` — כולל את `777011b` ו-`a3ee906` כ-ancestors, ולכן מיזוגו לבדו ממזג גם את #12/#13 ו-GitHub יסמן אותם merged.
-4. ענפי הסוכנים (`agent-a/ios-economy`, `agent-b/economy-backend`, `agent-c/storekit-asc`, `agent-d/qa-release`) ממוזגים קודם ל-`release/1.2.0` (לא ישירות ל-`main`), CI ירוק אחרי כל מיזוג, ורק אז #14.
-
-**כללים:** merge commit (לא squash) כדי לשמר את ה-SHAs של #12/#13; אין force-push ל-`main`; אחרי המיזוג `git tag v1.2.0-rc<N>` על ה-SHA שנבדק.
+סדר מומלץ: #12 (אם רוצים היסטוריה נפרדת למסמכים), #13 (רק אם 1.1.1 יוצא בנפרד; אחרת "נכלל ב-#14"), ואז #14. **כללים:** merge commit (לא squash) כדי לשמר את ה-SHAs; אין force-push ל-`main`; אחרי המיזוג `git tag v1.2.0-rc<N>` על ה-SHA שנבדק.
 
 ## 2. אישור Model B — 🔒 G2
 
@@ -73,10 +74,10 @@ scripts/qa/deno-functions.sh                       # ALL PASS
 
 ## 4. יצירת מוצרים ב-App Store Connect — 🔒 G4
 
-1. `bundle exec fastlane iap_check` (read-only) — מצב התחלתי: 0/9.
-2. יצירת 9 המוצרים ב-ASC עם **IDs זהים** ל-`PerfectTap.storekit` ול-`catalog.json`, reference name, לוקליזציית en-US, צילום Review (`fastlane/iap/screenshots`), Review Notes (`fastlane/iap/review-notes.en-US.txt`). הבעלים יוצר/מאשר; אין lane כותב.
-3. `bundle exec fastlane iap_check` → 9/9; `bundle exec fastlane iap_submission_validate` → PASS.
-4. לצרף לפחות consumable אחד ו-non-consumable אחד לגרסת 1.2.0 ב-ASC (In-App Purchases → Add).
+1. `bundle exec fastlane iap_reconcile` (dry-run, ברירת מחדל). מצב 25.11: 9/9 `MISSING`, 175 טריטוריות, כל המחירים נמצאים במחירון.
+2. **אחרי אישור כתוב של הבעלים בלבד:** `PT_CONFIRM=yes bundle exec fastlane iap_reconcile confirm_create:true`. יוצר את 9 המוצרים עם IDs זהים ל-`PerfectTap.storekit` ול-`fastlane/iap/catalog.json`, לוקליזציית en-US, מחיר USD, זמינות, צילום Review והערות Review (`fastlane/iap/review-notes.en-US.txt`), עם read-back. **פעולה בלתי הפיכה.**
+3. הרצה חוזרת של `iap_reconcile` (dry-run) צריכה להחזיר 0 פעולות.
+4. לצרף את המוצרים לגרסת 1.2.0 ב-ASC (In-App Purchases → Add). IAPs ראשונים חייבים להיות מצורפים לגרסה.
 
 ## 5. Sign in with Apple + App Store Server Notifications V2 — 🔒 G5
 
@@ -88,21 +89,14 @@ scripts/qa/deno-functions.sh                       # ALL PASS
    (הפונקציה רצה עם `verify_jwt = false`; האימות הוא שרשרת התעודות של Apple בתוך הפונקציה). ב-staging רושמים את URL ה-staging רק בשדה Sandbox.
 5. ASC → "Request a Test Notification" → לוודא ב-logs של הפונקציה `TEST` נקלט וחתימה אומתה. (מתבצע רק אחרי שלב 8, כשהפונקציה פרוסה.)
 
-## 6. Supabase staging dry-run
+## 6. חזרה גנרלית (staging)
 
-> staging = פרויקט PerfectTap נפרד ב-org OYA Games, אזור EU. `verify_perfecttap_target` מסרב לכל דבר אחר (Corelim, org אחר, אזור לא-EU).
-
-1. **שים לב:** `deploy-supabase.sh` דורש ש-`project.yml` יצביע על אותו ref. לכן:
-   ```bash
-   scripts/use-supabase-project.sh <staging-ref>    # משנה project.yml + supabase/.perfecttap-ref (לא לעשות commit!)
-   ./scripts/deploy-supabase.sh                     # dry run: CLI 2.119.0, target verified, תוכנית
-   ./scripts/deploy-supabase.sh --apply             # db push + secrets + claim/delete functions + auth config
-   ```
-2. ייבוא snapshot אנונימי/מדגמי של נתוני production ל-staging (לא PII אמיתי אם אפשר).
-3. **Reconcile dry-run**: הרצת ה-reconciliation של legacy balances במצב dry-run (אין שינוי יתרה) — התפלגות `accepted` / `review` / `rejected`; מדגם ידני של 20 חשבונות `review`; **אפס אובדן בעלות** (owned_items, Remove Ads, skins) מול snapshot.
-4. pgTAP מול staging אינו זמין דרך CLI ללא `--linked` — מריצים את `supabase/tests/cloud/smoke.test.ts` מול staging.
-5. `PT_CONFIRM_PRODUCTION` לא בשימוש כאן. `--apply-purchases` ל-staging רק עם Apple Sandbox בלבד.
-6. **החזרה:** `scripts/use-supabase-project.sh <prod-ref>` ואז `git diff ios/PerfectTap/project.yml supabase/.perfecttap-ref` חייב להיות ריק. `PT_EXPECTED_PROD_REF=<prod-ref> scripts/security/check-backend-target.sh` → PASS.
+ההחלטה והנימוק נמצאים ב-`docs/STAGING_AND_DEPLOY_PLAN_1.2.0.md` §1. בקצרה: פרויקט חינמי לא זמין (מכסת 2 פרויקטים חינמיים כבר מלאה), ולכן החזרה האוטומטית רצה על Supabase מקומי.
+1. `supabase db reset --local`: כל 13 המיגרציות, ואחריהן `supabase test db --local` עם 8 סוויטות.
+2. `supabase functions serve`: בדיקה שהפונקציות נכשלות סגור כשאין secrets.
+3. Containment drill מקומי: `pt-support.sh contain economy|purchases`.
+4. **אופציונלי, 🔒 עלות:** פרויקט חד-פעמי בארגון OYA Games ששוחזר מגיבוי של production. מריצים עליו `deploy-supabase.sh --apply`, אחר כך `reconcile_legacy_economy(true)`, ומוודאים אפס אובדן בעלות. אחר כך מוחקים אותו. `verify_perfecttap_target` מסרב ל-Corelim, לארגון אחר ולאזור שאינו EU.
+5. אחרי כל החלפת ref: `scripts/use-supabase-project.sh <prod-ref>`, ואז `git diff ios/PerfectTap/project.yml supabase/.perfecttap-ref` חייב להיות ריק.
 
 ## 7. Supabase production migration — 🔒 G7
 
@@ -113,13 +107,13 @@ scripts/qa/deno-functions.sh                       # ALL PASS
    - בנוסף: `pg_dump` של schema + `public`/`private` למיקום מקומי מוצפן (לא ב-repo).
    - **אימות הגיבוי:** שחזור הגיבוי לפרויקט staging/זמני וספירת שורות ב-`profiles`, `private.economy`, ledger הרכישות — זהה למקור. גיבוי שלא שוחזר = אין גיבוי.
 2. `./scripts/deploy-supabase.sh` (dry run) — לוודא ref = production, CLI 2.119.0.
-3. `./scripts/deploy-supabase.sh --apply` — מיגרציות (כולל `20261122120000_purchase_ledger_and_economy_guard`, `20261125130443_authoritative_economy_ledger`), secrets של Firebase, `claim-legacy-account`, `delete-account`, auth config, `db advisors`.
+3. `./scripts/deploy-supabase.sh --apply` — 7 מיגרציות (`20261122120000` purchase ledger, `20261125130443` ledger, `20261125200000` sources, `20261126090000` sales gate, `20261126120000` season calendar, `20261127110000` hardening, `20261127120000` support), secrets של Firebase, `claim-legacy-account`, `delete-account`, auth config, `db advisors`.
 4. אימות מיידי:
    - `supabase/tests/cloud/smoke.test.ts` מול production.
-   - SQL read-only: `select count(*) from private.iap_products where enabled;` → **0**. `select count(*) from private.economy_configs where active;` → **0**.
+   - SQL read-only: `select count(*) from private.iap_products where enabled;` → **0**. `select count(*) from private.economy_configs where active;` → **0**. `select public.get_iap_sales_status();` → שני הסביבות `salesEnabled:false`.
    - Build 1.1.x החי ממשיך לעבוד (התחברות, שמירת פרופיל, leaderboard, duel) — בדיקה ידנית על מכשיר עם הגרסה מהחנות.
 5. Reconcile production במצב dry-run בלבד; תוצאות נשמרות; שום שינוי יתרה.
-6. Rollback: אין "down migration". במקרה תקלה — `supabase/rollback/20261122120000_purchase_containment.sql` (מכבה רכישות, משמר ledger) ושחזור `save_profile` מגיבוי ה-schema; שחזור מלא מ-PITR רק בהחלטת בעלים.
+6. Rollback: אין "down migration". במקרה תקלה: `scripts/support/pt-support.sh contain purchases|economy <ticket> "<reason>"` (מריץ את סקריפטי ה-containment, משמר ledger ונרשם ב-`private.support_actions`). שחזור מלא מ-PITR רק בהחלטת בעלים.
 
 ## 8. פריסת purchase backend ל-production — 🔒 G8
 
@@ -127,34 +121,33 @@ scripts/qa/deno-functions.sh                       # ALL PASS
 PT_CONFIRM_PRODUCTION=yes APPLE_ROOT_CAS_B64=<...> APPLE_APP_APPLE_ID=6760975737 \
   ./scripts/deploy-supabase.sh --apply-purchases
 ```
-- פורס `verify-purchase` + `app-store-notifications` עם `APPLE_ENABLED_ENVIRONMENTS=Production,Sandbox`.
-- הקטלוג בשרת נשאר **disabled**. אחרי הפריסה: שלב 5.5 (Test Notification).
-- אם נוספו פונקציות חדשות (למשל `admob-ssv` לפי חוזה הכלכלה) — הן **לא** נפרסות ע"י הסקריפט הנוכחי; צריך שינוי מאושר בסקריפט לפני השער.
+- פורס את `verify-purchase`, `app-store-notifications` ו-`admob-ssv` עם `APPLE_ENABLED_ENVIRONMENTS=Production,Sandbox`.
+- מומלץ להגדיר secret בשם `ADMOB_ALLOWED_AD_UNITS` עם מזהי ה-rewarded units של האפליקציה.
+- הקטלוג בשרת נשאר **disabled**, ושני מתגי המכירה `false`. אחרי הפריסה: שלב 5.5 (Test Notification), ובקונסולת AdMob מגדירים את כתובת ה-SSV.
 
 ## 9. Sandbox QA על מכשיר פיזי
 
-- נוהל: `docs/STOREKIT_DEVICE_SANDBOX_QA.he.md` (10 תרחישים: אורח, non-consumable, restore, coins לאורח, קישור Apple, retry/duplicate, חשבון שגוי, מכשיר שני, Ask to Buy/pending, refund/revoke/reversal).
-- build Debug/Development חתום עם המתגים **ON רק ב-Debug מקומי** (לא commit), או build TestFlight עם קטלוג staging. אסור לשנות את Release ב-git.
-- קטלוג השרת מופעל **ב-staging בלבד** לבדיקה זו.
-- ראיות: צילומי מחיר Sandbox, transaction IDs, תוצאת ledger "אין זיכוי כפול", לוגי Edge Function. נרשם ב-`docs/QA_1.2.0_MATRIX.md`.
-- בנוסף: רגרסיית freeze/stutter על iPhone פיזי לפי `docs/perf/DEVICE_PROFILING_PROTOCOL.he.md` (כולל AirPods ופרסומת אמיתית).
+- נוהל: `docs/STOREKIT_DEVICE_SANDBOX_QA.he.md`, עם 10 תרחישים: אורח, non-consumable, restore, coins לאורח, קישור Apple, retry/duplicate, חשבון שגוי, מכשיר שני, Ask to Buy/pending, refund/revoke/reversal.
+- Build: **`Release-IAP` מ-TestFlight פנימי** (שלב 10). לפני כן פותחים מכירה **ב-Sandbox בלבד** (`update private.iap_sales_control set sales_enabled = true where environment = 'Sandbox'`) ומפעילים את המוצרים שבבדיקה. Production נשאר סגור. אין שינוי ב-git.
+- ראיות: צילומי מחיר Sandbox, transaction IDs, `pt-support.sh purchase <id>` שמראה "אין זיכוי כפול", ולוגי Edge Function. הכל נרשם ב-`docs/QA_1.2.0_MATRIX.md`.
+- בנוסף: רגרסיית freeze/stutter על iPhone פיזי לפי `docs/perf/DEVICE_PROFILING_PROTOCOL.he.md`, כולל AirPods ופרסומת אמיתית.
 
 ## 10. TestFlight — 🔒 G10
 
 ```bash
-bundle exec fastlane validate_release        # read-only
-bundle exec fastlane build                   # IPA מקומי
-scripts/qa/assert-built-flags.sh <Payload/PerfectTap.app מתוך ה-IPA>   # כל המתגים NO
-PT_CONFIRM=yes bundle exec fastlane beta     # 🔒 קבוצה פנימית בלבד
+bundle exec fastlane validate_release                                   # read-only
+PT_CONFIRM_IAP_CEILING=yes bundle exec fastlane build configuration:Release-IAP
+scripts/qa/assert-built-flags.sh --release-iap <Payload/PerfectTap.app> # AppStoreIAP profile, IAP ceiling YES, economy NO
+PT_CONFIRM_IAP_CEILING=yes PT_CONFIRM=yes bundle exec fastlane beta configuration:Release-IAP   # 🔒 קבוצה פנימית בלבד
 ```
-- QA ידני: 15 מצבי משחק, Game Over, רקע/חזית, AirPods, iPad, ATT, מודעות אמיתיות + revive, החנות במצב "flags off" (אין מחירים/כפתורי קנייה פעילים), מעבר חשבון, duel.
+- QA ידני: 15 מצבי משחק, Game Over, רקע/חזית, AirPods, iPad, ATT, מודעות אמיתיות + revive, מעבר חשבון, duel. החנות כשמתג Sandbox סגור (אין כפתורי קנייה פעילים) וכשהוא פתוח (שלב 9).
 - 48 שעות לפחות בלי crash חדש ב-Xcode Organizer / TestFlight crashes.
 
 ## 11. הגשה ל-App Review — 🔒 G11
 
-- ב-ASC בלבד, ידני: בחירת build, IAPs מצורפים (שלב 4), Review Notes, App Privacy כולל Purchase History.
+- ב-ASC בלבד, ידני: בוחרים את **אותו build `Release-IAP`** שנבדק בשלב 10, מצרפים את ה-IAPs (שלב 4), מוסיפים Review Notes (`fastlane/iap/review-notes.en-US.txt`) ו-App Privacy כולל Purchase History.
+- **לאורך כל ה-Review:** מתג Sandbox פתוח והמוצרים `enabled`, כי App Review בודק ב-Sandbox. מתג Production **סגור**. כך מוצר מצורף נגיש לבודק (מונע דחייה 2.1), ולקוחות אמיתיים עדיין לא יכולים לקנות.
 - **Version Release = "Manually release this version"**.
-- בהערות ל-Review: איך להגיע לחנות; אם הקטלוג כבוי ב-build — לציין שהרכישות יופעלו בשרת אחרי אישור, ולצרף את צילומי ה-Review (Apple בודקת IAPs שצורפו — ראו סיכון: מוצר מצורף שאינו נגיש ב-build עלול לגרום לדחייה 2.1; להחליט עם הבעלים אם ה-build ל-Review נשלח עם קטגוריות מסוימות דולקות, ואז G13 חלקי מוקדם — החלטה נפרדת ומתועדת).
 
 ## 12. שחרור ידני — 🔒 G12
 
@@ -163,18 +156,18 @@ PT_CONFIRM=yes bundle exec fastlane beta     # 🔒 קבוצה פנימית בל
 
 ## 13. הפעלה מסחרית מבוקרת — 🔒 G13 לכל צעד
 
-כל צעד = אישור בעלים נפרד, 24–72 שעות ניטור ירוק לפני הבא:
+כל צעד הוא אישור בעלים נפרד, עם 24–72 שעות ניטור ירוק לפני הצעד הבא. **אין צורך ב-build חדש** כדי למכור ב-1.2.0, כי הבינארי `Release-IAP` כבר בחנות:
 
 | צעד | מה נדלק | איפה |
 |---|---|---|
-| 13.1 | `PT_IAP_CATALOG_ENABLED` + `PT_IAP_SERVER_VERIFICATION_ENABLED` + `PT_IAP_REMOVE_ADS_ENABLED` ב-build חדש; `private.iap_products` של Remove Ads `enabled=true` | build TestFlight → Review |
-| 13.2 | `PT_IAP_PREMIUM_SKINS_ENABLED`; מוצרי skins enabled | שרת + build |
-| 13.3 | `PT_IAP_COIN_PACKS_ENABLED`; coin packs enabled (דורש Sign in with Apple) | שרת + build |
-| 13.4 | `private.economy_configs.active = true` (עם `approved_by`/`approved_at` — נאכף ב-check constraint) (`balanced-premium-rc1` מאושר); reconcile apply לחשבונות `accepted` בלבד | שרת |
-| 13.5 | `PT_AUTHORITATIVE_ECONOMY_ENABLED` — **רק** אחרי שכל grant חוזר (gameplay, quest, wheel, daily, rewarded/SSV) נרשם ב-ledger | build |
+| 13.1 | `iap_sales_control` עבור Production, עם Remove Ads בלבד `enabled` | שרת |
+| 13.2 | premium skins `enabled` | שרת |
+| 13.3 | coin packs `enabled` (דורש Sign in with Apple, G5) | שרת |
+| 13.4 (גרסה עתידית) | `economy_configs.active = true` (`approved_by`/`approved_at`), reconcile apply, טיפול בתור review, **גרסת מינימום מחייבת**, **חסימת הרשמה חדשה ל-Firebase** | שרת + גרסה |
+| 13.5 (גרסה עתידית) | `PT_AUTHORITATIVE_ECONOMY_ENABLED` ב-build חדש, רק אחרי 13.4 | build |
 
-- הדלקת flag ב-Release מחייבת commit ייעודי + עדכון מכוון של `check-monetization-flags.sh` (רשימת allow מפורשת לכל flag) — כלומר שינוי שה-CI מזהה ושהבעלים מאשר ב-PR. אין עקיפה של הבדיקה.
-- השרת הוא מתג ההפעלה האמיתי: גם כש-flag דולק ב-build, מוצר עם `enabled=false` לא נמכר.
+- כיבוי: `sales_enabled = false` לסביבה, או `enabled = false` למוצר. עסקאות ששולמו ממשיכות להימסר ולהשתחזר.
+- הדלקת `PT_AUTHORITATIVE_ECONOMY_ENABLED` ב-Release מחייבת שינוי מכוון ב-`check-monetization-flags.sh` ב-PR שהבעלים מאשר. אין עקיפה של הבדיקה.
 
 ## 14. ניטור (14 יום אחרי כל צעד, אח"כ שבועי)
 
@@ -194,12 +187,12 @@ PT_CONFIRM=yes bundle exec fastlane beta     # 🔒 קבוצה פנימית בל
 **טריגרים:** grant כפול/חסר, אימות JWS שבור, refund abuse, באג כלכלה שמייצר מטבעות, דליפת סוד, Edge Function שמחזירה 5xx רציף, הוראה של Apple.
 
 **צעדים (לפי הסדר, כל אחד עצמאי):**
-1. **עצירת מכירות בשרת (שניות):** הרצת `supabase/rollback/20261122120000_purchase_containment.sql` ב-SQL Editor של פרויקט PerfectTap המאומת (ref נבדק מול `supabase/.perfecttap-ref`, **לא** Corelim). מכבה את כל `private.iap_products`, שולל `execute` מ-`service_role` על `record_verified_purchase` / `revoke_purchase` / `process_app_store_notification`, ורושם `purchase_backend_contained`. ה-ledger נשמר.
+1. **עצירת מכירות בשרת (שניות):** `PT_CONFIRM=yes scripts/support/pt-support.sh contain purchases <ticket> "<reason>"`, או הרצת `supabase/rollback/20261122120000_purchase_containment.sql` ב-SQL Editor של פרויקט PerfectTap המאומת (ref נבדק מול `supabase/.perfecttap-ref`, **לא** Corelim). מכבה את כל `private.iap_products`, שולל `execute` מ-`service_role` על `record_verified_purchase` / `revoke_purchase` / `process_app_store_notification`, ורושם `purchase_backend_contained`. ה-ledger נשמר.
    - שימו לב: לאחר השלילה, notifications של Apple ייכשלו ו-Apple תנסה שוב (retry עד ~5 ימים) — זה רצוי; אחרי התיקון מחזירים `grant execute` ו-Apple תשלח שוב.
 2. **עצירת כלכלה סמכותית:** `update private.economy_configs set active = false;` → RPCs מחזירים `economy_disabled`; הלקוח שומר outbox.
 3. **ASC:** אם נדרש — "Remove from Sale" למוצר הבעייתי (In-App Purchases → מוצר → Cleared for Sale = off). לא מוחקים מוצרים.
 4. **Phased Release:** Pause ב-ASC אם הבעיה בצד הלקוח.
-5. **Build תיקון:** flags ל-`NO`, hotfix, TestFlight, Expedited Review אם צריך.
+5. **Build תיקון:** במקרה הצורך שולחים build `Release` (ללא IAP) או hotfix, דרך TestFlight, ו-Expedited Review אם צריך.
 6. **תקשורת:** הודעה לבעלים מיד; אם נפגעו משתמשים — הודעה בתוך האפליקציה/תמיכה; goodwill לפי מדיניות שאושרה ב-G2.
 7. **שחזור:** תיקון → staging → `grant execute ... to service_role` (הפוך מ-containment) → enable מוצר אחד → ניטור 24h → השאר. כל צעד חזרה = אישור בעלים.
 8. **Postmortem** תוך 5 ימי עבודה: ציר זמן, השפעה (משתמשים/מטבעות/כסף), שורש, פעולות. בלי האשמה.

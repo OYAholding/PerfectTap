@@ -205,3 +205,16 @@ pgTAP).
 - **The season pace check is a claim rate.** It limits claims per season id per day (`max_tiers_per_day`), not the tier index. The server has no season XP of its own, so a modified client can claim any tier ≤ `tiers` within that rate.
 - **`legacy_economy_reviews` support tooling** (manual accept, adjust, goodwill) is not built yet. Rejected and review accounts stay frozen until it exists.
 - **Concurrency is enforced by a row lock plus unique indexes.** pgTAP runs in one session, so it asserts the indexes rather than racing two connections.
+
+## Hardening & support (2026-11-27)
+
+- `20261127110000_economy_hardening.sql`: closes the adversarial-review
+  findings (event-key replay in shop purchases, JIT legacy claims, legacy claim
+  on accepted accounts, per-season premium, containment item filter,
+  achievement/challenge daily cap `progress_daily_cap`, reconcile evidence,
+  refund tombstones for deleted accounts). Details and tests:
+  `docs/SECURITY_REVIEW_1.2.0.md`.
+- `20261127120000_support_operations.sql`: owner-only support functions and the
+  append-only `private.support_actions` audit log, driven by
+  `scripts/support/pt-support.sh` (`docs/SUPPORT_OPERATIONS.md`).
+- Deployment order, secrets, staging decision: `docs/STAGING_AND_DEPLOY_PLAN_1.2.0.md`.

@@ -37,8 +37,8 @@ wrapper over a `security definer` function in `private` (same pattern as
 | `gameplay` | `{mode, score, max_combo, perfects, taps, duration_ms, played_at, session_id}` | mode must earn coins; plausibility (score ≤ f(taps, duration), taps/sec cap, played_at within 72h and ≤ now); coins = config formula; daily gameplay coin cap (config `gameplay_daily_cap`), excess recorded as `capped`. `session_id` unique per user. Duel games use `duel` source instead. |
 | `duel` | `{duel_id}` | server reads the finished duel row it already owns; grant once per (user, duel_id). |
 | `quest` | `{quest_id, difficulty, server_day}` | server_day ∈ {today, yesterday} UTC; max 3 per day; once per (day, quest_id); reward by difficulty from config. Progress itself is client-side (documented residual risk, bounded by cap). |
-| `achievement` | `{achievement_id}` | id must exist in config `achievement_rewards`; once per user forever. |
-| `challenge` | `{challenge_id}` | id in config `challenge_rewards` (coins and optional item); once per user forever. |
+| `achievement` | `{achievement_id}` | id must exist in config `achievement_rewards`; once per user forever. Achievement + challenge coins capped per UTC day by `progress_daily_cap` (first claim of the day always passes) → `progress_daily_limit`. |
+| `challenge` | `{challenge_id}` | id in config `challenge_rewards` (coins and optional item); once per user forever; shares `progress_daily_cap`. |
 | `season_tier` | `{season_id, tier}` | season_id = current `season_calendar` season (or previous within `grace_hours`); tier ≤ server-tracked/plausible tier; once per (season_id, tier); coins from config season cycle. |
 | `wheel` | `{}` | once per UTC day; **server** picks the segment (`gen_random_uuid`-seeded / `random()`), returns `segment_index` + amount. |
 | `starter_item` | `{item_id}` | item must be config `starter_items` (Common); once per user; adds to `owned_items` without coins. |
@@ -67,8 +67,21 @@ Service-role only (never callable by iOS):
 Errors are raised as `private.fail(code)`; codes clients must handle:
 `economy_disabled`, `legacy_review_required`, `insufficient_coins`,
 `already_claimed`, `claim_limit`, `item_unavailable`, `invalid_payload`,
-`implausible_result`, `rate_limited`, `profile_required`.
+`implausible_result`, `rate_limited`, `profile_required`,
+`progress_daily_limit`, `duel_score_pending`.
 `duplicate`, `already_claimed`, `already_owned` are terminal-success for the outbox.
+
+Outbox dispositions (iOS `EconomyErrorPolicy`, hardening 2026-11-27):
+- retry, blocking: network, `economy_disabled`, `rate_limited`, `profile_required`, unknown codes;
+- retry, non-blocking: `legacy_review_required` (≥6 h backoff — the event is
+  paid once the legacy balance is resolved), `duel_score_pending`,
+  `progress_daily_limit`, and an in-window `season_tier` `invalid_payload`;
+- drop (logged): `insufficient_coins`, `claim_limit`, `item_unavailable`,
+  `invalid_payload`, `implausible_result`, `duel_not_found`, …
+
+`purchase_economy_item`: the item is granted only when the debit is applied.
+Replaying the same `(event_key, item)` returns `duplicate`; reusing an event key
+for anything else fails `invalid_payload`.
 
 ## Client outbox (iOS, flag ON only)
 
@@ -79,13 +92,25 @@ Errors are raised as `private.fail(code)`; codes clients must handle:
 - Flush: on app foreground, after sign-in, after game over (off the render path),
   exponential backoff. Terminal errors drop the event and log analytics.
 - Account switch: outbox is keyed by user id; never replayed under another uid.
-- Profile merge never uses `max(local.coins, cloud.coins)` when flag ON.
+- No user yet: events earned before the device's **first** account are kept in
+  an `unattributed` outbox and adopted by that account; once any account has
+  existed, user-less events are dropped (never credited to someone else).
+- Expiry: 7 days, except once-per-account sources (achievement, challenge,
+  starter item), which never expire.
+- Unreadable outbox file: never overwritten (re-opened later); undecodable
+  entries are skipped individually; a non-JSON file is moved aside.
+- Seasons: seasonal progression resets when a new season starts
+  (`PlayerProfile.applySeasonRollover`, forward-only, profile key
+  `season_progress_number`); server season premium = verified SSV ads this season.
+- Profile merge never uses `max(local.coins, cloud.coins)` when flag ON, and
+  takes claim markers (achievements, challenges, season claimed tiers) from the
+  cloud copy so a guest's markers never suppress the account's own claims.
 
 ## Config JSON keys (economy_configs.config)
 
 `daily_rewards[7]`, `wheel_rewards[8]`, `quest_rewards{easy,medium,hard}`,
 `score_coin_divisor`, `minimum_game_coins`, `combo_bonus` table, `mode_bonus`,
-`gameplay_daily_cap`, `home_rewarded_coins`, `season_ads_required`,
+`gameplay_daily_cap`, `progress_daily_cap`, `home_rewarded_coins`, `season_ads_required`,
 `season_coin_cycle[]`, `achievement_rewards{id:coins}`,
 `challenge_rewards{id:{coins,item}}`, `starter_items[]`,
 `season_calendar{anchor,length_months,id_format,tiers,max_tiers_per_day,grace_hours}`
