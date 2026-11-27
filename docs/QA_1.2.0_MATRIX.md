@@ -25,7 +25,7 @@ Base `f0e2091` + this commit (hardening, season reset, support, docs). iPhone 16
 | Edge Functions served locally | **PASSED** (fail closed) | `admob-ssv` 400 invalid_signature, `verify-purchase` 401, `app-store-notifications` 503 without Apple secrets |
 | Support CLI smoke | **PASSED** | find / user / adjust (refused without `PT_CONFIRM`) / injection string → 0 rows / containment drill logged |
 | Flag guard, secret guard, backend target, gitleaks (history + working tree) | **PASSED** | no leaks |
-| Performance (simulator) | **NOT CONCLUSIVE — rerun pending** | run 1 failed 4 thresholds while another session built in parallel (load avg 6 → 489); run 2 aborted. No render-path code changed (economy/outbox/StoreKit/profile normalize only). Rerun on idle host required before G10 |
+| Performance (simulator) | **NOT CONCLUSIVE — host saturated** | Another session ran Xcode builds in parallel the whole time (load avg 9 → 600). 4 runs of this commit and an interleaved A/B against `f0e2091` were all distorted: even the unchanged baseline measured Game Over 78–136 ms vs 35–39 ms idle on 26.11. In the A/B pair with comparable load (161/154) head was somewhat worse (Game Over 190 vs 136 ms, hitch 0.86 vs 0.33 %), which is within the noise seen under load. Code analysis: no render-loop change; the only added work on the Game Over path is one season-date computation per profile save, benchmarked at 2.5 µs. **Must be re-run on an idle host (or device, protocol `docs/perf/DEVICE_PROFILING_PROTOCOL.he.md`) before G10** |
 | Production migration list (read-only) | head `20261114120000`, 7 pending | `supabase migration list --linked` |
 
 ## Re-run 2026-11-26 — integrated `release/1.2.0` @ `e424776` (supersedes rows below)
