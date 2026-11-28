@@ -116,6 +116,9 @@ struct HomeView: View {
             profile = PlayerProfile.load() ?? PlayerProfile()
             themeManager.apply(profile: profile)
             startBadgeListeners()
+            // QA-16: decode the equipped cosmetics' art and effect sprites off the
+            // main thread before PLAY, so the round bootstrap only hits memory.
+            DispatchQueue.main.async { CosmeticEffectAssets.warm(CosmeticLoadoutStore.shared.resolved) }
             // Cloud refresh in background; also retry unsent duel scores and
             // count results of duels the opponent finished meanwhile.
             cloudRefreshTask?.cancel()

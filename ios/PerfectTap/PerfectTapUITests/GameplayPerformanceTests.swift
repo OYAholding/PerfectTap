@@ -32,6 +32,16 @@ final class GameplayPerformanceTests: XCTestCase {
         if let theme = ProcessInfo.processInfo.environment["PT_PERF_THEME"], !theme.isEmpty {
             app.launchArguments += ["-PTForceTheme", theme]
         }
+        // Optional Cosmetic Studio collection (TEST_RUNNER_PT_PERF_COSMETIC=quack_attack;
+        // DEBUG-only override in CosmeticLoadoutStore, ownership bypassed, not persisted).
+        if let collection = ProcessInfo.processInfo.environment["PT_PERF_COSMETIC"], !collection.isEmpty {
+            app.launchArguments += ["-PTForceCosmeticCollection", collection]
+        }
+        // Optional Effects setting for isolation runs (TEST_RUNNER_PT_PERF_EFFECTS=off|reduced|full),
+        // passed through the UserDefaults argument domain (not persisted).
+        if let level = ProcessInfo.processInfo.environment["PT_PERF_EFFECTS"], !level.isEmpty {
+            app.launchArguments += ["-pt_effects_level", level]
+        }
         app.launch()
         completeOnboardingIfNeeded()
         dismissTutorialIfNeeded()

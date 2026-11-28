@@ -7,6 +7,9 @@ enum ShopCategory: String, CaseIterable {
     case trails   = "Trails"
     case badges   = "Badges"
     case avatars  = "Avatars"
+    /// Cosmetic Studio slot items (docs/cosmetics/INTEGRATION_CONTRACT.md).
+    /// Never listed in the legacy grid: the Studio tab renders them.
+    case cosmetics = "Cosmetics"
 
     var icon: String {
         switch self {
@@ -15,12 +18,14 @@ enum ShopCategory: String, CaseIterable {
         case .trails:  return "wind"
         case .badges:  return "shield.fill"
         case .avatars: return "person.fill"
+        case .cosmetics: return "wand.and.stars"
         }
     }
 
     /// Categories visible in the shop UI.
     /// Trails and Badges are still hidden — their rendering is not yet implemented.
     /// Tap FX is now functional (particle colors change based on equipped FX).
+    /// Cosmetics are deliberately absent: they live in the Studio tab (flagged).
     static var shopVisible: [ShopCategory] {
         [.themes, .tapFX, .avatars]
     }
@@ -59,7 +64,9 @@ struct ShopItem: Identifiable {
         return avatars.first(where: { $0.id == canonical })?.icon ?? "😊"
     }
 
-    static func item(id: String) -> ShopItem? { allItems.first { $0.id == id } }
+    /// O(1): `itemsByID` is built once from `allItems` (QA-17). First entry wins
+    /// for a duplicated id, exactly like the former `allItems.first { $0.id == id }`.
+    static func item(id: String) -> ShopItem? { itemsByID[id] }
     static func item(productID: String) -> ShopItem? { premium.first { $0.premiumProductID == productID } }
 }
 
@@ -152,11 +159,130 @@ extension ShopItem {
         case .trails:  return trails
         case .badges:  return badges
         case .avatars: return avatars
+        case .cosmetics: return cosmetics
         }
     }
 
-    /// All items across all categories (premium included, for ownership lookups)
-    static var allItems: [ShopItem] {
-        themes + premium + tapFX + trails + badges + avatars
+    /// All items across all categories (premium and cosmetics included, for
+    /// ownership lookups, legacy buy, restore and sync). Stored once (QA-17):
+    /// every component is itself a `static let`, so prices were already fixed at
+    /// first access and concatenating them on every call only cost time.
+    static let allItems: [ShopItem] =
+        themes + premium + tapFX + trails + badges + avatars + cosmetics + cosmeticDefaults
+
+    /// Id index over `allItems` (first occurrence wins).
+    private static let itemsByID: [String: ShopItem] =
+        Dictionary(allItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+}
+
+// MARK: - Cosmetic Studio bridge
+//
+// Every purchasable cosmetic slot item is an ordinary `ShopItem` (category
+// `.cosmetics`, id `<collection>.<slot>`), so ownership (`ownedItems`), the
+// legacy coin buy, restore, account switching and cloud sync work unchanged.
+// Prices: `EconomyConfig.current.shopPrice(itemID:fallback:)` with the catalog's
+// PROPOSED price as fallback (UNAPPROVED — docs/cosmetics/SHOP_CATALOG_PROPOSAL.md).
+extension ShopItem {
+
+    /// Purchasable cosmetic items (free Classic defaults excluded).
+    static let cosmetics: [ShopItem] = CosmeticCatalog.items.filter { !$0.isDefault }.map { item in
+        ShopItem(id: item.id, name: item.name, category: .cosmetics,
+                 price: EconomyConfig.current.shopPrice(itemID: item.id, fallback: item.proposedPrice),
+                 icon: item.slot.systemImage, rarity: item.rarity)
+    }
+
+    /// Classic defaults: price 0 ⇒ `isFree` ⇒ always owned.
+    static let cosmeticDefaults: [ShopItem] = CosmeticCatalog.items.filter(\.isDefault).map { item in
+        ShopItem(id: item.id, name: item.name, category: .cosmetics, price: 0,
+                 icon: item.slot.systemImage, rarity: item.rarity)
+    }
+
+    /// The catalog item behind a `.cosmetics` shop item.
+    var cosmeticItem: CosmeticItem? {
+        category == .cosmetics ? CosmeticCatalog.item(id: id) : nil
+    }
+
+    /// Shop item for a catalog item (nil only for unknown ids).
+    /// Looked up by id in the catalog (O(1)); a caller-built value whose
+    /// slot / collection disagree with the catalog's copy gets nil (QA-13).
+    static func cosmetic(_ item: CosmeticItem) -> ShopItem? {
+        guard let canonical = CosmeticCatalog.item(id: item.id),
+              canonical.slot == item.slot, canonical.collectionID == item.collectionID,
+              let shopItem = itemsByID[item.id], shopItem.category == .cosmetics else { return nil }
+        return shopItem
+    }
+
+    /// Live coin price of a cosmetic item (0 for defaults and unknown ids). O(1).
+    static func cosmeticPrice(_ itemID: String) -> Int {
+        guard let shopItem = itemsByID[itemID], shopItem.category == .cosmetics else { return 0 }
+        return shopItem.price
+    }
+
+    /// Live price of a full bundle (nothing owned yet).
+    static func cosmeticBundlePrice(_ bundle: CosmeticBundle) -> Int {
+        EconomyConfig.current.shopPrice(itemID: bundle.id, fallback: bundle.proposedPrice)
+    }
+}
+
+// MARK: - Bundle pricing (fair ownership policy)
+//
+// A bundle is a discount on a whole collection. If the player already owns some
+// of its items, completing the bundle costs the bundle price pro-rated by the
+// LIST VALUE of what is still missing:
+//
+//     completion = round(bundlePrice × missingListValue / totalListValue)
+//
+// clamped to [1, missingListValue] while anything is missing (never more than
+// buying the missing items one by one, never free), and 0 / "Owned" when the
+// collection is complete. Already-owned items are never charged again.
+// Alternatives considered: docs/cosmetics/OWNERSHIP_AND_ECONOMY.md.
+
+struct CosmeticBundleQuote: Equatable {
+    let bundleID: String
+    let collectionID: CosmeticCollectionID
+    /// Full bundle price (nothing owned).
+    let bundlePrice: Int
+    let itemIDs: [String]
+    let missingItemIDs: [String]
+    /// Sum of individual prices of every item in the bundle.
+    let totalListValue: Int
+    /// Sum of individual prices of the missing items.
+    let missingListValue: Int
+    /// What the player pays now to own the whole collection.
+    let completionPrice: Int
+
+    var ownedCount: Int { itemIDs.count - missingItemIDs.count }
+    var totalCount: Int { itemIDs.count }
+    var isComplete: Bool { missingItemIDs.isEmpty }
+    /// Coins saved versus buying the missing items one by one.
+    var savings: Int { max(0, missingListValue - completionPrice) }
+}
+
+enum CosmeticBundlePricing {
+
+    /// Pure pro-rating rule (integer, round half up).
+    static func completionPrice(bundlePrice: Int, totalListValue: Int, missingListValue: Int) -> Int {
+        guard missingListValue > 0 else { return 0 }
+        guard totalListValue > 0, bundlePrice > 0 else { return missingListValue }
+        let missing = min(missingListValue, totalListValue)
+        // round(bundle * missing / total) with integers: (2·b·m + t) / (2·t)
+        let numerator = 2 * Int64(bundlePrice) * Int64(missing) + Int64(totalListValue)
+        let prorated = Int(numerator / (2 * Int64(totalListValue)))
+        return min(missingListValue, max(1, prorated))
+    }
+
+    static func quote(for bundle: CosmeticBundle,
+                      bundlePrice: Int,
+                      price: (String) -> Int,
+                      isOwned: (String) -> Bool) -> CosmeticBundleQuote {
+        let missing = bundle.itemIDs.filter { !isOwned($0) }
+        let total = bundle.itemIDs.reduce(0) { $0 + max(0, price($1)) }
+        let missingValue = missing.reduce(0) { $0 + max(0, price($1)) }
+        return CosmeticBundleQuote(
+            bundleID: bundle.id, collectionID: bundle.collectionID, bundlePrice: bundlePrice,
+            itemIDs: bundle.itemIDs, missingItemIDs: missing,
+            totalListValue: total, missingListValue: missingValue,
+            completionPrice: completionPrice(bundlePrice: bundlePrice, totalListValue: total,
+                                             missingListValue: missingValue))
     }
 }

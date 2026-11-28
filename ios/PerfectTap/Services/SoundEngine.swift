@@ -23,6 +23,14 @@ enum SoundType {
 //
 // Music is now one pre-rendered 16-beat buffer looped by a single node
 // (`.loops`), so nothing is rescheduled during play.
+//
+// Cosmetic sound packs (Studio): themed packs are bundled CAF files decoded
+// once into PCM buffers on `synthQueue` and cached on `audioQueue` (active pack
+// + last previewed pack only). They play through the same 8-node pool, so a tap
+// still only enqueues one block; nothing touches disk on the tap path. A
+// separate preview node lets the Studio stop previews without cutting gameplay
+// voices. Buffers are plain memory, so engine restarts (interruption, route or
+// hardware change) keep them — nothing is rebuilt after a restart.
 final class SoundEngine {
 
     static let shared = SoundEngine()
@@ -38,6 +46,13 @@ final class SoundEngine {
     // audioQueue-owned state
     private let audioQueue = DispatchQueue(label: "com.perfecttap.audio", qos: .userInitiated)
     private let synthQueue = DispatchQueue(label: "com.perfecttap.audio.synth", qos: .utility)
+    /// Cosmetic pack decoding. Its own queue at user-initiated QoS: the pack is
+    /// preloaded for the round the player is about to start, so it must neither
+    /// wait behind launch-time tone/music synthesis on `synthQueue` nor be
+    /// starved at utility QoS on a loaded machine. (PR #15 CI: on a 3-vCPU CI
+    /// simulator, pack loads queued on `synthQueue` did not finish in 60 s while
+    /// the same decode on the test thread took 27–88 ms.)
+    private let packDecodeQueue = DispatchQueue(label: "com.perfecttap.audio.packDecode", qos: .userInitiated)
     private let poolSize = 8
     private var playerPool: [AVAudioPlayerNode] = []
     private var nextPlayerIndex = 0
@@ -45,6 +60,30 @@ final class SoundEngine {
     private var musicLoopBuffer: AVAudioPCMBuffer?
     private var musicWanted = false
     private var bufferCache: [SoundType: [ScheduledTone]] = [:]
+
+    // Cosmetic packs. `activeSoundPackID` is main-thread state (read on every
+    // tap without locking, like `isSoundEnabled`); everything below it is
+    // audioQueue-owned.
+    private(set) var activeSoundPackID: String = SoundPackCatalog.defaultPackID
+    private let previewPlayer = AVAudioPlayerNode()
+    private var packCache: [String: SoundPackBuffers] = [:]
+    private var packsLoading: Set<String> = []
+    private var packLoadWaiters: [String: [(SoundPackBuffers?) -> Void]] = [:]
+    /// Diagnostics (audioQueue-owned): when each pack load was requested,
+    /// started decoding, and finished — reported by `soundPackLoadDiagnostics()`.
+    private var packLoadTrace: [String: (requested: CFTimeInterval, started: CFTimeInterval?, finished: CFTimeInterval?)] = [:]
+    private var queueActivePackID: String = SoundPackCatalog.defaultPackID
+    private var queuePreviewPackID: String?
+    /// Bumped by `stopPreview()`; a preview whose pack finishes loading after
+    /// the user left (or started another preview) is dropped.
+    private var previewGeneration = 0
+    private var variantCursor: [CosmeticEvent: Int] = [:]
+    /// Per pool node: host time its current sound ends, and whether that sound
+    /// is high priority (perfect / miss / life lost / game over).
+    private var voiceEnds: [CFTimeInterval] = []
+    private var voiceIsPriority: [Bool] = []
+    /// Built-in tones pre-mixed into one buffer each, for the single preview node.
+    private var defaultPreviewBuffers: [SoundType: AVAudioPCMBuffer] = [:]
 
     private init() {
         isSoundEnabled = UserDefaults.standard.object(forKey: "perfecttap_sound") as? Bool ?? true
@@ -82,8 +121,12 @@ final class SoundEngine {
             engine.connect(player, to: engine.mainMixerNode, format: format)
             playerPool.append(player)
         }
+        voiceEnds = Array(repeating: 0, count: poolSize)
+        voiceIsPriority = Array(repeating: false, count: poolSize)
         engine.attach(musicPlayer)
         engine.connect(musicPlayer, to: engine.mainMixerNode, format: format)
+        engine.attach(previewPlayer)
+        engine.connect(previewPlayer, to: engine.mainMixerNode, format: format)
         try? engine.start()
     }
 
@@ -107,6 +150,11 @@ final class SoundEngine {
         // Route / hardware change (AirPods connect, Bluetooth, sample-rate change)
         // stops the engine. Restart here, off the tap path — previously the next
         // tap restarted it synchronously on the main thread.
+        // No separate `routeChangeNotification` observer is needed for cosmetic
+        // packs: a route change that alters the hardware format posts this
+        // notification; one that doesn't leaves the engine running. Pack buffers
+        // are in the player format (not the hardware format), so the mixer
+        // converts to any new output rate without rebuilding them.
         center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
             guard let self else { return }
             self.audioQueue.async { self.restartAfterEngineStop() }
@@ -137,7 +185,14 @@ final class SoundEngine {
                     return ScheduledTone(buffer: buffer, delaySeconds: Double(config.delay))
                 }
             }
-            audioQueue.async { self.bufferCache = cache }
+            var previewMix: [SoundType: AVAudioPCMBuffer] = [:]
+            for (type, tones) in cache {
+                previewMix[type] = mixDown(tones)
+            }
+            audioQueue.async {
+                self.bufferCache = cache
+                self.defaultPreviewBuffers = previewMix
+            }
 
             let loop = makeMusicLoopBuffer()
             audioQueue.async {
@@ -145,6 +200,25 @@ final class SoundEngine {
                 if self.musicWanted { self.startMusicLocked() }
             }
         }
+    }
+
+    /// Sums a multi-tone sound (e.g. PERFECT = 880 Hz + 1100 Hz 60 ms later)
+    /// into one buffer, so it can be previewed on the single preview node with
+    /// the same timing the pool produces in gameplay.
+    private func mixDown(_ tones: [ScheduledTone]) -> AVAudioPCMBuffer? {
+        let sampleRate = format.sampleRate
+        let total = tones.map { AVAudioFrameCount($0.delaySeconds * sampleRate) + $0.buffer.frameLength }.max() ?? 0
+        guard total > 0,
+              let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: total),
+              let dst = out.floatChannelData?[0] else { return nil }
+        out.frameLength = total
+        for i in 0..<Int(total) { dst[i] = 0 }
+        for tone in tones {
+            guard let src = tone.buffer.floatChannelData?[0] else { continue }
+            let offset = Int(tone.delaySeconds * sampleRate)
+            for i in 0..<Int(tone.buffer.frameLength) { dst[offset + i] += src[i] }
+        }
+        return out
     }
 
     private func generateBuffer(config: ToneConfig) -> AVAudioPCMBuffer? {
@@ -218,8 +292,12 @@ final class SoundEngine {
 
     /// audioQueue only.
     private func playOnPool(buffer: AVAudioPCMBuffer, at requestedAt: CFTimeInterval, delay: Double) {
-        let player = playerPool[nextPlayerIndex % poolSize]
+        let index = nextPlayerIndex % poolSize
+        let player = playerPool[index]
         nextPlayerIndex += 1
+        // Bookkeeping for themed-pack voice allocation only: the node the
+        // built-in tones use is unchanged (plain round-robin).
+        markVoice(index, buffer: buffer, startingAt: requestedAt + delay, priority: false)
 
         // Stop any currently playing sound on this node
         player.stop()
@@ -231,6 +309,273 @@ final class SoundEngine {
             player.scheduleBuffer(buffer)
         }
         player.play()
+    }
+
+    /// audioQueue only.
+    private func markVoice(_ index: Int, buffer: AVAudioPCMBuffer, startingAt start: CFTimeInterval, priority: Bool) {
+        guard index < voiceEnds.count else { return }
+        voiceEnds[index] = start + Double(buffer.frameLength) / buffer.format.sampleRate
+        voiceIsPriority[index] = priority
+    }
+
+    // MARK: - Cosmetic sound packs
+    //
+    // Policy (which sound for which outcome) is the pure `CosmeticAudioPolicy`;
+    // this section only schedules. Main-thread cost of every entry point is one
+    // policy switch + one `audioQueue.async`.
+
+    /// Called from the tap path after scoring. Only enqueues work.
+    func playTapOutcome(_ outcome: TapSoundOutcome) {
+        guard isSoundEnabled else { return }
+        Perf.measure("audio.tapOutcome.main") {
+            let packID = activeSoundPackID
+            switch CosmeticAudioPolicy.cue(for: outcome, packID: packID) {
+            case .tone(let type):
+                play(type)   // default pack: the exact pre-Studio path
+            case .pack(let event):
+                enqueuePackEvent(event, packID: packID, fallback: CosmeticAudioPolicy.defaultTone(for: outcome))
+            case .silent:
+                break
+            }
+        }
+    }
+
+    /// Round ended (Game Over screen about to show). Default pack: silent.
+    /// The active pack plays a sting at round end (themed packs; classic is silent).
+    var activePackHasGameOverSound: Bool {
+        CosmeticAudioPolicy.gameOverCue(packID: activeSoundPackID) != .silent
+    }
+
+    func playGameOverCosmetic() {
+        guard isSoundEnabled else { return }
+        let packID = activeSoundPackID
+        guard case .pack(let event) = CosmeticAudioPolicy.gameOverCue(packID: packID) else { return }
+        // Only themed packs get here. If the pack is still decoding, play the
+        // classic miss tone: the tap that ended the round skipped its own sound
+        // in favour of this sting, so it must never be silent (QA-07).
+        enqueuePackEvent(event, packID: packID, fallback: .miss)
+    }
+
+    /// Select and preload the pack used in gameplay. Call before a round starts
+    /// (never on the tap path). Decoding runs on `synthQueue`; until it is done
+    /// taps fall back to the default tones, so this never blocks or goes silent.
+    /// Unknown ids resolve to the default pack. Also stops any preview.
+    func setActiveSoundPack(_ packID: String) {
+        let id = SoundPackCatalog.resolvedPackID(packID)
+        stopPreview()
+        activeSoundPackID = id
+        audioQueue.async { [self] in
+            if queueActivePackID != id { variantCursor = [:] }
+            queueActivePackID = id
+            evictUnusedPacks()
+            loadPackIfNeeded(id, completion: nil)
+        }
+    }
+
+    /// Preview Studio: play one event of any pack (owned or not) on the
+    /// dedicated preview node. Loads the pack off-main if needed. Never changes
+    /// the active gameplay pack. Respects the master sound setting.
+    func previewSound(_ event: CosmeticEvent, packID: String) {
+        guard isSoundEnabled else { return }
+        let id = SoundPackCatalog.resolvedPackID(packID)
+        audioQueue.async { [self] in
+            let generation = previewGeneration
+            guard let pack = SoundPackCatalog.pack(id: id) else { return }
+            if pack.isBuiltIn {
+                guard let tone = CosmeticAudioPolicy.defaultPreviewTone(for: event),
+                      let buffer = defaultPreviewBuffers[tone] else { return }
+                playPreviewBuffer(buffer)
+                return
+            }
+            if queuePreviewPackID != id {
+                queuePreviewPackID = id
+                evictUnusedPacks()
+            }
+            loadPackIfNeeded(id) { [self] buffers in
+                // Dropped if the user stopped previews / left while it loaded.
+                guard generation == previewGeneration, let buffer = buffers?[event]?.first else { return }
+                playPreviewBuffer(buffer)
+            }
+        }
+    }
+
+    /// Stops the preview voice (leaving the Studio / starting a round). Uses
+    /// its own node, so gameplay voices are never cut.
+    func stopPreview() {
+        audioQueue.async { [self] in
+            previewGeneration &+= 1
+            previewPlayer.stop()
+        }
+    }
+
+    /// Calls `completion` on the main queue once `packID`'s buffers are cached
+    /// (true) — or immediately with false if it is neither cached nor loading.
+    /// For the Studio's loading state and tests; gameplay never needs to wait.
+    func whenSoundPackReady(_ packID: String, _ completion: @escaping (Bool) -> Void) {
+        let id = SoundPackCatalog.resolvedPackID(packID)
+        audioQueue.async { [self] in
+            let reply: (Bool) -> Void = { ok in DispatchQueue.main.async { completion(ok) } }
+            if SoundPackCatalog.pack(id: id)?.isBuiltIn == true || packCache[id] != nil {
+                reply(true)
+            } else if packsLoading.contains(id) {
+                packLoadWaiters[id, default: []].append { reply($0 != nil) }
+            } else {
+                reply(false)
+            }
+        }
+    }
+
+    /// Tests / diagnostics only (blocks the caller on audioQueue — never call
+    /// from gameplay code).
+    func cachedSoundPackBuffers(_ packID: String) -> SoundPackBuffers? {
+        audioQueue.sync { packCache[packID] }
+    }
+
+    /// Tests / diagnostics only: loading / cached packs and per-pack load
+    /// timings (ms since request), plus whether `packDecodeQueue` and
+    /// `synthQueue` answer a probe within `probeTimeout`. Blocks the caller —
+    /// never call from gameplay code.
+    func soundPackLoadDiagnostics(probeTimeout: TimeInterval = 1) -> String {
+        func probe(_ q: DispatchQueue) -> String {
+            let sem = DispatchSemaphore(value: 0)
+            let t0 = CACurrentMediaTime()
+            q.async { sem.signal() }
+            return sem.wait(timeout: .now() + probeTimeout) == .success
+                ? String(format: "responsive (%.1f ms)", (CACurrentMediaTime() - t0) * 1000)
+                : "NOT responsive within \(probeTimeout) s"
+        }
+        let (loading, cached, trace) = audioQueue.sync { (packsLoading, Set(packCache.keys), packLoadTrace) }
+        let now = CACurrentMediaTime()
+        let lines = trace.keys.sorted().map { id -> String in
+            let t = trace[id]!
+            func ms(_ v: CFTimeInterval?) -> String { v.map { String(format: "%.0f", ($0 - t.requested) * 1000) } ?? "-" }
+            return "\(id): requested \(String(format: "%.0f", (now - t.requested) * 1000)) ms ago, decode started +\(ms(t.started)) ms, finished +\(ms(t.finished)) ms"
+        }
+        return "loading=\(loading.sorted()) cached=\(cached.sorted()) packDecodeQueue=\(probe(packDecodeQueue)) synthQueue=\(probe(synthQueue))\n" + lines.joined(separator: "\n")
+    }
+
+    /// Tests only: occupies `synthQueue` for `seconds` (simulates launch-time
+    /// synthesis or a starved utility queue) to prove pack loading does not
+    /// depend on it.
+    func occupySynthQueueForTesting(seconds: TimeInterval) {
+        synthQueue.async { Thread.sleep(forTimeInterval: seconds) }
+    }
+
+    /// Tests only: calls `completion` on main once no pack is loading (or after
+    /// `timeout`), so one test's in-flight load is never inherited by the next.
+    func whenNoSoundPackLoading(timeout: TimeInterval, _ completion: @escaping (Bool) -> Void) {
+        let deadline = CACurrentMediaTime() + timeout
+        func check() {
+            audioQueue.async { [self] in
+                let idle = packsLoading.isEmpty
+                if idle || CACurrentMediaTime() > deadline {
+                    DispatchQueue.main.async { completion(idle) }
+                } else {
+                    audioQueue.asyncAfter(deadline: .now() + 0.02) { check() }
+                }
+            }
+        }
+        check()
+    }
+
+    /// Tests / diagnostics only: ids currently held in the pack cache.
+    func cachedSoundPackIDs() -> Set<String> {
+        audioQueue.sync { Set(packCache.keys) }
+    }
+
+    /// The engine's player format; pack buffers are decoded into it.
+    var playerFormat: AVAudioFormat { format }
+
+    private func enqueuePackEvent(_ event: CosmeticEvent, packID: String, fallback: SoundType?) {
+        let requestedAt = CACurrentMediaTime()
+        audioQueue.async { [self] in
+            if let buffers = packCache[packID]?[event], !buffers.isEmpty {
+                // Round-robin variants. All start at sample 0, so the choice
+                // never moves the onset.
+                let cursor = variantCursor[event, default: 0]
+                variantCursor[event] = cursor &+ 1
+                ensureRunning()
+                playPackVoice(buffers[cursor % buffers.count],
+                              priority: CosmeticAudioPolicy.isHighPriority(event))
+            } else if let fallback, let tones = bufferCache[fallback] {
+                // Pack still decoding (or a file failed): the default tone, never silence.
+                ensureRunning()
+                for tone in tones {
+                    playOnPool(buffer: tone.buffer, at: requestedAt, delay: tone.delaySeconds)
+                }
+            }
+        }
+    }
+
+    /// audioQueue only. Round-robin like `playOnPool`, but skips nodes that are
+    /// still ringing a high-priority sound (perfect / miss / life lost / game
+    /// over), so a burst of quick taps cannot cut them. If all 8 nodes are busy
+    /// with priority sounds (not reachable with ≤ 900 ms sounds at human tap
+    /// rates) the round-robin node is reused: voices stay bounded.
+    private func playPackVoice(_ buffer: AVAudioPCMBuffer, priority: Bool) {
+        let now = CACurrentMediaTime()
+        var index = nextPlayerIndex % poolSize
+        for offset in 0..<poolSize {
+            let candidate = (nextPlayerIndex + offset) % poolSize
+            if !(voiceIsPriority[candidate] && voiceEnds[candidate] > now) {
+                index = candidate
+                break
+            }
+        }
+        nextPlayerIndex = index + 1
+        markVoice(index, buffer: buffer, startingAt: now, priority: priority)
+        let player = playerPool[index]
+        player.stop()
+        player.scheduleBuffer(buffer)
+        player.play()
+    }
+
+    /// audioQueue only.
+    private func playPreviewBuffer(_ buffer: AVAudioPCMBuffer) {
+        ensureRunning()
+        previewPlayer.stop()
+        previewPlayer.scheduleBuffer(buffer)
+        previewPlayer.play()
+    }
+
+    /// audioQueue only. Keeps at most the active pack and the last previewed
+    /// pack in memory (each ≈ 0.6 MB of float PCM).
+    private func evictUnusedPacks() {
+        packCache = packCache.filter { $0.key == queueActivePackID || $0.key == queuePreviewPackID }
+    }
+
+    /// audioQueue only. Decodes on `synthQueue`, stores back on `audioQueue`.
+    /// `completion` runs on audioQueue with the buffers (nil if the pack is
+    /// built-in or was deselected while loading).
+    private func loadPackIfNeeded(_ id: String, completion: ((SoundPackBuffers?) -> Void)?) {
+        guard let pack = SoundPackCatalog.pack(id: id), !pack.isBuiltIn else {
+            completion?(nil)
+            return
+        }
+        if let cached = packCache[id] {
+            completion?(cached)
+            return
+        }
+        if let completion { packLoadWaiters[id, default: []].append(completion) }
+        guard packsLoading.insert(id).inserted else { return }
+        let format = self.format
+        packLoadTrace[id] = (requested: CACurrentMediaTime(), started: nil, finished: nil)
+        packDecodeQueue.async { [self] in
+            let started = CACurrentMediaTime()
+            let buffers = Perf.measure("audio.packPreload.offMain") {
+                SoundPackLoader.decode(pack, format: format)
+            }
+            audioQueue.async { [self] in
+                packLoadTrace[id]?.started = started
+                packLoadTrace[id]?.finished = CACurrentMediaTime()
+                packsLoading.remove(id)
+                let wanted = id == queueActivePackID || id == queuePreviewPackID
+                if wanted { packCache[id] = buffers }
+                for waiter in packLoadWaiters.removeValue(forKey: id) ?? [] {
+                    waiter(wanted ? buffers : nil)
+                }
+            }
+        }
     }
 
     // MARK: - Background music (90 BPM ambient synth, looping)

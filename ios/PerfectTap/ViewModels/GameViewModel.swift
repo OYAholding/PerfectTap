@@ -43,6 +43,8 @@ struct GameResult {
     /// Authoritative economy only: outbox key of this round's gameplay/duel
     /// event (coins are pending until the server confirms). Nil on the legacy path.
     var economyEventKey: UUID? = nil
+    /// The player ended the round with QUIT (cosmetic game-over effects skip it).
+    var endedByQuit: Bool = false
 }
 
 // MARK: - Indicator relay (separate ObservableObject for 60fps updates)
@@ -167,7 +169,12 @@ final class GameViewModel: ObservableObject {
     #endif
 
     // MARK: - Setup
-    func setup(mode: GameMode, profile: PlayerProfile) {
+    /// - Parameter cosmetics: the resolved loadout for this round (read once by
+    ///   the view). Only selects/preloads the sound pack and haptic style here,
+    ///   before play — it never influences scoring, timing or lives.
+    func setup(mode: GameMode, profile: PlayerProfile, cosmetics: ResolvedCosmetics = .defaults) {
+        soundEngine?.setActiveSoundPack(cosmetics.soundPackID)
+        hapticsEngine?.setActiveHapticStyle(cosmetics.hapticStyleID)
         self.mode = mode
         self.speedRef = mode.initialSpeed
         self.livesRef = mode.initialLives ?? 999
@@ -343,6 +350,9 @@ final class GameViewModel: ObservableObject {
             FrameMonitor.shared.context = "roundEnd:\(mode.rawValue)"
         }
         AdManager.shared.isGameplayActive = false
+        // Equipped pack's game-over sting (default pack: silent). Enqueue only.
+        // Not on QUIT: a deliberate exit is not a "game over" moment.
+        if !endedByQuit { soundEngine?.playGameOverCosmetic() }
         PerfRoundEnd.pending = Perf.begin("nav.roundEndToGameOver")
         Perf.measure("game.finish") {
             finalizeAndReport()
@@ -671,29 +681,35 @@ final class GameViewModel: ObservableObject {
             if livesRef <= 0 { handleOutOfLives() }
         }
 
-        // Sound + haptics
-        if didHardcoreBreak {
-            soundEngine?.play(.comboBreak)
-            hapticsEngine?.impact(.heavy)
-        } else if accuracy == .miss && prevCombo >= 3 {
-            soundEngine?.play(.comboBreak)
-            hapticsEngine?.impact(.heavy)
-        } else if accuracy == .miss {
-            soundEngine?.play(.miss)
-            hapticsEngine?.impact(.rigid)
-        } else if comboRef == 5 || comboRef == 10 || comboRef == 20 {
-            soundEngine?.play(.comboMilestone)
-            hapticsEngine?.impact(.medium)
-        } else {
-            soundEngine?.play(accuracy == .perfect ? .perfect : accuracy == .great ? .great : .good)
-            hapticsEngine?.impact(accuracy == .perfect ? .light : .soft)
+        // Sound + haptics: gameplay reports *what happened*; the equipped sound
+        // pack / haptic style decide what plays (default = pre-Studio feedback).
+        let outcome = Self.tapOutcome(accuracy: accuracy, prevCombo: prevCombo, combo: comboRef,
+                                      didHardcoreBreak: didHardcoreBreak, usesLives: mode.usesLives)
+        // A round that ended on this tap has already queued the pack's game-over
+        // sting in finish(); don't stack this tap's sound on top of it (one
+        // primary voice). Default pack has no sting, so it keeps the old sound.
+        let endedOnThisTap = phase == .finished
+        if !(endedOnThisTap && (soundEngine?.activePackHasGameOverSound ?? false)) {
+            soundEngine?.playTapOutcome(outcome)
         }
+        hapticsEngine?.playTapOutcome(outcome)
 
         lastTapAccuracy = accuracy
         lastTapTiming = accuracy == .perfect ? nil : TimingEngine.timing(position: pos, direction: dirAtTap)
         lastTapPoints = finalPoints
         if mode == .practice { lastTapErrorMs = errorMs }
         tapSequence &+= 1
+    }
+
+    /// Feedback classification of a scored tap. Pure, so the mapping is unit-
+    /// tested; priority (combo break > miss > milestone > accuracy) is applied by
+    /// the sound/haptic routers exactly as the old if/else chain did.
+    nonisolated static func tapOutcome(accuracy: TapAccuracy, prevCombo: Int, combo: Int,
+                                       didHardcoreBreak: Bool, usesLives: Bool) -> TapSoundOutcome {
+        TapSoundOutcome(accuracy: accuracy,
+                        lostLife: accuracy == .miss && usesLives,
+                        comboBroken: didHardcoreBreak || (accuracy == .miss && prevCombo >= 3),
+                        milestone: combo == 5 || combo == 10 || combo == 20)
     }
 
     // MARK: - Report (called only from finish())
@@ -818,8 +834,8 @@ final class GameViewModel: ObservableObject {
             coinsEarned: coinsEarned, xpEarned: xpEarned,
             leveledUp: leveledUp, newAchievements: newAchievements, isNewBest: isNewBest,
             isDuelSession: isDuelSession, metrics: metrics,
-            economyEventKey: economy.isAuthoritative ? gameplayEventKey : nil
-        )
+            economyEventKey: economy.isAuthoritative ? gameplayEventKey : nil,
+            endedByQuit: endedByQuit)
 
         Task {
             await Backend.shared.saveProfile(profile)

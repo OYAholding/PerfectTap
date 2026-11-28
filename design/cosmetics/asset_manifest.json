@@ -1,0 +1,653 @@
+{
+  "assets" : [
+    {
+      "canvasPt" : 24,
+      "catalogField" : "imageName",
+      "collection" : "quack_attack",
+      "id" : "cos_quack_life",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 5035,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_life.imageset\/cos_quack_life@2x.png",
+          "pixels" : "48x48",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 9948,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_life.imageset\/cos_quack_life@3x.png",
+          "pixels" : "72x72",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 256×256 px (or PDF vector), single icon centred with ≤ 6% margin, no baked panel\/shadow; active + lost pair drawn on the same silhouette.",
+      "role" : "life icon (active)",
+      "scaleFrom3xSource" : 1.05,
+      "slot" : "lifeIcon",
+      "source" : {
+        "contentRect" : {
+          "h" : 59,
+          "w" : 66,
+          "x" : 479,
+          "y" : 881
+        },
+        "cropRect" : {
+          "h" : 78,
+          "w" : 78,
+          "x" : 474,
+          "y" : 870
+        },
+        "description" : "bottom strip, Quack life icon (active)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 14983,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 24,
+      "catalogField" : "secondaryImageName",
+      "collection" : "quack_attack",
+      "id" : "cos_quack_life_lost",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 4484,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_life_lost.imageset\/cos_quack_life_lost@2x.png",
+          "pixels" : "48x48",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 8483,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_life_lost.imageset\/cos_quack_life_lost@3x.png",
+          "pixels" : "72x72",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 256×256 px (or PDF vector), single icon centred with ≤ 6% margin, no baked panel\/shadow; active + lost pair drawn on the same silhouette.",
+      "role" : "life icon (lost)",
+      "scaleFrom3xSource" : 1.0800000000000001,
+      "slot" : "lifeIcon",
+      "source" : {
+        "contentRect" : {
+          "h" : 58,
+          "w" : 64,
+          "x" : 552,
+          "y" : 880
+        },
+        "cropRect" : {
+          "h" : 78,
+          "w" : 74,
+          "x" : 550,
+          "y" : 870
+        },
+        "description" : "bottom strip, Quack life icon (lost)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 12967,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 24,
+      "catalogField" : "imageName",
+      "collection" : "purrfect_tap",
+      "id" : "cos_paw_life",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 5010,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/PurrfectTap\/cos_paw_life.imageset\/cos_paw_life@2x.png",
+          "pixels" : "48x48",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 10041,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/PurrfectTap\/cos_paw_life.imageset\/cos_paw_life@3x.png",
+          "pixels" : "72x72",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 256×256 px (or PDF vector), single icon centred with ≤ 6% margin, no baked panel\/shadow; active + lost pair drawn on the same silhouette.",
+      "role" : "life icon (active)",
+      "scaleFrom3xSource" : 1.03,
+      "slot" : "lifeIcon",
+      "source" : {
+        "contentRect" : {
+          "h" : 58,
+          "w" : 67,
+          "x" : 875,
+          "y" : 877
+        },
+        "cropRect" : {
+          "h" : 74,
+          "w" : 74,
+          "x" : 869,
+          "y" : 866
+        },
+        "description" : "bottom strip, Purrfect life icon (active)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 15051,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 24,
+      "catalogField" : "secondaryImageName",
+      "collection" : "purrfect_tap",
+      "id" : "cos_paw_life_lost",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 4865,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/PurrfectTap\/cos_paw_life_lost.imageset\/cos_paw_life_lost@2x.png",
+          "pixels" : "48x48",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 9251,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/PurrfectTap\/cos_paw_life_lost.imageset\/cos_paw_life_lost@3x.png",
+          "pixels" : "72x72",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 256×256 px (or PDF vector), single icon centred with ≤ 6% margin, no baked panel\/shadow; active + lost pair drawn on the same silhouette.",
+      "role" : "life icon (lost)",
+      "scaleFrom3xSource" : 1.0600000000000001,
+      "slot" : "lifeIcon",
+      "source" : {
+        "contentRect" : {
+          "h" : 57,
+          "w" : 65,
+          "x" : 944,
+          "y" : 877
+        },
+        "cropRect" : {
+          "h" : 74,
+          "w" : 74,
+          "x" : 942,
+          "y" : 866
+        },
+        "description" : "bottom strip, Purrfect life icon (lost)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 14116,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 24,
+      "catalogField" : "imageName",
+      "collection" : "boom_mode",
+      "id" : "cos_boom_life",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 4897,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/BoomMode\/cos_boom_life.imageset\/cos_boom_life@2x.png",
+          "pixels" : "48x48",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 9747,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/BoomMode\/cos_boom_life.imageset\/cos_boom_life@3x.png",
+          "pixels" : "72x72",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 256×256 px (or PDF vector), single icon centred with ≤ 6% margin, no baked panel\/shadow; active + lost pair drawn on the same silhouette.",
+      "role" : "life icon (active)",
+      "scaleFrom3xSource" : 0.94999999999999996,
+      "slot" : "lifeIcon",
+      "source" : {
+        "contentRect" : {
+          "h" : 73,
+          "w" : 62,
+          "x" : 1331,
+          "y" : 872
+        },
+        "cropRect" : {
+          "h" : 86,
+          "w" : 74,
+          "x" : 1326,
+          "y" : 862
+        },
+        "description" : "bottom strip, Boom life icon (active)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 14644,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : false
+    },
+    {
+      "canvasPt" : 24,
+      "catalogField" : "secondaryImageName",
+      "collection" : "boom_mode",
+      "id" : "cos_boom_life_lost",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 4471,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/BoomMode\/cos_boom_life_lost.imageset\/cos_boom_life_lost@2x.png",
+          "pixels" : "48x48",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 8441,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/BoomMode\/cos_boom_life_lost.imageset\/cos_boom_life_lost@3x.png",
+          "pixels" : "72x72",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 256×256 px (or PDF vector), single icon centred with ≤ 6% margin, no baked panel\/shadow; active + lost pair drawn on the same silhouette.",
+      "role" : "life icon (lost)",
+      "scaleFrom3xSource" : 0.94999999999999996,
+      "slot" : "lifeIcon",
+      "source" : {
+        "contentRect" : {
+          "h" : 73,
+          "w" : 65,
+          "x" : 1408,
+          "y" : 871
+        },
+        "cropRect" : {
+          "h" : 88,
+          "w" : 78,
+          "x" : 1402,
+          "y" : 860
+        },
+        "description" : "bottom strip, Boom life icon (lost)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 12912,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : false
+    },
+    {
+      "canvasPt" : 72,
+      "catalogField" : "emblemImageName",
+      "collection" : "quack_attack",
+      "id" : "cos_quack_emblem",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 22693,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_emblem.imageset\/cos_quack_emblem@2x.png",
+          "pixels" : "144x144",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 45277,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_emblem.imageset\/cos_quack_emblem@3x.png",
+          "pixels" : "216x216",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 512×512 px (or PDF vector), character only (no text, no button body), consistent light direction with life icons.",
+      "role" : "tap-button emblem",
+      "scaleFrom3xSource" : 1.03,
+      "slot" : "tapButton",
+      "source" : {
+        "contentRect" : {
+          "h" : 126,
+          "w" : 201,
+          "x" : 11,
+          "y" : 259
+        },
+        "cropRect" : {
+          "h" : 130,
+          "w" : 216,
+          "x" : 8,
+          "y" : 259
+        },
+        "description" : "row Quack Attack, column THEME (hero duck, text excluded)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 67970,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 72,
+      "catalogField" : "emblemImageName",
+      "collection" : "purrfect_tap",
+      "id" : "cos_paw_emblem",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 28064,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/PurrfectTap\/cos_paw_emblem.imageset\/cos_paw_emblem@2x.png",
+          "pixels" : "144x144",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 55531,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/PurrfectTap\/cos_paw_emblem.imageset\/cos_paw_emblem@3x.png",
+          "pixels" : "216x216",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 512×512 px (or PDF vector), character only (no text, no button body), consistent light direction with life icons.",
+      "role" : "tap-button emblem",
+      "scaleFrom3xSource" : 1.26,
+      "slot" : "tapButton",
+      "source" : {
+        "contentRect" : {
+          "h" : 120,
+          "w" : 165,
+          "x" : 39,
+          "y" : 490
+        },
+        "cropRect" : {
+          "h" : 124,
+          "w" : 190,
+          "x" : 28,
+          "y" : 486
+        },
+        "description" : "row Purrfect Tap, column THEME (hero paw, text excluded)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 83595,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 72,
+      "catalogField" : "emblemImageName",
+      "collection" : "boom_mode",
+      "id" : "cos_boom_emblem",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 27397,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/BoomMode\/cos_boom_emblem.imageset\/cos_boom_emblem@2x.png",
+          "pixels" : "144x144",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 52589,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/BoomMode\/cos_boom_emblem.imageset\/cos_boom_emblem@3x.png",
+          "pixels" : "216x216",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 512×512 px (or PDF vector), character only (no text, no button body), consistent light direction with life icons.",
+      "role" : "tap-button emblem",
+      "scaleFrom3xSource" : 1.28,
+      "slot" : "tapButton",
+      "source" : {
+        "contentRect" : {
+          "h" : 120,
+          "w" : 162,
+          "x" : 27,
+          "y" : 712
+        },
+        "cropRect" : {
+          "h" : 120,
+          "w" : 204,
+          "x" : 18,
+          "y" : 712
+        },
+        "description" : "row Boom Mode, column THEME (hero bomb, text excluded)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 79986,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 36,
+      "catalogField" : "imageName",
+      "collection" : "quack_attack",
+      "id" : "cos_quack_feather",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 6380,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_feather.imageset\/cos_quack_feather@2x.png",
+          "pixels" : "72x72",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 13167,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_feather.imageset\/cos_quack_feather@3x.png",
+          "pixels" : "108x108",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 512×512 px, single element, no background panel, glow optional (renderer adds its own).",
+      "role" : "effect sprite (feather)",
+      "scaleFrom3xSource" : 0.83999999999999997,
+      "slot" : "lifeLostEffect",
+      "source" : {
+        "contentRect" : {
+          "h" : 89,
+          "w" : 121,
+          "x" : 1160,
+          "y" : 236
+        },
+        "cropRect" : {
+          "h" : 112,
+          "w" : 150,
+          "x" : 1140,
+          "y" : 215
+        },
+        "description" : "row Quack Attack, column LIFE LOST (main feather)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 19547,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : false
+    },
+    {
+      "canvasPt" : 96,
+      "catalogField" : "imageName",
+      "collection" : "quack_attack",
+      "id" : "cos_quack_gameover",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 31172,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_gameover.imageset\/cos_quack_gameover@2x.png",
+          "pixels" : "192x192",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 60731,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/QuackAttack\/cos_quack_gameover.imageset\/cos_quack_gameover@3x.png",
+          "pixels" : "288x288",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 512×512 px, single element, no background panel, glow optional (renderer adds its own).",
+      "role" : "effect sprite (sad duck)",
+      "scaleFrom3xSource" : 1.3300000000000001,
+      "slot" : "gameOverEffect",
+      "source" : {
+        "contentRect" : {
+          "h" : 110,
+          "w" : 208,
+          "x" : 1312,
+          "y" : 254
+        },
+        "cropRect" : {
+          "h" : 135,
+          "w" : 220,
+          "x" : 1305,
+          "y" : 245
+        },
+        "description" : "row Quack Attack, column GAME OVER (sad duck in puddle; rain + feathers excluded)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 91903,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 96,
+      "catalogField" : "imageName",
+      "collection" : "purrfect_tap",
+      "id" : "cos_paw_gameover",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 41753,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/PurrfectTap\/cos_paw_gameover.imageset\/cos_paw_gameover@2x.png",
+          "pixels" : "192x192",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 79812,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/PurrfectTap\/cos_paw_gameover.imageset\/cos_paw_gameover@3x.png",
+          "pixels" : "288x288",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 512×512 px, single element, no background panel, glow optional (renderer adds its own).",
+      "role" : "effect sprite (dizzy cat)",
+      "scaleFrom3xSource" : 1.29,
+      "slot" : "gameOverEffect",
+      "source" : {
+        "contentRect" : {
+          "h" : 170,
+          "w" : 214,
+          "x" : 1311,
+          "y" : 423
+        },
+        "cropRect" : {
+          "h" : 192,
+          "w" : 220,
+          "x" : 1305,
+          "y" : 416
+        },
+        "description" : "row Purrfect Tap, column GAME OVER (dizzy cat + spiral; dizzy dashes excluded)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 121565,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "canvasPt" : 96,
+      "catalogField" : "imageName",
+      "collection" : "boom_mode",
+      "id" : "cos_boom_gameover",
+      "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+      "outputs" : [
+        {
+          "bytes" : 57701,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/BoomMode\/cos_boom_gameover.imageset\/cos_boom_gameover@2x.png",
+          "pixels" : "192x192",
+          "scale" : "2x"
+        },
+        {
+          "bytes" : 113423,
+          "file" : "ios\/PerfectTap\/Assets.xcassets\/Cosmetics\/BoomMode\/cos_boom_gameover.imageset\/cos_boom_gameover@3x.png",
+          "pixels" : "288x288",
+          "scale" : "3x"
+        }
+      ],
+      "readiness" : "provisional",
+      "replacementSpec" : "Transparent PNG master ≥ 512×512 px, single element, no background panel, glow optional (renderer adds its own).",
+      "role" : "effect sprite (mushroom boom)",
+      "scaleFrom3xSource" : 1.26,
+      "slot" : "gameOverEffect",
+      "source" : {
+        "contentRect" : {
+          "h" : 194,
+          "w" : 220,
+          "x" : 1306,
+          "y" : 631
+        },
+        "cropRect" : {
+          "h" : 202,
+          "w" : 222,
+          "x" : 1304,
+          "y" : 626
+        },
+        "description" : "row Boom Mode, column GAME OVER (mushroom boom)",
+        "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp"
+      },
+      "totalBytes" : 171124,
+      "transparency" : "RGBA PNG, panel background keyed to alpha (region grow + 1 px matte)",
+      "upscaled" : true
+    },
+    {
+      "catalogField" : "imageName",
+      "collection" : "quack_attack",
+      "id" : "cos_quack_button",
+      "readiness" : "not_produced",
+      "reason" : "Not produced — native rendering (CosmeticTapButtonSkin draws the button body from the palette). The sheet's buttons have baked \"TAP!\" text and are ~200×60 px.",
+      "replacementSpec" : "Production art optional: text-free PNG ≥ 1080×240 px (9-slice safe 40 px caps), normal + pressed.",
+      "slot" : "tapButton",
+      "totalBytes" : 0
+    },
+    {
+      "catalogField" : "secondaryImageName",
+      "collection" : "quack_attack",
+      "id" : "cos_quack_button_pressed",
+      "readiness" : "not_produced",
+      "reason" : "Not produced — native rendering (CosmeticTapButtonSkin draws the button body from the palette). The sheet's buttons have baked \"TAP!\" text and are ~200×60 px.",
+      "replacementSpec" : "Production art optional: text-free PNG ≥ 1080×240 px (9-slice safe 40 px caps), normal + pressed.",
+      "slot" : "tapButton",
+      "totalBytes" : 0
+    },
+    {
+      "catalogField" : "imageName",
+      "collection" : "purrfect_tap",
+      "id" : "cos_paw_button",
+      "readiness" : "not_produced",
+      "reason" : "Not produced — native rendering (CosmeticTapButtonSkin draws the button body from the palette). The sheet's buttons have baked \"TAP!\" text and are ~200×60 px.",
+      "replacementSpec" : "Production art optional: text-free PNG ≥ 1080×240 px (9-slice safe 40 px caps), normal + pressed.",
+      "slot" : "tapButton",
+      "totalBytes" : 0
+    },
+    {
+      "catalogField" : "secondaryImageName",
+      "collection" : "purrfect_tap",
+      "id" : "cos_paw_button_pressed",
+      "readiness" : "not_produced",
+      "reason" : "Not produced — native rendering (CosmeticTapButtonSkin draws the button body from the palette). The sheet's buttons have baked \"TAP!\" text and are ~200×60 px.",
+      "replacementSpec" : "Production art optional: text-free PNG ≥ 1080×240 px (9-slice safe 40 px caps), normal + pressed.",
+      "slot" : "tapButton",
+      "totalBytes" : 0
+    },
+    {
+      "catalogField" : "imageName",
+      "collection" : "boom_mode",
+      "id" : "cos_boom_button",
+      "readiness" : "not_produced",
+      "reason" : "Not produced — native rendering (CosmeticTapButtonSkin draws the button body from the palette). The sheet's buttons have baked \"TAP!\" text and are ~200×60 px.",
+      "replacementSpec" : "Production art optional: text-free PNG ≥ 1080×240 px (9-slice safe 40 px caps), normal + pressed.",
+      "slot" : "tapButton",
+      "totalBytes" : 0
+    },
+    {
+      "catalogField" : "secondaryImageName",
+      "collection" : "boom_mode",
+      "id" : "cos_boom_button_pressed",
+      "readiness" : "not_produced",
+      "reason" : "Not produced — native rendering (CosmeticTapButtonSkin draws the button body from the palette). The sheet's buttons have baked \"TAP!\" text and are ~200×60 px.",
+      "replacementSpec" : "Production art optional: text-free PNG ≥ 1080×240 px (9-slice safe 40 px caps), normal + pressed.",
+      "slot" : "tapButton",
+      "totalBytes" : 0
+    }
+  ],
+  "generator" : "scripts\/cosmetics\/extract_assets.swift",
+  "license" : "Owner-supplied concept art (theme_event_sheet_v1). Ownership\/licence to be confirmed by the owner before release.",
+  "sheet" : "design\/cosmetics\/source\/theme_event_sheet_v1.webp",
+  "totalBytes" : 720363
+}

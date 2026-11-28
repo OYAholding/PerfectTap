@@ -33,9 +33,10 @@ struct ShopView: View {
 
     private var iapEnabled: Bool { FeatureFlags.coinPacksVisible || FeatureFlags.removeAdsVisible }
 
-    /// Shop tabs: the visible cosmetic categories plus Premium (when allowed).
+    /// Shop tabs: the visible cosmetic categories plus Premium (when allowed)
+    /// and Studio (Cosmetic Studio, when FeatureFlags.cosmeticStudioEnabled).
     enum ShopTab: Hashable {
-        case themes, tapFX, avatars, premium
+        case themes, tapFX, avatars, premium, studio
 
         var title: String {
             switch self {
@@ -43,6 +44,7 @@ struct ShopView: View {
             case .tapFX:   return "Tap FX"
             case .avatars: return "Avatars"
             case .premium: return "Premium"
+            case .studio:  return "Studio"
             }
         }
 
@@ -52,6 +54,7 @@ struct ShopView: View {
             case .tapFX:   return ShopCategory.tapFX.icon
             case .avatars: return ShopCategory.avatars.icon
             case .premium: return "crown.fill"
+            case .studio:  return "wand.and.stars"
             }
         }
 
@@ -61,11 +64,19 @@ struct ShopView: View {
             case .tapFX:   return ShopItem.tapFX
             case .avatars: return ShopItem.avatars
             case .premium: return ShopItem.premium
+            case .studio:  return []   // rendered by CosmeticStudioShopSection
             }
         }
 
         static var visible: [ShopTab] {
-            FeatureFlags.premiumSkinsVisible ? [.themes, .tapFX, .avatars, .premium] : [.themes, .tapFX, .avatars]
+            visible(premium: FeatureFlags.premiumSkinsVisible, studio: FeatureFlags.cosmeticStudioEnabled)
+        }
+
+        static func visible(premium: Bool, studio: Bool) -> [ShopTab] {
+            var tabs: [ShopTab] = [.themes, .tapFX, .avatars]
+            if premium { tabs.append(.premium) }
+            if studio { tabs.append(.studio) }
+            return tabs
         }
     }
 
@@ -90,44 +101,50 @@ struct ShopView: View {
                         .transition(.opacity)
                 }
 
-                ShopPreview(item: previewItem, equippedFX: profile.equippedTapFX,
-                            equippedTheme: themeManager.current, glowStrength: effects.glowStrength)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
+                if selectedCategory == .studio {
+                    categoryTabs
+                        .padding(.bottom, 10)
+                    CosmeticStudioShopSection(profile: $profile, spendable: spendable)
+                } else {
+                    ShopPreview(item: previewItem, equippedFX: profile.equippedTapFX,
+                                equippedTheme: themeManager.current, glowStrength: effects.glowStrength)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
 
-                categoryTabs
-                    .padding(.bottom, 10)
+                    categoryTabs
+                        .padding(.bottom, 10)
 
-                ScrollView(showsIndicators: false) {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                        ForEach(selectedCategory.items) { item in
-                            ShopItemCard(
-                                item: item,
-                                isOwned: !FeatureFlags.iapPreview && EconomyManager.shared.isOwned(item.id, in: profile),
-                                isEquipped: !FeatureFlags.iapPreview && EconomyManager.shared.isEquipped(item, in: profile),
-                                isSelected: selectedItem?.id == item.id,
-                                canAfford: spendable >= item.price,
-                                priceLabel: priceLabel(for: item)
-                            ) {
-                                selectedItem = item
+                    ScrollView(showsIndicators: false) {
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                            ForEach(selectedCategory.items) { item in
+                                ShopItemCard(
+                                    item: item,
+                                    isOwned: !FeatureFlags.iapPreview && EconomyManager.shared.isOwned(item.id, in: profile),
+                                    isEquipped: !FeatureFlags.iapPreview && EconomyManager.shared.isEquipped(item, in: profile),
+                                    isSelected: selectedItem?.id == item.id,
+                                    canAfford: spendable >= item.price,
+                                    priceLabel: priceLabel(for: item)
+                                ) {
+                                    selectedItem = item
+                                }
                             }
                         }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
-
-                    if selectedCategory == .premium {
-                        premiumFooter
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 24)
-                    }
-                }
-
-                if let item = selectedItem {
-                    actionBar(for: item)
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(Color.black.opacity(0.35))
+                        .padding(.bottom, 16)
+
+                        if selectedCategory == .premium {
+                            premiumFooter
+                                .padding(.horizontal, 20)
+                                .padding(.bottom, 24)
+                        }
+                    }
+
+                    if let item = selectedItem {
+                        actionBar(for: item)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .background(Color.black.opacity(0.35))
+                    }
                 }
             }
         }
@@ -180,13 +197,13 @@ struct ShopView: View {
     private var balanceRow: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "dollarsign.circle.fill")
+                Image(systemName: StudioStyle.coinSymbol)   // shared with every Studio price (QA-19)
                     .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
-                Text("\(spendable) coins")
+                Text(CoinFormat.coins(spendable))
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
                 if economyStatus.pendingCoins > 0 {
-                    Text("+\(economyStatus.pendingCoins) pending")
+                    Text("+\(CoinFormat.string(economyStatus.pendingCoins)) pending")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.5))
                 }

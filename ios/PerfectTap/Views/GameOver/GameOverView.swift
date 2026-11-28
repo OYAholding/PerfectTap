@@ -22,6 +22,11 @@ struct GameOverView: View {
 
     @State private var profile: PlayerProfile = PlayerProfile.load() ?? PlayerProfile()
 
+    @Environment(\.effectsLevel) private var effects
+    /// Cosmetics with a themed Game Over effect (nil = default / none: nothing mounted).
+    @State private var gameOverCosmetics: ResolvedCosmetics? = nil
+    @State private var gameOverTrigger: CosmeticEffectTrigger? = nil
+
     @MainActor
     private func navigateWithPostGameInterstitial(_ navigation: @escaping () -> Void) {
         guard !isNavigating else { return }
@@ -75,13 +80,41 @@ struct GameOverView: View {
                 .padding(.horizontal, 24)
             }
         }
+        // Cosmetic Game Over effect: a one-shot overlay at the top of the screen.
+        // Never delays the transition or blocks a button (no hit testing).
+        .overlay(alignment: .top) {
+            if let gameOverCosmetics {
+                CosmeticEffectLayer(resolved: gameOverCosmetics, trigger: gameOverTrigger,
+                                    origin: UnitPoint(x: 0.5, y: 0.4))
+                    .frame(height: 280)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .navigationBarHidden(true)
         .onAppear {
             PerfRoundEnd.complete()
+            prepareGameOverEffect()
             if Perf.probeEnabled { FrameMonitor.shared.context = "gameOver" }
             withAnimation(.easeOut(duration: 0.8).delay(0.4)) {
                 xpBarProgress = profile.xp > 0 ? Double(profile.xp) / Double(GameConfig.xpForLevel(profile.level)) : 0
             }
+        }
+    }
+
+    /// Arms the equipped Game Over effect once. The default item (style
+    /// `.none`) and EffectsLevel.off mount nothing, so the screen is unchanged.
+    private func prepareGameOverEffect() {
+        guard gameOverCosmetics == nil, effects != .off, !result.endedByQuit else { return }
+        let cosmetics = CosmeticLoadoutStore.shared.resolved
+        let item = cosmetics.item(for: .gameOverEffect)
+        guard !item.isDefault, let style = item.assets.effectStyle,
+              style != .none, style != .legacyParticles else { return }
+        gameOverCosmetics = cosmetics
+        // Fire on the next run-loop turn so the layer is mounted first and sees
+        // the trigger as a change (layers react to trigger changes).
+        DispatchQueue.main.async {
+            gameOverTrigger = CosmeticEffectTrigger(event: .gameOver, sequence: 1)
         }
     }
 
