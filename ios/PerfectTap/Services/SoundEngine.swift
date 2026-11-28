@@ -46,6 +46,13 @@ final class SoundEngine {
     // audioQueue-owned state
     private let audioQueue = DispatchQueue(label: "com.perfecttap.audio", qos: .userInitiated)
     private let synthQueue = DispatchQueue(label: "com.perfecttap.audio.synth", qos: .utility)
+    /// Cosmetic pack decoding. Its own queue at user-initiated QoS: the pack is
+    /// preloaded for the round the player is about to start, so it must neither
+    /// wait behind launch-time tone/music synthesis on `synthQueue` nor be
+    /// starved at utility QoS on a loaded machine. (PR #15 CI: on a 3-vCPU CI
+    /// simulator, pack loads queued on `synthQueue` did not finish in 60 s while
+    /// the same decode on the test thread took 27–88 ms.)
+    private let packDecodeQueue = DispatchQueue(label: "com.perfecttap.audio.packDecode", qos: .userInitiated)
     private let poolSize = 8
     private var playerPool: [AVAudioPlayerNode] = []
     private var nextPlayerIndex = 0
@@ -62,6 +69,9 @@ final class SoundEngine {
     private var packCache: [String: SoundPackBuffers] = [:]
     private var packsLoading: Set<String> = []
     private var packLoadWaiters: [String: [(SoundPackBuffers?) -> Void]] = [:]
+    /// Diagnostics (audioQueue-owned): when each pack load was requested,
+    /// started decoding, and finished — reported by `soundPackLoadDiagnostics()`.
+    private var packLoadTrace: [String: (requested: CFTimeInterval, started: CFTimeInterval?, finished: CFTimeInterval?)] = [:]
     private var queueActivePackID: String = SoundPackCatalog.defaultPackID
     private var queuePreviewPackID: String?
     /// Bumped by `stopPreview()`; a preview whose pack finishes loading after
@@ -421,6 +431,53 @@ final class SoundEngine {
         audioQueue.sync { packCache[packID] }
     }
 
+    /// Tests / diagnostics only: loading / cached packs and per-pack load
+    /// timings (ms since request), plus whether `packDecodeQueue` and
+    /// `synthQueue` answer a probe within `probeTimeout`. Blocks the caller —
+    /// never call from gameplay code.
+    func soundPackLoadDiagnostics(probeTimeout: TimeInterval = 1) -> String {
+        func probe(_ q: DispatchQueue) -> String {
+            let sem = DispatchSemaphore(value: 0)
+            let t0 = CACurrentMediaTime()
+            q.async { sem.signal() }
+            return sem.wait(timeout: .now() + probeTimeout) == .success
+                ? String(format: "responsive (%.1f ms)", (CACurrentMediaTime() - t0) * 1000)
+                : "NOT responsive within \(probeTimeout) s"
+        }
+        let (loading, cached, trace) = audioQueue.sync { (packsLoading, Set(packCache.keys), packLoadTrace) }
+        let now = CACurrentMediaTime()
+        let lines = trace.keys.sorted().map { id -> String in
+            let t = trace[id]!
+            func ms(_ v: CFTimeInterval?) -> String { v.map { String(format: "%.0f", ($0 - t.requested) * 1000) } ?? "-" }
+            return "\(id): requested \(String(format: "%.0f", (now - t.requested) * 1000)) ms ago, decode started +\(ms(t.started)) ms, finished +\(ms(t.finished)) ms"
+        }
+        return "loading=\(loading.sorted()) cached=\(cached.sorted()) packDecodeQueue=\(probe(packDecodeQueue)) synthQueue=\(probe(synthQueue))\n" + lines.joined(separator: "\n")
+    }
+
+    /// Tests only: occupies `synthQueue` for `seconds` (simulates launch-time
+    /// synthesis or a starved utility queue) to prove pack loading does not
+    /// depend on it.
+    func occupySynthQueueForTesting(seconds: TimeInterval) {
+        synthQueue.async { Thread.sleep(forTimeInterval: seconds) }
+    }
+
+    /// Tests only: calls `completion` on main once no pack is loading (or after
+    /// `timeout`), so one test's in-flight load is never inherited by the next.
+    func whenNoSoundPackLoading(timeout: TimeInterval, _ completion: @escaping (Bool) -> Void) {
+        let deadline = CACurrentMediaTime() + timeout
+        func check() {
+            audioQueue.async { [self] in
+                let idle = packsLoading.isEmpty
+                if idle || CACurrentMediaTime() > deadline {
+                    DispatchQueue.main.async { completion(idle) }
+                } else {
+                    audioQueue.asyncAfter(deadline: .now() + 0.02) { check() }
+                }
+            }
+        }
+        check()
+    }
+
     /// Tests / diagnostics only: ids currently held in the pack cache.
     func cachedSoundPackIDs() -> Set<String> {
         audioQueue.sync { Set(packCache.keys) }
@@ -502,11 +559,15 @@ final class SoundEngine {
         if let completion { packLoadWaiters[id, default: []].append(completion) }
         guard packsLoading.insert(id).inserted else { return }
         let format = self.format
-        synthQueue.async { [self] in
+        packLoadTrace[id] = (requested: CACurrentMediaTime(), started: nil, finished: nil)
+        packDecodeQueue.async { [self] in
+            let started = CACurrentMediaTime()
             let buffers = Perf.measure("audio.packPreload.offMain") {
                 SoundPackLoader.decode(pack, format: format)
             }
             audioQueue.async { [self] in
+                packLoadTrace[id]?.started = started
+                packLoadTrace[id]?.finished = CACurrentMediaTime()
                 packsLoading.remove(id)
                 let wanted = id == queueActivePackID || id == queuePreviewPackID
                 if wanted { packCache[id] = buffers }

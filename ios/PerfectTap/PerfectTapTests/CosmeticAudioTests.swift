@@ -19,6 +19,13 @@ final class CosmeticAudioTests: XCTestCase {
         savedSoundSetting = UserDefaults.standard.object(forKey: "perfecttap_sound")
         UserDefaults.standard.set(true, forKey: "perfecttap_sound")
         SoundEngine.shared.refreshSettings()
+        // Isolation: never inherit a previous test's in-flight pack load (a
+        // slow load would otherwise make `coldPackID()` pick a loading pack).
+        let settled = expectation(description: "no pack loading")
+        var idle = false
+        SoundEngine.shared.whenNoSoundPackLoading(timeout: 20) { idle = $0; settled.fulfill() }
+        wait(for: [settled], timeout: 25)
+        XCTAssertTrue(idle, "a pack load from an earlier test never finished:\n\(SoundEngine.shared.soundPackLoadDiagnostics())")
     }
 
     override func tearDown() {
@@ -49,14 +56,19 @@ final class CosmeticAudioTests: XCTestCase {
         return out
     }
 
-    private func waitReady(_ packID: String, timeout: TimeInterval = 10) -> Bool {
+    private func waitReady(_ packID: String, timeout: TimeInterval = 10,
+                           file: StaticString = #filePath, line: UInt = #line) -> Bool {
         let exp = expectation(description: "pack \(packID) ready")
         var ok = false
         SoundEngine.shared.whenSoundPackReady(packID) { ready in
             ok = ready
             exp.fulfill()
         }
-        wait(for: [exp], timeout: timeout)
+        if XCTWaiter().wait(for: [exp], timeout: timeout) != .completed {
+            // Same failure as before, plus the engine's view of every load.
+            XCTFail("pack \(packID) not ready within \(timeout) s:\n\(SoundEngine.shared.soundPackLoadDiagnostics())",
+                    file: file, line: line)
+        }
         return ok
     }
 
@@ -269,6 +281,20 @@ final class CosmeticAudioTests: XCTestCase {
         // Unknown id → default (built-in, nothing to load).
         engine.setActiveSoundPack("no_such_pack")
         XCTAssertEqual(engine.activeSoundPackID, "default")
+    }
+
+    /// Regression (PR #15 CI): pack loading must not depend on `synthQueue`,
+    /// which also runs launch-time tone/music synthesis at utility QoS.
+    func testPackLoadsWhileSynthQueueIsBusy() {
+        let engine = SoundEngine.shared
+        engine.setActiveSoundPack(SoundPackCatalog.defaultPackID)
+        let cold = coldPackID()
+        engine.occupySynthQueueForTesting(seconds: 8)
+        let t0 = CACurrentMediaTime()
+        engine.setActiveSoundPack(cold)
+        XCTAssertTrue(waitReady(cold, timeout: 5), "pack load waited for synthQueue")
+        XCTAssertLessThan(CACurrentMediaTime() - t0, 5)
+        XCTAssertEqual(engine.cachedSoundPackBuffers(cold)?.keys.count, CosmeticEvent.allCases.count)
     }
 
     func testSoundOffMeansPreviewDoesNotLoadOrPlay() {
