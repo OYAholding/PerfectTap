@@ -25,7 +25,28 @@ Why themed packs use this policy:
 - **lifeLost supersedes miss / comboBroken.** Losing a life is the more consequential news. Playing both a miss and a splash/explosion would stack two failure sounds on one tap.
 - **comboBroken → miss.** A Hardcore break can happen on a GOOD tap. It still has to sound like a failure, and the pack's miss sound is its failure sound.
 - **No milestone arpeggio on themed packs.** Mixing the classic sine arpeggio with a quack or boom sounds like a glitch. The combo counter animation already marks the milestone.
-- **`tap` event.** Every scored tap has a grade, so in gameplay v1 the policy never selects the pack's neutral `tap` sound (a test enforces this). The sound exists for the Studio's tap-button preview and for future non-scored taps.
+- **`tap` event — unused.** Every scored tap has a grade, so in gameplay v1 the policy never selects the pack's neutral `tap` sound (a test enforces this). Since QA-08 the Preview Studio doesn't play it either (see §1a). The three `<pack>_tap.caf` files (`quack_attack_tap`, `purrfect_tap_tap`, `boom_mode_tap`, 35,220 bytes together) still ship but are never heard. Status: **unused — candidate for removal or for a future deliberate tap layer (owner decision)**. They are not deleted, because their ids are stable, and removing them is a catalog + manifest change.
+
+### 1a. Preview Studio = gameplay (QA-08)
+
+The Preview Studio plays exactly what gameplay would play for the moment it imitates. `CosmeticPreviewModel.soundEvent(forPreview:packID:)` builds the gameplay `TapSoundOutcome` and asks **the same `CosmeticAudioPolicy.cue`**, so a policy change automatically changes the preview too. It then plays the result through `SoundEngine.previewSound(_:packID:)` on the preview node.
+
+| Preview control | Gameplay outcome it imitates | Themed pack plays | Classic pack plays |
+|---|---|---|---|
+| Tap button (the skin) | a GOOD tap | **good** | `good` tone |
+| Good | GOOD | **good** | `good` tone |
+| Great | GREAT | **great** | `great` tone |
+| Perfect | PERFECT | **perfect** | `perfect` tone |
+| Miss | MISS, no life lost | **miss** | `miss` tone |
+| Lose a life | MISS that costs a life | **lifeLost** | `miss` tone (classic doesn't distinguish it) |
+| Game Over | round end | **gameOver** | silent |
+| Picking an item | Tap Sound → PERFECT; Tap Effect → GOOD; Perfect / Miss / Life Lost / Game Over effect → that moment | as above | as above |
+
+There are two differences from gameplay:
+- **Variants.** A preview plays variant v1 of good/great. The v1 → v3 round-robin only runs in gameplay.
+- **Milestones and combo breaks.** These aren't separate preview buttons. They resolve to the perfect/great and miss rows above.
+
+Visual effects use the same events: GOOD and GREAT fire the Tap Effect, and the burst starts at the button, as in `GameView`. Haptics use the matching outcome (`HapticsEngine.previewOutcome`). `CosmeticShopTests` covers this mapping: a preview tap equals the policy's GOOD cue for every pack and never `.tap`.
 
 **Default parity.** For every combination of the four outcome fields, the default pack returns exactly what the pre-Studio `GameViewModel` `// Sound + haptics` block played. The test is `testDefaultPackPolicyIsIdenticalToLegacyDispatch`. Unknown pack ids behave like `default`.
 
