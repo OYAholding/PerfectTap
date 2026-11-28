@@ -33,7 +33,7 @@ Status 2026-11-28. Read-only analysis. Neither PR is merged, nothing is deployed
 4. **F4:** the `economy_shop_items` primary key change to `(config_version, item_id)` is safe, but the economy owner must agree to it.
 5. **Cross-device loadout (future):** an optional `equipped_cosmetics` jsonb in the profile, last writer wins. `sanitize_economy` drops any id that is neither owned nor a Classic default, and caps the size. Keep the client's round-start ownership check.
 
-## Recommended path: ship Cosmetic Studio in 1.2.1, not 1.2.0
+## Decided path (owner, 2026-11-28): ship Cosmetic Studio in 1.2.1, not 1.2.0
 
 Why:
 - 1.2.0 is QA-signed at `94a680e`, including the idle perf gate 3/3. PR #15 changes `SoundEngine`, `GameView` and `GameViewModel` on paths that run even with the flag off, so merging it would invalidate that evidence.
@@ -55,7 +55,7 @@ Steps:
    - Device QA-02 per `docs/DEVICE_TEST_PROCEDURE_1.2.0.he.md` §1/§3 (build C).
 5. Owner approval to merge PR #15 into `release/1.2.1`. The flag stays NO until prices and assets are approved.
 
-## Alternative: include it in 1.2.0 (owner decision)
+## Alternative considered and declined: include it in 1.2.0
 
 Same steps 2 and 4, but against `release/1.2.0`, then a merge commit into release/1.2.0. After that, PR #14's QA evidence must be rerun (full suite, Release and Release-IAP flag asserts, perf gate) before TestFlight.
 

@@ -32,6 +32,11 @@ each still need a separate explicit approval (runbook gates G2/G3/G13).
 No product exists in App Store Connect yet (dry-run reconcile: 9 × `MISSING`).
 Creating them is irreversible and stays behind G4.
 
+## Release scope (owner decision 2026-11-28)
+
+Cosmetic Studio (PR #15) ships in **1.2.1**, not 1.2.0. 1.2.0 keeps its QA-signed
+scope. Path: `docs/INTEGRATION_PLAN_PR14_PR15.md` ("Recommended path").
+
 ## Principles kept
 
 No pay-to-win (purchases are cosmetic, ad removal or coins for cosmetics),
