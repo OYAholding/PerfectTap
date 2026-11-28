@@ -10,6 +10,7 @@
 # activation step in docs/RELEASE_1.2.0_RUNBOOK.he.md):
 #   PT_IAP_CATALOG_ENABLED  PT_IAP_SERVER_VERIFICATION_ENABLED  PT_IAP_COIN_PACKS_ENABLED
 #   PT_IAP_REMOVE_ADS_ENABLED  PT_IAP_PREMIUM_SKINS_ENABLED  PT_AUTHORITATIVE_ECONOMY_ENABLED
+#   PT_COSMETIC_STUDIO_ENABLED  PT_EMAIL_OTP_ENABLED (feature flags; never exempt under Release-IAP)
 #
 # What is inspected (every tracked file of these kinds, not just ios/PerfectTap):
 #   * project.yml (XcodeGen): any flag = YES in `settings.base` (applies to Release),
@@ -22,7 +23,7 @@
 # Requires only bash + python3 (no PyYAML). Exit 0 = safe, 1 = violation, 2 = usage.
 set -euo pipefail
 
-FLAGS="PT_IAP_CATALOG_ENABLED PT_IAP_SERVER_VERIFICATION_ENABLED PT_IAP_COIN_PACKS_ENABLED PT_IAP_REMOVE_ADS_ENABLED PT_IAP_PREMIUM_SKINS_ENABLED PT_AUTHORITATIVE_ECONOMY_ENABLED"
+FLAGS="PT_IAP_CATALOG_ENABLED PT_IAP_SERVER_VERIFICATION_ENABLED PT_IAP_COIN_PACKS_ENABLED PT_IAP_REMOVE_ADS_ENABLED PT_IAP_PREMIUM_SKINS_ENABLED PT_AUTHORITATIVE_ECONOMY_ENABLED PT_COSMETIC_STUDIO_ENABLED PT_EMAIL_OTP_ENABLED"
 
 run_check() {
   local root="$1"
@@ -90,7 +91,7 @@ def check_project_yml(path, rel):
                 if norm(val).upper() == "YES" or norm(val).lower() == "true":
                     bad(f"{rel}:{n} [{'/'.join(path_keys)}]", key, norm(val), "hard-coded ON in Info.plist properties")
                 continue
-            if cfg is not None and cfg.lower() == "debug":
+            if cfg is not None and is_debug_config(cfg):
                 continue
             scope = cfg if cfg else "base (applies to Release)"
             judge(f"{rel}:{n} [{'/'.join(path_keys)} -> {scope}]", key, val)
@@ -328,6 +329,28 @@ Y
   mkdir -p "$tmp/ceiling-shared/Config"
   printf 'PT_IAP_COIN_PACKS_ENABLED = YES\n' > "$tmp/ceiling-shared/Config/IAP.xcconfig"
   expect 1 ceiling-shared
+
+  mk feature-flags project.yml <<'Y'
+targets:
+  App:
+    settings:
+      configs:
+        Debug-StoreKit:
+          PT_COSMETIC_STUDIO_ENABLED: "YES"
+        Release:
+          PT_COSMETIC_STUDIO_ENABLED: "NO"
+Y
+  expect 0 feature-flags
+
+  mk feature-flag-iap project.yml <<'Y'
+targets:
+  App:
+    settings:
+      configs:
+        Release-IAP:
+          PT_COSMETIC_STUDIO_ENABLED: "YES"
+Y
+  expect 1 feature-flag-iap
 
   mkdir -p "$tmp/empty"
   expect 1 empty

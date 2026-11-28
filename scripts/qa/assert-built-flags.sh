@@ -8,7 +8,8 @@
 # Release-IAP: PT_MONETIZATION_PROFILE=AppStoreIAP, the five PT_IAP_* ceilings
 # YES (selling still needs the server gate), and PT_AUTHORITATIVE_ECONOMY_ENABLED
 # NO (not activated in 1.2.0).
-# A missing key always fails (a release artifact must state every flag).
+# A missing key always fails (a release artifact must state every flag), except the
+# feature flags in OFF_IF_PRESENT, which must be NO when present (absent = off).
 set -euo pipefail
 MODE="release"
 if [[ "${1:-}" == "--release-iap" ]]; then MODE="release-iap"; shift; fi
@@ -37,6 +38,10 @@ else
   for f in "${IAP_FLAGS[@]}"; do expect "$f" YES; done
 fi
 expect PT_AUTHORITATIVE_ECONOMY_ENABLED NO
+OFF_IF_PRESENT=(PT_EMAIL_OTP_ENABLED PT_COSMETIC_STUDIO_ENABLED)
+for f in "${OFF_IF_PRESENT[@]}"; do
+  if v="$(read_key "$f")"; then expect "$f" NO; else echo "  ok   $f absent (off)"; fi
+done
 echo "PT_BACKEND = $(read_key PT_BACKEND || echo '<missing>')"
 if [[ $fail -ne 0 ]]; then echo "FAIL: built app flags do not match $MODE"; exit 1; fi
 echo "PASS: built app flags match $MODE"

@@ -7,7 +7,7 @@ begin
   select n.nspname into s from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pgtap';
   perform set_config('search_path', 'public, ' || quote_ident(coalesce(s, 'extensions')), false);
 end $$;
-select plan(28);
+select plan(31);
 
 insert into auth.users (id, email, aud, role) values
   ('ffffffff-0000-0000-0000-000000000001', 'h1@test.local', 'authenticated', 'authenticated'),
@@ -65,6 +65,14 @@ select throws_ok($$ select purchase_economy_item('aaaa0000-0000-0000-0000-000000
 select ok(not coalesce(get_my_profile()->'owned_items' ? 'avatar_dragon', false), 'C1: still no free item');
 select is(purchase_economy_item('aaaa0000-0000-0000-0000-000000000002', 'theme_neon')->>'status', 'duplicate',
   'replaying the same purchase is a duplicate');
+-- Cosmetic QA-01 (PR #15 repro): same key, cheaper item first, then a pricier one.
+create temp table qa01_before on commit drop as
+  select (get_my_economy_state()->>'confirmedBalance')::bigint as bal;
+select throws_ok($$ select purchase_economy_item('aaaa0000-0000-0000-0000-000000000002', 'theme_matrix') $$,
+  'P0001', 'invalid_payload', 'QA-01: reusing a purchase key for a pricier item is refused');
+select is((get_my_economy_state()->>'confirmedBalance')::bigint, (select bal from qa01_before),
+  'QA-01: the refused replay charges nothing');
+select ok(not coalesce(get_my_profile()->'owned_items' ? 'theme_matrix', false), 'QA-01: pricier item not granted');
 select pg_temp.as_admin();
 select is((select count(*)::int from private.economy_events
            where user_id = 'ffffffff-0000-0000-0000-000000000001' and source = 'shop_purchase'), 1,
