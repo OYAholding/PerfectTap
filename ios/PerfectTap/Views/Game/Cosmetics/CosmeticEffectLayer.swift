@@ -11,7 +11,11 @@ import SwiftUI
 //  * bounded: ≤ 24 primitives per burst, ≤ 1.2 s (game over ≤ 1.8 s), ≤ 2
 //    overlapping bursts (oldest dropped), flashes ≤ 3/s, burst diameter ≤ 45 %
 //    of the layer width (CosmeticEffectBounds);
-//  * the TimelineView exists only while a burst is alive; state is cleared when idle.
+//  * rendered by Core Animation (Effects/CosmeticEffectPainter.swift,
+//    CosmeticEffectCARenderer): a burst is sampled once when it fires and the
+//    render server animates it — no TimelineView, no per-frame SwiftUI update or
+//    main-thread rasterisation while it plays (QA-02). Layers are removed when
+//    their burst ends; the ≤ 2-burst queue below is the only state.
 //
 // Fires on *changes* of `trigger` (a new `sequence`), not on appear.
 // Geometry: Effects/CosmeticEffectFrames.swift; drawing: Effects/CosmeticEffectPainter.swift.
@@ -36,47 +40,15 @@ struct CosmeticEffectLayer: View {
     private var level: EffectsLevel { effects.effective(reduceMotion: reduceMotion) }
 
     var body: some View {
-        GeometryReader { geo in
-            if !queue.isEmpty {
-                // Performance (QA-02). Canvas rasterises on the main thread, so:
-                //  * the canvas covers only the square the burst can reach (R from
-                //    the *full* layer width, so bursts look identical);
-                //  * bursts redraw at 30 Hz — the timing indicator keeps its own
-                //    60 Hz TapBarIndicator, only these ≤1.2 s flourishes step at 30.
-                // Simulator, themed loadout: hitch ratio 1.62 % → 0.89 % (base 1.2.0:
-                // 0.81 %). Tried and rejected (measured worse or no better):
-                // drawingGroup() (offscreen texture per frame), normal blending
-                // instead of plusLighter, removing the button's outer shadow.
-                // docs/cosmetics/QA_REPORT.md "Lead follow-up".
-                let R = CosmeticEffectBounds.radius(for: geo.size)
-                let side = Self.canvasSide(radius: R)
-                let center = CGPoint(x: geo.size.width * origin.x, y: geo.size.height * origin.y)
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                    let now = timeline.date.timeIntervalSinceReferenceDate
-                    Canvas { context, _ in
-                        for burst in queue.bursts {
-                            CosmeticEffectPainter.draw(burst, now: now, in: &context, radius: Double(R),
-                                                       center: CGPoint(x: side / 2, y: side / 2))
-                        }
-                    }
-                    .frame(width: side, height: side)
-                    .position(center)
-                    .onChange(of: queue.isExpired(at: now)) { expired in
-                        if expired { queue.removeAll() }
-                    }
-                }
-            }
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .onChange(of: trigger) { fire($0) }
-        .onChange(of: effects) { if $0 == .off { queue.removeAll() } }
-    }
-
-    /// Primitives stay within `maxExtent`·R of the origin; halos and sprite
-    /// sizes add up to ~0.8 R more, so 2 × 1.9 R (+ edge slack) never clips.
-    static func canvasSide(radius: CGFloat) -> CGFloat {
-        ceil(radius * 2 * (CGFloat(CosmeticEffectBounds.maxExtent) + 0.9) + 8)
+        // Performance (QA-02, docs/cosmetics/PERF_QA02.md). The previous
+        // TimelineView + Canvas re-evaluated SwiftUI and rasterised radial
+        // gradients on the main thread every frame while a burst was alive; the
+        // Core Animation renderer does that work once per burst instead.
+        CosmeticEffectCAView(bursts: queue.bursts, origin: origin)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: trigger) { fire($0) }
+            .onChange(of: effects) { if $0 == .off { queue.removeAll() } }
     }
 
     private func fire(_ trigger: CosmeticEffectTrigger?) {

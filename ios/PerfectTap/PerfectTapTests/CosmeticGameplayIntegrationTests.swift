@@ -159,4 +159,96 @@ final class CosmeticGameplayIntegrationTests: XCTestCase {
             XCTAssertLessThanOrEqual(livesImage?.size.width ?? .infinity, 100.5, "lives row is width-capped")
         }
     }
+
+    // MARK: Themed button layout (QA-09 emblem cut, QA-10 emblem over label)
+
+    private let layoutHeights: [CGFloat] = [28, 30, 36, 40, 48, 56, 64, 80, 96]
+    private let layoutWidths: [CGFloat] = [60, 75, 83, 100, 120, 160, 200, 280, 345, 354, 600, 1000]
+
+    func testEmblemNeverCoversTheLabelAtAnySize() {
+        for label in ["TAP!", "TAP"] {
+            for h in layoutHeights {
+                for w in layoutWidths {
+                    let layout = ThemedTapButtonLayout.make(size: CGSize(width: w, height: h), hasEmblem: true,
+                                                            labelWidth: { ThemedTapButtonLayout.labelWidth(label, fontSize: $0) })
+                    let where_ = "\(label) \(w)×\(h)"
+                    XCTAssertGreaterThanOrEqual(layout.fontSize, ThemedTapButtonLayout.minFontSize, where_)
+                    XCTAssertLessThanOrEqual(layout.fontSize, ThemedTapButtonLayout.maxFontSize, where_)
+                    XCTAssertEqual(layout.labelFrame.width, ThemedTapButtonLayout.labelWidth(label, fontSize: layout.fontSize), where_)
+                    guard let frame = layout.emblemFrame else { continue }
+                    let art = ThemedTapButtonLayout.artBox(emblemFrame: frame, buttonHeight: h)
+                    XCTAssertFalse(art.intersects(layout.labelFrame), "emblem art over the label at \(where_)")
+                    XCTAssertLessThanOrEqual(art.maxX + ThemedTapButtonLayout.gap(height: h) - 0.001, layout.labelFrame.minX, where_)
+                    XCTAssertLessThanOrEqual(layout.labelFrame.maxX, w, where_)
+                    // QA-09: square (never stretched) and the flat cut lies exactly on the bottom edge.
+                    XCTAssertEqual(frame.width, frame.height, where_)
+                    XCTAssertEqual(frame.minY + frame.height * ThemedTapButtonLayout.artCutFraction, h, accuracy: 0.001, where_)
+                    XCTAssertGreaterThanOrEqual(art.minY, 0, "art stays inside the capsule height at \(where_)")
+                }
+            }
+        }
+    }
+
+    func testGameplayButtonKeepsFullSizeEmblemAndLabel() {
+        // 402-pt iPhone minus 2×24 padding; 80 pt gameplay height.
+        let layout = ThemedTapButtonLayout.make(size: CGSize(width: 354, height: 80), hasEmblem: true,
+                                                labelWidth: { ThemedTapButtonLayout.labelWidth("TAP!", fontSize: $0) })
+        XCTAssertEqual(layout.fontSize, 26)
+        XCTAssertEqual(layout.emblemFrame?.width ?? 0, 80 * ThemedTapButtonLayout.emblemScales[0], accuracy: 0.001)
+        // Studio hero card (56 pt) keeps an emblem too.
+        let hero = ThemedTapButtonLayout.make(size: CGSize(width: 300, height: 56), hasEmblem: true,
+                                              labelWidth: { ThemedTapButtonLayout.labelWidth("TAP!", fontSize: $0) })
+        XCTAssertNotNil(hero.emblemFrame)
+    }
+
+    func testNoEmblemCentresTheLabel() {
+        let layout = ThemedTapButtonLayout.make(size: CGSize(width: 200, height: 56), hasEmblem: false,
+                                                labelWidth: { ThemedTapButtonLayout.labelWidth("TAP!", fontSize: $0) })
+        XCTAssertNil(layout.emblemFrame)
+        XCTAssertEqual(layout.labelFrame.midX, 100, accuracy: 0.5)
+        XCTAssertEqual(layout.labelFrame.midY, 28, accuracy: 0.5)
+    }
+
+    /// Opt-in visual check (QA-09/QA-10): TEST_RUNNER_PT_BUTTON_SHEET_DIR=<dir> writes
+    /// tap-button-sheet.png with every themed skin at gameplay, Studio hero and chip sizes.
+    func testRenderTapButtonSheet() throws {
+        guard let dir = ProcessInfo.processInfo.environment["PT_BUTTON_SHEET_DIR"] else {
+            throw XCTSkip("set TEST_RUNNER_PT_BUTTON_SHEET_DIR to render the tap-button sheet")
+        }
+        let sizes: [(CGFloat, CGFloat, String)] = [(80, 354, "TAP!"), (56, 300, "TAP!"), (40, 83, "TAP"), (30, 83, "TAP")]
+        let sheet = VStack(alignment: .leading, spacing: 14) {
+            ForEach(["quack_attack", "purrfect_tap", "boom_mode"], id: \.self) { collection in
+                let button = CosmeticCatalog.item(id: "\(collection).tapButton")!
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(sizes.enumerated()), id: \.offset) { _, size in
+                        HStack(spacing: 16) {
+                            CosmeticTapButtonSkin(item: button, fallbackColors: [.purple], label: size.2, height: size.0)
+                                .frame(width: size.1)
+                            CosmeticTapButtonSkin(item: button, fallbackColors: [.purple], isPressed: true, label: size.2, height: size.0)
+                                .frame(width: size.1)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(Color(red: 0.05, green: 0.05, blue: 0.08))
+        let renderer = ImageRenderer(content: sheet)
+        renderer.scale = 3
+        let image = try XCTUnwrap(renderer.uiImage)
+        try XCTUnwrap(image.pngData()).write(to: URL(fileURLWithPath: dir).appendingPathComponent("tap-button-sheet.png"))
+    }
+
+    func testThemedSkinsRenderAtStudioAndChipHeights() {
+        CosmeticImageCache.shared.preload(quackEverything)
+        for collection in ["quack_attack", "purrfect_tap", "boom_mode"] {
+            let button = CosmeticCatalog.item(id: "\(collection).tapButton")!
+            for (h, w, label) in [(CGFloat(30), CGFloat(83), "TAP"), (40, 83, "TAP"), (56, 300, "TAP!"), (80, 354, "TAP!")] {
+                let image = ImageRenderer(content: CosmeticTapButtonSkin(item: button, fallbackColors: [.purple], label: label, height: h)
+                    .frame(width: w)).uiImage
+                XCTAssertEqual(image?.size.height ?? 0, h, accuracy: 0.5, "\(collection) \(h)")
+                XCTAssertEqual(image?.size.width ?? 0, w, accuracy: 0.5, "\(collection) \(w)")
+            }
+        }
+    }
 }

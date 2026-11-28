@@ -82,48 +82,54 @@ private struct ThemedTapButton: View {
 
     var body: some View {
         let emblemImage = emblem
-        ZStack {
-            bodyFill
-            // Bottom shade gives the capsule volume.
-            Capsule()
-                .fill(LinearGradient(colors: [.clear, .black.opacity(0.24)], startPoint: .center, endPoint: .bottom))
-            // Top gloss highlight.
-            Capsule()
-                .fill(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom))
-                .frame(height: height * 0.42)
-                .padding(.horizontal, height * 0.24)
-                .padding(.top, 5)
-                .frame(maxHeight: .infinity, alignment: .top)
-            if isPressed {
-                Capsule().fill(Color.black.opacity(0.16))
+        GeometryReader { geo in
+            let layout = ThemedTapButtonLayout.make(size: geo.size, hasEmblem: emblemImage != nil,
+                                                    labelWidth: { ThemedTapButtonLayout.labelWidth(label, fontSize: $0) })
+            ZStack(alignment: .topLeading) {
+                bodyFill
+                // Bottom shade gives the capsule volume.
+                Capsule()
+                    .fill(LinearGradient(colors: [.clear, .black.opacity(0.24)], startPoint: .center, endPoint: .bottom))
+                // Top gloss highlight.
+                Capsule()
+                    .fill(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom))
+                    .frame(height: height * 0.42)
+                    .padding(.horizontal, height * 0.24)
+                    .padding(.top, 5)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                if isPressed {
+                    Capsule().fill(Color.black.opacity(0.16))
+                }
+                // QA-09: the emblem sits inside the capsule. Its art is cut flat at
+                // the bottom, so the cut line is placed on the capsule's bottom edge
+                // and clipped there, under the rim strokes drawn next.
+                if let emblemImage, let frame = layout.emblemFrame {
+                    Image(uiImage: emblemImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: frame.width, height: frame.height)
+                        .scaleEffect(isPressed ? 0.92 : 1,
+                                     anchor: UnitPoint(x: 0.5, y: ThemedTapButtonLayout.artCutFraction))
+                        .position(x: frame.midX, y: frame.midY)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipShape(Capsule())
+                        .allowsHitTesting(false)
+                }
+                // Inner highlight stroke + coloured rim.
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.45), lineWidth: 1.5)
+                    .padding(3)
+                Capsule()
+                    .strokeBorder(accent.color.opacity(0.9), lineWidth: 2.5)
+                // QA-10: centred in the space the layout keeps free of the emblem.
+                labelText(fontSize: layout.fontSize)
+                    .fixedSize()
+                    .position(x: layout.labelFrame.midX, y: layout.labelFrame.midY)
+                fuseGlow(layout: layout)
             }
-            // Inner highlight stroke + coloured rim.
-            Capsule()
-                .strokeBorder(Color.white.opacity(0.45), lineWidth: 1.5)
-                .padding(3)
-            Capsule()
-                .strokeBorder(accent.color.opacity(0.9), lineWidth: 2.5)
-
-            labelText
-                // Keep the label clear of the emblem; still centred in the free space.
-                .padding(.leading, emblemImage == nil ? 0 : height * 0.8)
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .frame(height: height)
-        // Overlays never affect layout: the emblem may poke above the top edge
-        // without changing the 80 pt height.
-        .overlay(alignment: .leading) {
-            if let emblemImage {
-                Image(uiImage: emblemImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: height * 1.05, height: height * 1.05)
-                    .scaleEffect(isPressed ? 0.92 : 1)
-                    .padding(.leading, 8)
-                    .offset(y: -height * 0.1)
-                    .allowsHitTesting(false)
-            }
-        }
-        .overlay(alignment: .topLeading) { fuseGlow }
         .scaleEffect(isPressed ? 0.96 : 1)
         .animation(.easeOut(duration: 0.08), value: isPressed)
     }
@@ -145,29 +151,118 @@ private struct ThemedTapButton: View {
         }
     }
 
-    private var labelText: some View {
+    private func labelText(fontSize: CGFloat) -> some View {
         // White heavy text with a dark crisp drop + soft shadow: readable on
         // yellow, pink and steel bodies alike.
         Text(label)
-            .font(.system(size: 26, weight: .black, design: .rounded))
-            .tracking(4)
+            .font(.system(size: fontSize, weight: .black, design: .rounded))
+            .tracking(ThemedTapButtonLayout.tracking(fontSize: fontSize))
             .foregroundColor(.white)
             .shadow(color: body1.darkened(0.55).color.opacity(0.9), radius: 0, x: 0, y: 2)
             .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 1)
     }
 
     /// Boom: a short warm glow at the fuse while the finger is down.
-    @ViewBuilder private var fuseGlow: some View {
-        if assets.pressStyle == .fuseGlow, isPressed, effects.showsGlow {
+    @ViewBuilder private func fuseGlow(layout: ThemedTapButtonLayout) -> some View {
+        if assets.pressStyle == .fuseGlow, isPressed, effects.showsGlow, let frame = layout.emblemFrame {
             Circle()
                 .fill(RadialGradient(colors: [palette.last?.color ?? .yellow, accent.color.opacity(0.5), .clear],
                                      center: .center, startRadius: 0, endRadius: 18))
                 .frame(width: 36, height: 36)
                 .opacity(effects.glowStrength)
-                .offset(x: height * 0.72, y: -height * 0.2)
+                // The fuse spark of the bomb art (unit point in the emblem canvas).
+                .position(x: frame.minX + frame.width * 0.83, y: frame.minY + frame.height * 0.24)
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
+    }
+}
+
+// MARK: - Themed button layout (QA-09, QA-10)
+
+/// Where a themed tap button puts its emblem and its label, for any size.
+/// Pure geometry (unit-tested): the emblem's opaque art never intersects the
+/// label box, and the emblem's flat-cut bottom lies on the capsule's bottom edge.
+struct ThemedTapButtonLayout: Equatable {
+    /// Emblem image frame (square) in button coordinates; nil = no emblem drawn.
+    var emblemFrame: CGRect?
+    /// Box of the label (estimated text bounds), centred where the label is drawn.
+    var labelFrame: CGRect
+    var fontSize: CGFloat
+
+    // Emblem canvases (216 px, cos_*_emblem): opaque art spans x 6…209 and
+    // y 31…180 px; Boom and Paw are cut flat at 180/177 px (QA-09), Quack ends
+    // naturally at 171 px. Constants are conservative fractions of the canvas.
+    static let artCutFraction: CGFloat = 0.84
+    static let artTopFraction: CGFloat = 0.14
+    static let artSideFraction: CGFloat = 0.025
+    /// Emblem side / button height, largest first; tried until the label fits.
+    static let emblemScales: [CGFloat] = [1.15, 1.0, 0.85, 0.75]
+    static let maxFontSize: CGFloat = 26
+    static let minFontSize: CGFloat = 12
+    /// Space kept between emblem art, label and the capsule's trailing end.
+    static func gap(height: CGFloat) -> CGFloat { max(4, height * 0.08) }
+
+    static func preferredFontSize(height: CGFloat) -> CGFloat {
+        min(maxFontSize, max(minFontSize, (height * 0.42).rounded()))
+    }
+
+    static func tracking(fontSize: CGFloat) -> CGFloat { 4 * fontSize / maxFontSize }
+
+    static func labelHeight(fontSize: CGFloat) -> CGFloat { ceil(fontSize * 1.25) }
+
+    /// Opaque part of the emblem art for an emblem drawn in `frame`, clipped to the button.
+    static func artBox(emblemFrame f: CGRect, buttonHeight h: CGFloat) -> CGRect {
+        CGRect(x: f.minX + f.width * artSideFraction, y: f.minY + f.height * artTopFraction,
+               width: f.width * (1 - 2 * artSideFraction), height: f.height * (artCutFraction - artTopFraction))
+            .intersection(CGRect(x: -1_000, y: 0, width: 10_000, height: h))
+    }
+
+    static func make(size: CGSize, hasEmblem: Bool, labelWidth: (CGFloat) -> CGFloat) -> ThemedTapButtonLayout {
+        let w = max(size.width, 0), h = max(size.height, 1)
+        let gap = gap(height: h)
+        let preferred = preferredFontSize(height: h)
+        let trailingInset = h * 0.25 + gap / 2   // capsule end rounding
+        func label(font: CGFloat, from left: CGFloat) -> CGRect? {
+            let lw = labelWidth(font), lh = labelHeight(fontSize: font)
+            let right = w - trailingInset
+            guard right - left >= lw else { return nil }
+            return CGRect(x: (left + right - lw) / 2, y: (h - lh) / 2, width: lw, height: lh)
+        }
+        if hasEmblem {
+            var candidates: [(CGFloat, CGFloat)] = emblemScales.map { ($0, preferred) }
+            var f = preferred - 1
+            while f >= minFontSize { candidates.append((emblemScales.last!, f)); f -= 1 }
+            for (scale, font) in candidates {
+                let s = h * scale
+                // Cut line exactly on the bottom edge; art starts ~0.12 h from the leading end.
+                let frame = CGRect(x: h * 0.12 - s * artSideFraction, y: h - s * artCutFraction, width: s, height: s)
+                let art = artBox(emblemFrame: frame, buttonHeight: h)
+                if let box = label(font: font, from: art.maxX + gap) {
+                    return ThemedTapButtonLayout(emblemFrame: frame, labelFrame: box, fontSize: font)
+                }
+            }
+        }
+        // No emblem (or it can't fit beside a readable label): centred label only.
+        var font = preferred
+        while font > minFontSize && labelWidth(font) > w - 2 * trailingInset { font -= 1 }
+        let lw = labelWidth(font), lh = labelHeight(fontSize: font)
+        return ThemedTapButtonLayout(emblemFrame: nil,
+                                     labelFrame: CGRect(x: (w - lw) / 2, y: (h - lh) / 2, width: lw, height: lh),
+                                     fontSize: font)
+    }
+
+    private static let widthCache = NSCache<NSString, NSNumber>()
+
+    /// Typographic width of the label as drawn (SF Rounded black + tracking), cached.
+    static func labelWidth(_ text: String, fontSize: CGFloat) -> CGFloat {
+        let key = "\(text)|\(fontSize)" as NSString
+        if let hit = widthCache.object(forKey: key) { return CGFloat(hit.doubleValue) }
+        var font = UIFont.systemFont(ofSize: fontSize, weight: .black)
+        if let rounded = font.fontDescriptor.withDesign(.rounded) { font = UIFont(descriptor: rounded, size: fontSize) }
+        let width = ceil((text as NSString).size(withAttributes: [.font: font, .kern: tracking(fontSize: fontSize)]).width)
+        widthCache.setObject(NSNumber(value: Double(width)), forKey: key)
+        return width
     }
 }
 
@@ -257,13 +352,35 @@ final class CosmeticImageCache {
         return loaded
     }
 
-    /// Looks up every image the resolved cosmetics reference.
+    /// Looks up every image the resolved cosmetics reference (synchronous; a
+    /// memory hit for each once `warm` has run).
     func preload(_ resolved: ResolvedCosmetics) {
-        for slot in CosmeticSlot.allCases {
+        for name in Self.imageNames(resolved) { _ = image(named: name) }
+    }
+
+    /// Looks up *and decodes* every referenced image. Call off the main thread
+    /// (CosmeticEffectAssets.warm at Home appear / round bootstrap): the first
+    /// frame that shows the button or lives then has nothing to decode (QA-16).
+    func warm(_ resolved: ResolvedCosmetics) {
+        for name in Self.imageNames(resolved) {
+            lock.lock()
+            let known = images[name] != nil || misses.contains(name)
+            lock.unlock()
+            if known { continue }
+            let decoded = UIImage(named: name).map { $0.preparingForDisplay() ?? $0 }
+            lock.lock()
+            if images[name] == nil && !misses.contains(name) {
+                if let decoded { images[name] = decoded } else { misses.insert(name) }
+            }
+            lock.unlock()
+        }
+    }
+
+    static func imageNames(_ resolved: ResolvedCosmetics) -> [String] {
+        // Button and lives art; effect sprites live in CosmeticSpriteCache.
+        CosmeticSlot.allCases.filter { !CosmeticSlot.effectSlots.contains($0) }.flatMap { slot -> [String] in
             let assets = resolved.item(for: slot).assets
-            _ = image(named: assets.imageName)
-            _ = image(named: assets.secondaryImageName)
-            _ = image(named: assets.emblemImageName)
+            return [assets.imageName, assets.secondaryImageName, assets.emblemImageName].compactMap { $0 }.filter { !$0.isEmpty }
         }
     }
 }

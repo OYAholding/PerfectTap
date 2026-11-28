@@ -97,8 +97,12 @@ struct GameView: View {
             let store = CosmeticLoadoutStore.shared
             store.refresh()
             cosmetics = store.resolved
+            // Images were normally decoded off the main thread at Home appear
+            // (QA-16), so these are memory hits; `warm` covers a loadout changed
+            // since then (async, no-op when already warm). Nothing loads on tap.
             CosmeticImageCache.shared.preload(cosmetics)
-            CosmeticSpriteCache.shared.preload(cosmetics)   // effect sprites: never loaded on the tap path
+            CosmeticSpriteCache.shared.preload(cosmetics)
+            CosmeticEffectAssets.warm(cosmetics)
             vm.soundEngine = SoundEngine.shared
             vm.hapticsEngine = HapticsEngine.shared
             vm.onGameFinished = { [weak router] result in
