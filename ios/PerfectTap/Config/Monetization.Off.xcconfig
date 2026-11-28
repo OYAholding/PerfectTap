@@ -1,0 +1,12 @@
+// PerfectTap monetization capability ceiling: OFF (default for Debug and Release).
+// See docs/MONETIZATION_ACTIVATION_STRATEGY.md. A binary built with this file can
+// never start a real-money purchase, whatever the server says. Delivery / restore
+// of purchases made with another build keeps working (StoreKit signed history).
+PT_MONETIZATION_PROFILE = Off
+PT_IAP_CATALOG_ENABLED = NO
+PT_IAP_SERVER_VERIFICATION_ENABLED = NO
+PT_IAP_COIN_PACKS_ENABLED = NO
+PT_IAP_REMOVE_ADS_ENABLED = NO
+PT_IAP_PREMIUM_SKINS_ENABLED = NO
+PT_IAP_LOCAL_STOREKIT_TESTING = NO
+PT_AUTHORITATIVE_ECONOMY_ENABLED = NO

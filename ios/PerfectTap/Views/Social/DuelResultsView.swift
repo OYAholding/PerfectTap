@@ -152,7 +152,7 @@ struct DuelResultsView: View {
 
     private func scoreColumn(name: String, avatar: String?, score: Int, isMe: Bool, isWinner: Bool) -> some View {
         VStack(spacing: 6) {
-            let emoji = ShopItem.avatars.first(where: { $0.id == (avatar ?? "") })?.icon ?? "😊"
+            let emoji = ShopItem.avatarEmoji(for: avatar)
             Text(emoji).font(.system(size: 28))
             Text(isMe ? "You" : name)
                 .font(.system(size: 13, weight: .bold))

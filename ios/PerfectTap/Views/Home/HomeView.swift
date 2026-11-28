@@ -8,6 +8,7 @@ struct HomeView: View {
     @State private var showTutorial = !UserDefaults.standard.bool(forKey: "perfecttap_tutorial_done")
     @State private var isWatchingAd = false
     @State private var showAdReward = false
+    @State private var homeRewardClaimedToday = false
     @State private var pendingFriendRequests = 0
     @State private var pendingDuelInvitations = 0
     @State private var incomingRequestsRaw: [FriendRequest] = []
@@ -17,6 +18,8 @@ struct HomeView: View {
     @State private var incomingInviteListener: Any? = nil
     @State private var outgoingInviteListener: Any? = nil
     @State private var badgeRefreshTask: Task<Void, Never>? = nil
+    @State private var cloudRefreshTask: Task<Void, Never>? = nil
+    @ObservedObject private var economyStatus = EconomyManager.shared.service.status
 
     var body: some View {
         ZStack {
@@ -76,10 +79,17 @@ struct HomeView: View {
 
                     secondaryRow(
                         left:  ("cart.fill",  "SHOP", { router.push(.shop) }),
-                        right: ("questionmark.circle.fill", "HOW TO PLAY", {
-                            showTutorial = true
-                        })
+                        right: ("chart.line.uptrend.xyaxis", "PROGRESS", { router.push(.timingProgress) })
                     )
+                    .padding(.bottom, 10)
+
+                    Button { showTutorial = true } label: {
+                        Label("HOW TO PLAY", systemImage: "questionmark.circle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.5)
+                            .foregroundColor(.white.opacity(0.45))
+                            .padding(.vertical, 8)
+                    }
 
                     // Watch Ad for Coins
                     watchAdForCoinsButton
@@ -102,20 +112,34 @@ struct HomeView: View {
         }
         .navigationBarHidden(true)
         .onAppear {
+            if Perf.probeEnabled { FrameMonitor.shared.context = "home" }
             profile = PlayerProfile.load() ?? PlayerProfile()
-            themeManager.current = AppTheme.named(profile.equippedTheme)
+            themeManager.apply(profile: profile)
             startBadgeListeners()
             // Cloud refresh in background; also retry unsent duel scores and
             // count results of duels the opponent finished meanwhile.
-            Task {
+            cloudRefreshTask?.cancel()
+            cloudRefreshTask = Task {
                 await DuelSettlement.settle()
-                if let updated = await Backend.shared.loadProfile() {
-                    profile = updated
-                    themeManager.current = AppTheme.named(profile.equippedTheme)
+                let updated = await Backend.shared.loadProfile()
+                // Home may already be covered by a game: changing the shared
+                // theme then re-rendered the whole game screen mid-round.
+                guard !Task.isCancelled, let updated else { return }
+                profile = updated
+                themeManager.apply(profile: profile)
+                // Flag ON only (no network with the legacy economy): show the
+                // server-confirmed balance, never a local one.
+                let economy = EconomyManager.shared.service
+                if economy.isAuthoritative {
+                    await economy.flush(reason: .foreground)
+                    guard !Task.isCancelled else { return }
+                    profile = PlayerProfile.load() ?? profile
                 }
             }
         }
         .onDisappear {
+            cloudRefreshTask?.cancel()
+            cloudRefreshTask = nil
             stopBadgeListeners()
         }
     }
@@ -144,7 +168,7 @@ struct HomeView: View {
                 )
 
             if !profile.username.isEmpty {
-                let avatarEmoji = ShopItem.avatars.first(where: { $0.id == profile.equippedAvatar })?.icon ?? "😊"
+                let avatarEmoji = ShopItem.avatarEmoji(for: profile.equippedAvatar)
                 Text("\(avatarEmoji) \(profile.username) • Lv.\(profile.level)")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.white.opacity(0.4))
@@ -174,6 +198,12 @@ struct HomeView: View {
                 Text("\(profile.coins)")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
+                if economyStatus.pendingCoins > 0 {
+                    Text("+\(economyStatus.pendingCoins) pending")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                        .accessibilityLabel("\(economyStatus.pendingCoins) coins pending server confirmation")
+                }
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Color(red: 0.98, green: 0.73, blue: 0.26).opacity(0.1))
@@ -245,12 +275,26 @@ struct HomeView: View {
             guard !isWatchingAd else { return }
             isWatchingAd = true
             Task {
-                let watched = await AdManager.shared.showRewardedAd(placement: .doubleCoins)
+                let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: true)
+                guard let day = verification.dayKey,
+                      RewardClaimLimiter.shared.canClaim(.homeCoins, day: day, userID: Backend.shared.currentUID) else {
+                    isWatchingAd = false
+                    homeRewardClaimedToday = true
+                    return
+                }
+                let economy = EconomyManager.shared.service
+                let claimIndex = RewardClaimLimiter.shared.nextClaimIndex(
+                    for: .homeCoins, day: day, userID: Backend.shared.currentUID)
+                let ssv = economy.rewardedVerification(for: .homeCoins, claimIndex: claimIndex,
+                                                                 referenceEventKey: nil)
+                let watched = await AdManager.shared.showRewardedAd(placement: .homeCoins, verification: ssv)
                 isWatchingAd = false
-                if watched {
-                    let reward = 25
-                    EconomyManager.shared.addCoins(reward, source: .dailyReward)
+                if watched, RewardClaimLimiter.shared.record(.homeCoins, day: day, userID: Backend.shared.currentUID) {
+                    // Flag OFF: local credit. Flag ON: the SSV callback credits
+                    // the ledger; the amount shows as pending until confirmed.
+                    economy.rewardedAdCompleted(.homeCoins, legacyCoins: EconomyConfig.current.homeRewardedCoins)
                     profile = PlayerProfile.load() ?? PlayerProfile()
+                    homeRewardClaimedToday = true
                     showAdReward = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         showAdReward = false
@@ -265,7 +309,7 @@ struct HomeView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 18))
                         .foregroundColor(.green)
-                    Text("+25 COINS!")
+                    Text("+\(EconomyConfig.current.homeRewardedCoins) COINS!")
                         .font(.system(size: 14, weight: .black))
                         .tracking(1)
                         .foregroundColor(.green)
@@ -273,7 +317,7 @@ struct HomeView: View {
                     Image(systemName: "play.rectangle.fill")
                         .font(.system(size: 18))
                         .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
-                    Text("WATCH AD — FREE COINS")
+                    Text(homeRewardClaimedToday ? "DAILY AD REWARD CLAIMED" : "WATCH OPTIONAL AD — +\(EconomyConfig.current.homeRewardedCoins) COINS")
                         .font(.system(size: 14, weight: .black))
                         .tracking(1)
                         .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
@@ -285,7 +329,7 @@ struct HomeView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(red: 0.98, green: 0.73, blue: 0.26).opacity(0.2)))
             .cornerRadius(16)
         }
-        .disabled(isWatchingAd || showAdReward)
+        .disabled(isWatchingAd || showAdReward || homeRewardClaimedToday)
     }
 
     private func quickActionBadgeButton(icon: String, label: String, color: Color, badge: Int, action: @escaping () -> Void) -> some View {

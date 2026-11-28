@@ -3,13 +3,17 @@ import SwiftUI
 // MARK: - TapBar (ported from TapBar.jsx)
 // Shows the moving indicator bouncing between left and right.
 // Position is driven by GameViewModel's IndicatorRelay (0.0–1.0).
-// Only TapBarView observes the relay, so only this view re-renders at 60fps —
-// the parent GameView is NOT re-evaluated every frame.
+// Only the small `TapBarIndicator` observes the relay, so only the moving
+// capsule re-renders at 60fps. (Until 1.1.1 TapBarView itself observed it and
+// rebuilt the labels, GeometryReader, zone graphics and 7 zone labels every
+// frame, although only the indicator offset changes.)
 
 struct TapBarView: View {
-    /// The relay that publishes indicator position at 60fps
-    @ObservedObject var indicatorRelay: IndicatorRelay
+    /// The relay that publishes indicator position at 60fps (NOT observed here).
+    let indicatorRelay: IndicatorRelay
     let theme: AppTheme
+    /// Effects setting: 1 = full glow, 0 = none. Never affects zones.
+    var glowStrength: Double = 1
     var hideZones: Bool = false
     var perfectZoneScale: Double = 1.0
     var strictPerfectOnly: Bool = false
@@ -42,6 +46,10 @@ struct TapBarView: View {
                 ZStack(alignment: .leading) {
                     // Static zone graphics — does NOT depend on indicatorRelay
                     let dynamicPerfectHalf = max(0.01, min(perfectHalf, perfectHalf * CGFloat(perfectZoneScale)))
+                    if let tint = theme.trackTint {
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(LinearGradient(colors: tint, startPoint: .leading, endPoint: .trailing))
+                    }
                     TapBarZonesView(
                         theme: theme,
                         hideZones: hideZones,
@@ -53,20 +61,11 @@ struct TapBarView: View {
                         barHeight: h
                     )
 
-                    // Moving indicator — reads position from relay (60fps updates)
-                    Capsule()
-                        .fill(Color.white)
-                        .frame(width: 20, height: 48)
-                        .shadow(color: Color.white.opacity(0.9), radius: 6)
-                        .shadow(color: theme.glowColor.opacity(0.7), radius: 14)
-                        .shadow(color: theme.glowColor.opacity(0.3), radius: 24)
-                        // Give the rasterized layer room for the glow, otherwise
-                        // drawingGroup clips the shadows to a hard 20×48 box.
-                        // The negative padding restores the original layout size.
-                        .padding(glowPadding)
-                        .drawingGroup()  // rasterize shadows — GPU compositing instead of per-frame calculation
-                        .padding(-glowPadding)
-                        .offset(x: w * indicatorRelay.position - 10)
+                    // Moving indicator — the only view that observes the relay
+                    TapBarIndicator(relay: indicatorRelay, glowColor: theme.glowColor,
+                                    fill: theme.indicatorFill,
+                                    glowStrength: glowStrength,
+                                    barWidth: w, glowPadding: glowPadding)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             }
@@ -100,6 +99,37 @@ struct TapBarView: View {
             .foregroundColor(color)
             .frame(maxWidth: .infinity)
 
+    }
+}
+
+// MARK: - Moving indicator (observes the 60fps relay)
+private struct TapBarIndicator: View {
+    @ObservedObject var relay: IndicatorRelay
+    let glowColor: Color
+    let fill: [Color]?
+    let glowStrength: Double
+    let barWidth: CGFloat
+    let glowPadding: CGFloat
+
+    private var fillStyle: AnyShapeStyle {
+        if let fill { return AnyShapeStyle(LinearGradient(colors: fill, startPoint: .top, endPoint: .bottom)) }
+        return AnyShapeStyle(Color.white)
+    }
+
+    var body: some View {
+        Capsule()
+            .fill(fillStyle)
+            .frame(width: 20, height: 48)
+            .shadow(color: Color.white.opacity(0.9 * glowStrength), radius: 6)
+            .shadow(color: glowColor.opacity(0.7 * glowStrength), radius: 14)
+            .shadow(color: glowColor.opacity(0.3 * glowStrength), radius: 24)
+            // Give the rasterized layer room for the glow, otherwise
+            // drawingGroup clips the shadows to a hard 20×48 box.
+            // The negative padding restores the original layout size.
+            .padding(glowPadding)
+            .drawingGroup()  // rasterize shadows — GPU compositing instead of per-frame calculation
+            .padding(-glowPadding)
+            .offset(x: barWidth * relay.position - 10)
     }
 }
 

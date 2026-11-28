@@ -33,6 +33,9 @@ struct ModeSelectView: View {
                 .padding(.vertical, 16)
 
                 ScrollView(showsIndicators: false) {
+                    PracticeLengthPicker()
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         ForEach(GameMode.selectableModes, id: \.self) { mode in
                             ModeCardView(mode: mode, bestScore: profile.bestScore(for: mode), hasPlayed: profile.bestScore(for: mode) > 0 || mode == .classic) {
@@ -75,7 +78,7 @@ private struct ModeCardView: View {
                         .font(.system(size: 26))
                     Spacer()
                     // NEW badge for unplayed modes
-                    if !hasPlayed && mode != .zen {
+                    if !hasPlayed && mode.trackScore {
                         Text("NEW")
                             .font(.system(size: 8, weight: .black))
                             .tracking(1.5)
@@ -181,8 +184,43 @@ private struct ModeCardView: View {
         case .hardcoreCombo: return Color(red: 0.98, green: 0.20, blue: 0.10)
         case .tinyWindow:    return Color(red: 0.60, green: 0.15, blue: 0.80)
         case .focus:         return Color(red: 0.40, green: 0.40, blue: 0.45)
+        case .practice:      return Color(red: 0.20, green: 0.70, blue: 0.75)
         default:             return .purple
         }
+    }
+}
+
+/// Length of a Practice Session (1 / 3 / 5 min). Sessions are compared only
+/// with sessions of the same length on the Progress screen.
+private struct PracticeLengthPicker: View {
+    @State private var duration = PracticeSession.selectedDuration
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("📈 PRACTICE LENGTH")
+                .font(.system(size: 10, weight: .black))
+                .tracking(1.5)
+                .foregroundColor(.white.opacity(0.5))
+            Spacer()
+            ForEach(PracticeSession.durations, id: \.self) { d in
+                Button {
+                    duration = d
+                    PracticeSession.selectedDuration = d
+                } label: {
+                    Text("\(d / 60) min")
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(duration == d ? Color(red: 0.13, green: 0.60, blue: 0.68).opacity(0.35) : Color.white.opacity(0.05))
+                        .foregroundColor(.white.opacity(duration == d ? 0.95 : 0.5))
+                        .clipShape(Capsule())
+                }
+                .accessibilityLabel("Practice length \(d / 60) minutes")
+                .accessibilityAddTraits(duration == d ? .isSelected : [])
+            }
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.03))
+        .cornerRadius(12)
     }
 }
 

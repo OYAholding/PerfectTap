@@ -37,20 +37,47 @@ struct PerfectTapApp: App {
                 .environmentObject(themeManager)
                 .environmentObject(authVM)
                 .environmentObject(duelAutoLaunchCoordinator)
+                .providesEffectsLevel()
                 .preferredColorScheme(.dark)
                 .task {
+                    FrameMonitor.shared.startIfEnabled()
+                    // Load saved timing statistics off the main thread so the
+                    // first round end does not read the file.
+                    Task.detached(priority: .utility) { _ = SessionMetricsStore.shared.all() }
+                    // Warm audio + haptics at launch (audio graph setup now runs
+                    // off the main thread) instead of inside the first game's
+                    // onAppear, where it cost ~330 ms of main-thread time.
+                    SoundEngine.shared.warmUp()
+                    HapticsEngine.shared.warmUp()
+                }
+                .task {
                     // First launch: scenePhase may already be .active, so onChange won't fire.
+                    ConsentManager.shared.isPresentationBlocked = { [weak router] in
+                        router?.isGameOnStack ?? false
+                    }
                     try? await Task.sleep(nanoseconds: 800_000_000)
                     await ConsentManager.shared.gatherConsentIfNeeded()
                 }
-                .task {
-                    // Load IAP products from App Store Connect on launch.
-                    // Without this, coinProducts and specialProducts are empty
-                    // and no IAP purchases can be made.
-                    await PurchaseManager.shared.loadProducts()
+                .task(id: authVM.currentUID) {
+                    // The catalog can load before sign-in. Transaction handling
+                    // waits inside start() for the UUID used as appAccountToken.
+                    await PurchaseManager.shared.start()
+                }
+                .onChange(of: router.isGameOnStack) { gameOnStack in
+                    guard !gameOnStack, scenePhase == .active else { return }
+                    Task {
+                        await ConsentManager.shared.gatherConsentIfNeeded()
+                        ConsentManager.shared.refreshTrackingStatus()
+                        await PurchaseManager.shared.resume()
+                    }
                 }
                 .onChange(of: scenePhase) { phase in
+                    FrameMonitor.shared.setPaused(phase != .active)
                     guard phase == .active else { return }
+                    // Never put the consent form / ATT prompt over a running
+                    // round: a full-screen cover stopped the game clock (freeze)
+                    // and an alert pauses play. Retried when the round is gone.
+                    guard !router.isGameOnStack else { return }
                     Task {
                         // ATT can only be shown while active; iPadOS may report "active"
                         // slightly before the window can present, so give it a moment.
@@ -88,6 +115,7 @@ struct RootView: View {
                     }
             }
             .background(DuelAutoLaunchBootstrapView())
+            .background(GameRenderWarmupView())
         }
     }
 
@@ -105,6 +133,33 @@ struct RootView: View {
                     .foregroundColor(.white)
                 ProgressView().tint(.white.opacity(0.5))
             }
+        }
+    }
+}
+
+/// Renders one invisible tap bar shortly after Home appears, once per launch.
+/// The first tap bar render (rasterised glow via drawingGroup + zone graphics)
+/// measured ~600–700 ms of main-thread time in the simulator; without this it
+/// landed on the first opening of a game screen. Removed after it has drawn.
+private struct GameRenderWarmupView: View {
+    @EnvironmentObject var themeManager: ThemeManager
+    @State private var done = GameRenderWarmupView.hasWarmed
+    private static var hasWarmed = false
+
+    var body: some View {
+        if !done {
+            // The equipped theme: premium skins draw a gradient indicator and a
+            // track tint, whose first render otherwise landed in the first
+            // countdown (measured 519 ms with Glitch Mode, docs/perf).
+            TapBarView(indicatorRelay: IndicatorRelay(), theme: themeManager.current)
+                .frame(width: 300)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .onAppear {
+                    GameRenderWarmupView.hasWarmed = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { done = true }
+                }
         }
     }
 }

@@ -1,0 +1,16 @@
+{
+  "appId": "6760975737",
+  "bundleId": "com.perfecttap.app",
+  "locale": "en-US",
+  "products": [
+    {"productId":"com.perfecttap.coins.500","referenceName":"Coins 500","type":"CONSUMABLE","priceUSD":"0.99","displayName":"500 Coins","description":"500 coins for cosmetic items in the PerfectTap shop.","reviewScreenshot":"screenshots/en-US/coin-packs.png"},
+    {"productId":"com.perfecttap.coins.1200","referenceName":"Coins 1200","type":"CONSUMABLE","priceUSD":"1.99","displayName":"1,200 Coins","description":"1,200 coins for cosmetic items in the PerfectTap shop.","reviewScreenshot":"screenshots/en-US/coin-packs.png"},
+    {"productId":"com.perfecttap.coins.3000","referenceName":"Coins 3000","type":"CONSUMABLE","priceUSD":"3.99","displayName":"3,000 Coins","description":"3,000 coins for cosmetic items in the PerfectTap shop.","reviewScreenshot":"screenshots/en-US/coin-packs.png"},
+    {"productId":"com.perfecttap.coins.8000","referenceName":"Coins 8000","type":"CONSUMABLE","priceUSD":"9.99","displayName":"8,000 Coins","description":"8,000 coins for cosmetic items in the PerfectTap shop.","reviewScreenshot":"screenshots/en-US/coin-packs.png"},
+    {"productId":"com.perfecttap.removeads","referenceName":"Remove Forced Ads","type":"NON_CONSUMABLE","priceUSD":"2.99","displayName":"Remove Forced Ads","description":"Permanently removes automatic interstitial and banner ads. Optional, capped rewarded ads remain available and are never required for core play.","reviewScreenshot":"screenshots/en-US/coin-packs.png"},
+    {"productId":"com.perfecttap.skin.neonpulse","referenceName":"Skin Neon Pulse","type":"NON_CONSUMABLE","priceUSD":"1.99","displayName":"Neon Pulse","description":"Cosmetic color skin. It does not change gameplay or scoring.","reviewScreenshot":"screenshots/en-US/skin-neonpulse.png"},
+    {"productId":"com.perfecttap.skin.liquidchrome","referenceName":"Skin Liquid Chrome","type":"NON_CONSUMABLE","priceUSD":"1.99","displayName":"Liquid Chrome","description":"Cosmetic color skin. It does not change gameplay or scoring.","reviewScreenshot":"screenshots/en-US/skin-liquidchrome.png"},
+    {"productId":"com.perfecttap.skin.glitchmode","referenceName":"Skin Glitch Mode","type":"NON_CONSUMABLE","priceUSD":"1.99","displayName":"Glitch Mode","description":"Cosmetic color skin. It does not change gameplay or scoring.","reviewScreenshot":"screenshots/en-US/skin-glitchmode.png"},
+    {"productId":"com.perfecttap.skin.cosmicgold","referenceName":"Skin Cosmic Gold","type":"NON_CONSUMABLE","priceUSD":"1.99","displayName":"Cosmic Gold","description":"Cosmetic color skin. It does not change gameplay or scoring.","reviewScreenshot":"screenshots/en-US/skin-cosmicgold.png"}
+  ]
+}

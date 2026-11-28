@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - Player Profile (mirrors Firestore document + local UserDefaults cache)
 struct PlayerProfile: Codable {
@@ -34,6 +35,10 @@ struct PlayerProfile: Codable {
     var seasonPremium: Bool = false
     var seasonAdProgress: Int = 0          // number of completed rewarded ads toward premium unlock
     var seasonClaimedTiers: [Int] = []     // tier IDs whose rewards have been granted
+    /// Season number (`SeasonSchedule.number`) the season fields above belong
+    /// to. nil = written by a build before seasonal reset (1.1.x / early 1.2):
+    /// adopted as the current season without a reset.
+    var seasonProgressNumber: Int? = nil
 
     // Daily rewards
     var dailyRewardStreak: Int = 0
@@ -96,6 +101,30 @@ struct PlayerProfile: Codable {
             }
             achievements.removeAll { Self.legacyChallengeIDs.contains($0) }
         }
+
+        applySeasonRollover(currentSeason: SeasonSchedule.current().number)
+    }
+
+    /// Seasonal reset (owner decision RC, 2026-11-27): when a new season
+    /// starts, season XP, tier, claimed tiers, ad progress and the ad-unlocked
+    /// premium track start over. Coins, owned items (including cosmetics and
+    /// historical season rewards), achievements, challenges and lifetime
+    /// stats are untouched. Only rolls forward: a device clock set back to an
+    /// earlier season never wipes progress. Returns true when it reset.
+    @discardableResult
+    mutating func applySeasonRollover(currentSeason: Int) -> Bool {
+        guard let stored = seasonProgressNumber else {
+            seasonProgressNumber = currentSeason
+            return false
+        }
+        guard currentSeason > stored else { return false }
+        seasonXP = 0
+        seasonTier = 0
+        seasonClaimedTiers = []
+        seasonAdProgress = 0
+        seasonPremium = false
+        seasonProgressNumber = currentSeason
+        return true
     }
 
     func bestScore(for mode: GameMode) -> Int {
@@ -152,12 +181,28 @@ struct ScoreBoost: Codable {
 extension PlayerProfile {
     private static let key = "perfecttap_player_profile"
 
+    /// In-memory copy of the last loaded/saved profile. `load()` was called
+    /// 50+ times across views (several per screen, inside view initialisers)
+    /// and each call decoded the full JSON blob on the main thread. UserDefaults
+    /// stays the persistent store; this only avoids re-decoding the same bytes.
+    /// Every write goes through `save()` / `clearSaved()`, which keep it in sync.
+    private enum Cache {
+        case unknown
+        case value(PlayerProfile?)
+    }
+    private static let cache = OSAllocatedUnfairLock<Cache>(uncheckedState: .unknown)
+
     static func load() -> PlayerProfile? {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              var profile = try? JSONDecoder().decode(PlayerProfile.self, from: data)
-        else { return nil }
-        profile.normalizeAndMigrate()
-        return profile
+        if case .value(let cached) = cache.withLockUnchecked({ $0 }) { return cached }
+        let decoded: PlayerProfile? = {
+            guard let data = UserDefaults.standard.data(forKey: key),
+                  var profile = try? JSONDecoder().decode(PlayerProfile.self, from: data)
+            else { return nil }
+            profile.normalizeAndMigrate()
+            return profile
+        }()
+        cache.withLockUnchecked { $0 = .value(decoded) }
+        return decoded
     }
 
     func save() {
@@ -165,6 +210,18 @@ extension PlayerProfile {
         normalized.normalizeAndMigrate()
         if let data = try? JSONEncoder().encode(normalized) {
             UserDefaults.standard.set(data, forKey: PlayerProfile.key)
+            PlayerProfile.cache.withLockUnchecked { $0 = .value(normalized) }
         }
+    }
+
+    /// Removes the saved profile (account deletion / sign-out cleanup).
+    static func clearSaved() {
+        UserDefaults.standard.removeObject(forKey: key)
+        cache.withLockUnchecked { $0 = .value(nil) }
+    }
+
+    /// Test hook: forget the in-memory copy so the next load re-reads UserDefaults.
+    static func resetCacheForTesting() {
+        cache.withLockUnchecked { $0 = .unknown }
     }
 }

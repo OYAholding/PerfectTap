@@ -8,6 +8,18 @@ options:
   xcodeVersion: "15.0"
   generateEmptyDirectories: true
 
+# Build configurations (docs/MONETIZATION_ACTIVATION_STRATEGY.md):
+#   Debug          — development, monetization ceiling OFF (unit tests run here)
+#   Debug-StoreKit — local .storekit fake-money purchases, Xcode environment only
+#   Release        — App Store build, monetization ceiling OFF (shipping default)
+#   Release-IAP    — App Store build that MAY sell, gated at runtime by the server
+#                    per StoreKit environment (Sandbox / Production); owner approval
+configs:
+  Debug: debug
+  Debug-StoreKit: debug
+  Release: release
+  Release-IAP: release
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -42,6 +54,9 @@ targets:
           - SETUP.md
           - PerfectTapUITests/**
           - PerfectTapTests/**
+          - PerfectTapStoreKitTests/**
+          - StoreKit/**
+          - Config/**
           - "*.xcodeproj"
           - "*.xcworkspace"
     dependencies:
@@ -66,8 +81,8 @@ targets:
         PRODUCT_NAME: PerfectTap
         DEVELOPMENT_TEAM: K88C7DPG4C
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.arcade-games"
-        MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "1.2.0"
+        CURRENT_PROJECT_VERSION: "6"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
@@ -79,6 +94,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SWIFT_EMIT_LOC_STRINGS: YES
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: PerfectTap.entitlements
         # Public client config only (publishable key is safe to ship).
         # NEVER put a secret / service_role key in the app.
         SUPABASE_URL: "https://pgvtaotdyspwnpqtxpju.supabase.co"   # set by scripts/use-supabase-project.sh <ref>
@@ -90,12 +106,25 @@ targets:
         # written to Supabase after cutover does NOT flow back to Firestore).
         # PT_EMAIL_OTP_ENABLED: Cloud Backup sign-up needs verified email delivery (custom
         # SMTP). Keep NO until SMTP is configured and tested; never bypass verification.
+        # PT_IAP_* / PT_AUTHORITATIVE_ECONOMY_ENABLED come ONLY from Config/Monetization.*.xcconfig
+        # (configFiles below). Never set them here: target settings override xcconfig values.
         Debug:
+          PT_BACKEND: supabase
+          PT_EMAIL_OTP_ENABLED: "NO"
+        Debug-StoreKit:
           PT_BACKEND: supabase
           PT_EMAIL_OTP_ENABLED: "NO"
         Release:
           PT_BACKEND: supabase
           PT_EMAIL_OTP_ENABLED: "NO"
+        Release-IAP:
+          PT_BACKEND: supabase
+          PT_EMAIL_OTP_ENABLED: "NO"
+    configFiles:
+      Debug: Config/Monetization.Off.xcconfig
+      Debug-StoreKit: Config/Monetization.LocalStoreKit.xcconfig
+      Release: Config/Monetization.Off.xcconfig
+      Release-IAP: Config/Monetization.AppStoreIAP.xcconfig
     info:
       path: Info.plist
       properties:
@@ -116,6 +145,14 @@ targets:
         GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS: false
         PT_BACKEND: $(PT_BACKEND)
         PT_EMAIL_OTP_ENABLED: $(PT_EMAIL_OTP_ENABLED)
+        PT_IAP_CATALOG_ENABLED: $(PT_IAP_CATALOG_ENABLED)
+        PT_IAP_SERVER_VERIFICATION_ENABLED: $(PT_IAP_SERVER_VERIFICATION_ENABLED)
+        PT_IAP_COIN_PACKS_ENABLED: $(PT_IAP_COIN_PACKS_ENABLED)
+        PT_IAP_REMOVE_ADS_ENABLED: $(PT_IAP_REMOVE_ADS_ENABLED)
+        PT_IAP_PREMIUM_SKINS_ENABLED: $(PT_IAP_PREMIUM_SKINS_ENABLED)
+        PT_AUTHORITATIVE_ECONOMY_ENABLED: $(PT_AUTHORITATIVE_ECONOMY_ENABLED)
+        PT_IAP_LOCAL_STOREKIT_TESTING: $(PT_IAP_LOCAL_STOREKIT_TESTING)
+        PT_MONETIZATION_PROFILE: $(PT_MONETIZATION_PROFILE)
         SUPABASE_URL: $(SUPABASE_URL)
         SUPABASE_PUBLISHABLE_KEY: $(SUPABASE_PUBLISHABLE_KEY)
         SKAdNetworkItems:
@@ -198,14 +235,45 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
 
+  PerfectTapStoreKitTests:
+    type: bundle.unit-test
+    supportedDestinations: [iOS]
+    platform: iOS
+    sources:
+      - path: PerfectTapStoreKitTests
+      - path: StoreKit/PerfectTap.storekit
+        buildPhase: resources
+    dependencies:
+      - target: PerfectTap
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.perfecttap.app.storekittests
+        DEVELOPMENT_TEAM: K88C7DPG4C
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PerfectTap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PerfectTap"
+
 schemes:
   PerfectTap:
     build:
       targets:
         PerfectTap: all
+    run:
+      # Fake-money products for simulator testing. Never used by TestFlight /
+      # App Store builds, which talk to the real App Store.
+      storeKitConfiguration: StoreKit/PerfectTap.storekit
+      config: Debug
     test:
+      config: Debug
       targets:
         - PerfectTapTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
   # Mode-by-mode UI run. Uses the Debug backend (Supabase cloud): it creates one anonymous
   # test player — delete it afterwards. Kept out of the default scheme so `xcodebuild test`
   # stays offline.
@@ -214,6 +282,37 @@ schemes:
       targets:
         PerfectTap: all
         PerfectTapUITests: [test]
+    run:
+      config: Debug
     test:
+      config: Debug
+      storeKitConfiguration: StoreKit/PerfectTap.storekit
       targets:
         - PerfectTapUITests
+  # Local fake-money purchase testing (Debug-StoreKit = LocalStoreKit ceiling).
+  PerfectTap-StoreKit:
+    build:
+      targets:
+        PerfectTap: all
+    run:
+      config: Debug-StoreKit
+      storeKitConfiguration: StoreKit/PerfectTap.storekit
+    test:
+      config: Debug-StoreKit
+    profile:
+      config: Debug-StoreKit
+    analyze:
+      config: Debug-StoreKit
+    archive:
+      config: Debug-StoreKit
+  PerfectTapStoreKitTests:
+    build:
+      targets:
+        PerfectTap: all
+        PerfectTapStoreKitTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PerfectTapStoreKitTests

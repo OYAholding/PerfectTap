@@ -6,7 +6,7 @@ struct ProfileView: View {
     @State private var profile: PlayerProfile = PlayerProfile.load() ?? PlayerProfile()
 
     private var avatarEmoji: String {
-        ShopItem.avatars.first(where: { $0.id == profile.equippedAvatar })?.icon ?? "😊"
+        ShopItem.avatarEmoji(for: profile.equippedAvatar)
     }
 
     var body: some View {

@@ -39,8 +39,28 @@ struct ShopItem: Identifiable {
     let price: Int        // 0 = free/default
     let icon: String      // emoji or SF Symbol
     let rarity: ShopRarity
+    /// StoreKit product ID for skins sold for real money. Premium items are
+    /// never sold for coins and grant no gameplay advantage.
+    var premiumProductID: String? = nil
 
-    var isFree: Bool { price == 0 }
+    var isPremium: Bool { premiumProductID != nil }
+    var isFree: Bool { price == 0 && !isPremium }
+
+    // MARK: Lookups (single place; was duplicated across ~10 views)
+
+    static func themeID(forName name: String) -> String { "theme_\(name)" }
+    static func themeName(forID id: String) -> String {
+        id.hasPrefix("theme_") ? String(id.dropFirst("theme_".count)) : id
+    }
+
+    /// Emoji for an avatar ID ("😊" for unknown / empty).
+    static func avatarEmoji(for id: String?) -> String {
+        let canonical = PlayerProfile.canonicalAvatarID(id ?? "")
+        return avatars.first(where: { $0.id == canonical })?.icon ?? "😊"
+    }
+
+    static func item(id: String) -> ShopItem? { allItems.first { $0.id == id } }
+    static func item(productID: String) -> ShopItem? { premium.first { $0.premiumProductID == productID } }
 }
 
 // MARK: - Full catalog (ported from Shop.jsx)
@@ -49,25 +69,41 @@ extension ShopItem {
     // --- Themes --- (prices balanced: first buy within 5-10 games)
     static let themes: [ShopItem] = [
         ShopItem(id: "theme_default",  name: "Nebula",   category: .themes, price: 0,   icon: "🌌", rarity: .common),
-        ShopItem(id: "theme_neon",     name: "Neon",     category: .themes, price: 75,  icon: "💚", rarity: .common),
-        ShopItem(id: "theme_fire",     name: "Fire",     category: .themes, price: 150, icon: "🔥", rarity: .rare),
-        ShopItem(id: "theme_ice",      name: "Ice",      category: .themes, price: 200, icon: "❄️", rarity: .rare),
-        ShopItem(id: "theme_gold",     name: "Gold",     category: .themes, price: 300, icon: "✨", rarity: .epic),
-        ShopItem(id: "theme_galaxy",   name: "Galaxy",   category: .themes, price: 400, icon: "🌀", rarity: .epic),
-        ShopItem(id: "theme_midnight", name: "Midnight", category: .themes, price: 250, icon: "🌙", rarity: .rare),
-        ShopItem(id: "theme_sunset",   name: "Sunset",   category: .themes, price: 350, icon: "🌅", rarity: .epic),
-        ShopItem(id: "theme_matrix",   name: "Matrix",   category: .themes, price: 600, icon: "🟢", rarity: .legendary),
+        ShopItem(id: "theme_neon",     name: "Neon",     category: .themes, price: EconomyConfig.current.shopPrice(itemID: "theme_neon", fallback: 75), icon: "💚", rarity: .common),
+        ShopItem(id: "theme_fire",     name: "Fire",     category: .themes, price: EconomyConfig.current.shopPrice(itemID: "theme_fire", fallback: 150), icon: "🔥", rarity: .rare),
+        ShopItem(id: "theme_ice",      name: "Ice",      category: .themes, price: EconomyConfig.current.shopPrice(itemID: "theme_ice", fallback: 200), icon: "❄️", rarity: .rare),
+        ShopItem(id: "theme_gold",     name: "Gold",     category: .themes, price: EconomyConfig.current.shopPrice(itemID: "theme_gold", fallback: 300), icon: "✨", rarity: .epic),
+        ShopItem(id: "theme_galaxy",   name: "Galaxy",   category: .themes, price: EconomyConfig.current.shopPrice(itemID: "theme_galaxy", fallback: 400), icon: "🌀", rarity: .epic),
+        ShopItem(id: "theme_midnight", name: "Midnight", category: .themes, price: EconomyConfig.current.shopPrice(itemID: "theme_midnight", fallback: 250), icon: "🌙", rarity: .rare),
+        ShopItem(id: "theme_sunset",   name: "Sunset",   category: .themes, price: EconomyConfig.current.shopPrice(itemID: "theme_sunset", fallback: 350), icon: "🌅", rarity: .epic),
+        ShopItem(id: "theme_matrix",   name: "Matrix",   category: .themes, price: EconomyConfig.current.shopPrice(itemID: "theme_matrix", fallback: 600), icon: "🟢", rarity: .legendary),
     ]
+
+    // --- Premium skins (real money, StoreKit; hidden until FeatureFlags allow) ---
+    // Each is a theme with its own indicator finish and particle colours.
+    // Zones, centre line and indicator size are identical to every other theme.
+    static let premium: [ShopItem] = [
+        ShopItem(id: "theme_neonpulse",  name: "Neon Pulse",    category: .themes, price: 0, icon: "💠", rarity: .legendary,
+                 premiumProductID: "com.perfecttap.skin.neonpulse"),
+        ShopItem(id: "theme_chrome",     name: "Liquid Chrome", category: .themes, price: 0, icon: "🪩", rarity: .legendary,
+                 premiumProductID: "com.perfecttap.skin.liquidchrome"),
+        ShopItem(id: "theme_glitch",     name: "Glitch Mode",   category: .themes, price: 0, icon: "👾", rarity: .legendary,
+                 premiumProductID: "com.perfecttap.skin.glitchmode"),
+        ShopItem(id: "theme_cosmicgold", name: "Cosmic Gold",   category: .themes, price: 0, icon: "🌟", rarity: .legendary,
+                 premiumProductID: "com.perfecttap.skin.cosmicgold"),
+    ]
+
+    static var premiumProductIDs: [String] { premium.compactMap(\.premiumProductID) }
 
     // --- Tap FX --- (prices balanced, now functional — changes particle colors)
     static let tapFX: [ShopItem] = [
         ShopItem(id: "fx_default", name: "Classic Pulse", category: .tapFX, price: 0,   icon: "💫", rarity: .common),
-        ShopItem(id: "fx_ripple",  name: "Ripple",       category: .tapFX, price: 100, icon: "🌊", rarity: .common),
-        ShopItem(id: "fx_spark",   name: "Spark",        category: .tapFX, price: 175, icon: "⚡", rarity: .rare),
-        ShopItem(id: "fx_hearts",  name: "Hearts",       category: .tapFX, price: 150, icon: "💕", rarity: .rare),
-        ShopItem(id: "fx_stars",   name: "Stars",        category: .tapFX, price: 250, icon: "⭐", rarity: .epic),
-        ShopItem(id: "fx_confetti",name: "Confetti",     category: .tapFX, price: 225, icon: "🎊", rarity: .epic),
-        ShopItem(id: "fx_shatter", name: "Shatter",      category: .tapFX, price: 400, icon: "💥", rarity: .legendary),
+        ShopItem(id: "fx_ripple",  name: "Ripple",       category: .tapFX, price: EconomyConfig.current.shopPrice(itemID: "fx_ripple", fallback: 100), icon: "🌊", rarity: .common),
+        ShopItem(id: "fx_spark",   name: "Spark",        category: .tapFX, price: EconomyConfig.current.shopPrice(itemID: "fx_spark", fallback: 175), icon: "⚡", rarity: .rare),
+        ShopItem(id: "fx_hearts",  name: "Hearts",       category: .tapFX, price: EconomyConfig.current.shopPrice(itemID: "fx_hearts", fallback: 150), icon: "💕", rarity: .rare),
+        ShopItem(id: "fx_stars",   name: "Stars",        category: .tapFX, price: EconomyConfig.current.shopPrice(itemID: "fx_stars", fallback: 250), icon: "⭐", rarity: .epic),
+        ShopItem(id: "fx_confetti",name: "Confetti",     category: .tapFX, price: EconomyConfig.current.shopPrice(itemID: "fx_confetti", fallback: 225), icon: "🎊", rarity: .epic),
+        ShopItem(id: "fx_shatter", name: "Shatter",      category: .tapFX, price: EconomyConfig.current.shopPrice(itemID: "fx_shatter", fallback: 400), icon: "💥", rarity: .legendary),
     ]
 
     // --- Trails ---
@@ -98,15 +134,15 @@ extension ShopItem {
     // --- Avatars --- (prices balanced for new economy)
     static let avatars: [ShopItem] = [
         ShopItem(id: "avatar_default", name: "Default",  category: .avatars, price: 0,   icon: "😊", rarity: .common),
-        ShopItem(id: "avatar_cool",    name: "Cool",     category: .avatars, price: 100, icon: "😎", rarity: .common),
-        ShopItem(id: "avatar_ninja",   name: "Ninja",    category: .avatars, price: 175, icon: "🥷", rarity: .rare),
-        ShopItem(id: "avatar_robot",   name: "Robot",    category: .avatars, price: 200, icon: "🤖", rarity: .rare),
-        ShopItem(id: "avatar_alien",   name: "Alien",    category: .avatars, price: 250, icon: "👽", rarity: .epic),
-        ShopItem(id: "avatar_wizard",  name: "Wizard",   category: .avatars, price: 300, icon: "🧙", rarity: .epic),
-        ShopItem(id: "avatar_king",    name: "King",     category: .avatars, price: 400, icon: "🤴", rarity: .epic),
-        ShopItem(id: "avatar_devil",   name: "Devil",    category: .avatars, price: 350, icon: "😈", rarity: .epic),
-        ShopItem(id: "avatar_unicorn", name: "Unicorn",  category: .avatars, price: 500, icon: "🦄", rarity: .legendary),
-        ShopItem(id: "avatar_dragon",  name: "Dragon",   category: .avatars, price: 750, icon: "🐉", rarity: .legendary),
+        ShopItem(id: "avatar_cool",    name: "Cool",     category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_cool", fallback: 100), icon: "😎", rarity: .common),
+        ShopItem(id: "avatar_ninja",   name: "Ninja",    category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_ninja", fallback: 175), icon: "🥷", rarity: .rare),
+        ShopItem(id: "avatar_robot",   name: "Robot",    category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_robot", fallback: 200), icon: "🤖", rarity: .rare),
+        ShopItem(id: "avatar_alien",   name: "Alien",    category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_alien", fallback: 250), icon: "👽", rarity: .epic),
+        ShopItem(id: "avatar_wizard",  name: "Wizard",   category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_wizard", fallback: 300), icon: "🧙", rarity: .epic),
+        ShopItem(id: "avatar_king",    name: "King",     category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_king", fallback: 400), icon: "🤴", rarity: .epic),
+        ShopItem(id: "avatar_devil",   name: "Devil",    category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_devil", fallback: 350), icon: "😈", rarity: .epic),
+        ShopItem(id: "avatar_unicorn", name: "Unicorn",  category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_unicorn", fallback: 500), icon: "🦄", rarity: .legendary),
+        ShopItem(id: "avatar_dragon",  name: "Dragon",   category: .avatars, price: EconomyConfig.current.shopPrice(itemID: "avatar_dragon", fallback: 750), icon: "🐉", rarity: .legendary),
     ]
 
     static func items(for category: ShopCategory) -> [ShopItem] {
@@ -119,8 +155,8 @@ extension ShopItem {
         }
     }
 
-    /// All items across all categories
+    /// All items across all categories (premium included, for ownership lookups)
     static var allItems: [ShopItem] {
-        themes + tapFX + trails + badges + avatars
+        themes + premium + tapFX + trails + badges + avatars
     }
 }

@@ -2,12 +2,11 @@ import SwiftUI
 
 // MARK: - ReviveModal (shown when player runs out of lives)
 // Wired to AdManager:
-// - no-ads users continue instantly
-// - if ad inventory is unavailable, continue without blocking gameplay (fail-open)
+// - if ad inventory is unavailable, no rewarded revive is granted
 // - an ad closed before the reward does NOT revive (it used to)
 // Duels never show this modal (GameViewModel disables revive for duel runs).
 // Limit: 1 revive per game session (handled by GameViewModel.hasUsedReviveRef).
-// No daily limit — players can revive once per game, every game.
+// Daily placement cap is checked against a server-verified day.
 struct ReviveModalView: View {
     let mode: GameMode
     let onRevive: () -> Void
@@ -15,11 +14,6 @@ struct ReviveModalView: View {
 
     @State private var isLoadingAd = false
     @State private var adUnavailableMessage: String? = nil
-    /// Whether the user has purchased no-ads (gets free revives)
-    private var hasNoAds: Bool {
-        (PlayerProfile.load() ?? PlayerProfile()).noAds
-    }
-
     var body: some View {
         ZStack {
             Color.black.opacity(0.7).ignoresSafeArea()
@@ -50,9 +44,9 @@ struct ReviveModalView: View {
                             if isLoadingAd {
                                 ProgressView().tint(.white)
                             } else {
-                                Image(systemName: hasNoAds ? "heart.fill" : "play.rectangle.fill")
+                                Image(systemName: "play.rectangle.fill")
                                     .font(.system(size: 16))
-                                Text(hasNoAds ? "CONTINUE — FREE" : "WATCH AD TO CONTINUE")
+                                Text("WATCH OPTIONAL AD TO CONTINUE")
                                     .font(.system(size: 15, weight: .black))
                                     .tracking(1)
                             }
@@ -96,24 +90,39 @@ struct ReviveModalView: View {
     }
 
     private func attemptRevive() {
-        if hasNoAds {
-            onRevive()
-            return
-        }
-        if !AdManager.shared.isAdReady(for: .reviveReward) {
-            // Fail-open policy: don't block continuation when ad inventory is unavailable.
-            onRevive()
-            return
-        }
         isLoadingAd = true
         adUnavailableMessage = nil
 
         Task {
-            let watched = await AdManager.shared.showRewardedAd(placement: .reviveReward)
+            let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: true)
+            guard let day = verification.dayKey else {
+                isLoadingAd = false
+                adUnavailableMessage = "Connect to verify today's optional reward limit."
+                return
+            }
+            guard RewardClaimLimiter.shared.canClaim(.revive, day: day, userID: Backend.shared.currentUID) else {
+                isLoadingAd = false
+                adUnavailableMessage = "Today's revive rewards have been used."
+                return
+            }
+            guard AdManager.shared.isAdReady(for: .reviveReward) else {
+                isLoadingAd = false
+                adUnavailableMessage = "No optional ad is available right now."
+                return
+            }
+            // Revive grants no coins; with the authoritative economy the claim is
+            // recorded server side through AdMob SSV (cap 3/day).
+            let claimIndex = RewardClaimLimiter.shared.nextClaimIndex(
+                for: .revive, day: day, userID: Backend.shared.currentUID)
+            let ssv = EconomyManager.shared.service.rewardedVerification(
+                for: .revive, claimIndex: claimIndex, referenceEventKey: nil)
+            let watched = await AdManager.shared.showRewardedAd(placement: .reviveReward, verification: ssv)
             isLoadingAd = false
 
             if watched {
-                onRevive()
+                if RewardClaimLimiter.shared.record(.revive, day: day, userID: Backend.shared.currentUID) {
+                    onRevive()
+                }
             } else {
                 // Closed early or failed mid-flow: no reward. The modal stays so
                 // the player can try again or give up.

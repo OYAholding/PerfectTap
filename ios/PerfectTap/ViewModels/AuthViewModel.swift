@@ -1,5 +1,9 @@
 import Foundation
 import Combine
+import AuthenticationServices
+import CryptoKit
+import Security
+import UIKit
 
 // MARK: - Auth state machine
 enum AuthState {
@@ -20,6 +24,7 @@ final class AuthViewModel: ObservableObject {
     @Published var authState: AuthState = .loading
     @Published var currentUID: String? = nil
     @Published var errorMessage: String? = nil
+    @Published private(set) var isLinkingApple = false
 
     /// Set to `true` when Delete Account needs the user to re-enter their password
     /// (Firebase requires recent authentication for linked email users).
@@ -44,8 +49,28 @@ final class AuthViewModel: ObservableObject {
         Backend.shared.isLinkedToEmail
     }
 
+    var isPermanentAccount: Bool { Backend.shared.isPermanentAccount }
+
+    /// Re-applies Apple-owned non-consumables (Remove Forced Ads, premium
+    /// skins) after a profile merge replaced `noAds`/items with the cloud
+    /// copy. Seam for tests.
+    var reconcileOwnedEntitlements: () async -> Void = {
+        await PurchaseManager.shared.reconcileOwnedEntitlements()
+    }
+
     private init() {
         bootstrapIdentity()
+    }
+
+    /// Adopts a profile produced by a sign-in / identity merge: local save,
+    /// cloud save, then StoreKit reconciliation so the merge never wipes an
+    /// entitlement the Apple ID owns, then the economy account switch.
+    func adoptMergedProfile(_ profile: PlayerProfile, uid: String) async {
+        profile.save()
+        currentUID = uid
+        await Backend.shared.saveProfile(profile)
+        await reconcileOwnedEntitlements()
+        EconomyManager.shared.service.accountDidChange()
     }
 
     // MARK: - Identity bootstrap (Anonymous Auth)
@@ -71,6 +96,7 @@ final class AuthViewModel: ObservableObject {
                     currentUID = firebaseUID ?? profile.uid
                 }
                 authState = profile.username.isEmpty ? .needsUsername : .authenticated
+                EconomyManager.shared.service.accountDidChange()
             } else if firebaseUID != nil,
                       let cloudProfile = await Backend.shared.loadProfile(),
                       !cloudProfile.username.isEmpty {
@@ -85,6 +111,8 @@ final class AuthViewModel: ObservableObject {
                 restored.save()
                 currentUID = restored.uid
                 authState = .authenticated
+                // The cloud copy replaced local entitlements: re-apply StoreKit.
+                await reconcileOwnedEntitlements()
             } else {
                 // First launch — create guest profile with Firebase UID
                 let uid = firebaseUID ?? getOrCreateDeviceUID()
@@ -134,6 +162,74 @@ final class AuthViewModel: ObservableObject {
 
     func clearTempNickname() {
         tempNickname = nil
+    }
+
+    // MARK: - Optional one-tap account protection
+
+    /// Links the current anonymous Supabase/Firebase user to Apple without
+    /// changing its UID. When the Apple identity already exists, signs into it
+    /// and deterministically merges this device's local profile with the cloud.
+    @discardableResult
+    func linkWithApple() async -> Bool {
+        guard !isLinkingApple else { return false }
+        isLinkingApple = true
+        errorMessage = nil
+        defer { isLinkingApple = false }
+
+        let rawNonce = Self.randomNonce()
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.requestedScopes = [.email, .fullName]
+        request.nonce = Self.sha256(rawNonce)
+
+        do {
+            let authorization = try await AppleAuthorizationCoordinator.authorize(request)
+            return await finishAppleAuthorization(authorization, rawNonce: rawNonce)
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            return false
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Entry point for SwiftUI's official SignInWithAppleButton.
+    @discardableResult
+    func linkWithApple(authorization: ASAuthorization, rawNonce: String) async -> Bool {
+        guard !isLinkingApple else { return false }
+        isLinkingApple = true
+        errorMessage = nil
+        defer { isLinkingApple = false }
+        return await finishAppleAuthorization(authorization, rawNonce: rawNonce)
+    }
+
+    private func finishAppleAuthorization(_ authorization: ASAuthorization, rawNonce: String) async -> Bool {
+        do {
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let tokenData = credential.identityToken,
+                  let idToken = String(data: tokenData, encoding: .utf8) else {
+                throw BackendError.server("Apple did not return a valid identity token. Please try again.")
+            }
+            let local = PlayerProfile.load() ?? PlayerProfile()
+            let result = try await Backend.shared.linkOrSignInWithApple(
+                idToken: idToken, nonce: rawNonce, fullName: credential.fullName)
+            let profile: PlayerProfile
+            if result.keptAnonymousUID {
+                var linked = local
+                linked.uid = result.uid
+                profile = linked
+            } else if let cloud = await Backend.shared.loadProfile() {
+                profile = mergeProfiles(local: local, cloud: cloud, firebaseUID: result.uid)
+            } else {
+                var migrated = local
+                migrated.uid = result.uid
+                profile = migrated
+            }
+            await adoptMergedProfile(profile, uid: result.uid)
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     // MARK: - Cloud Backup: Link anonymous account to email/password
@@ -192,9 +288,7 @@ final class AuthViewModel: ObservableObject {
             // Load cloud profile and apply explicit field-by-field deterministic merge.
             if let cloudProfile = await Backend.shared.loadProfile() {
                 let merged = mergeProfiles(local: localProfile, cloud: cloudProfile, firebaseUID: firebaseUID)
-                merged.save()
-                currentUID = firebaseUID
-                await Backend.shared.saveProfile(merged)
+                await adoptMergedProfile(merged, uid: firebaseUID)
             } else {
                 // No cloud profile — just update UID
                 var local = localProfile
@@ -202,6 +296,7 @@ final class AuthViewModel: ObservableObject {
                 local.save()
                 currentUID = firebaseUID
                 await Backend.shared.saveProfile(local)
+                EconomyManager.shared.service.accountDidChange()
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -219,6 +314,7 @@ final class AuthViewModel: ObservableObject {
             var profile = PlayerProfile.load() ?? PlayerProfile()
             profile.uid = uid
             profile.save()
+            EconomyManager.shared.service.accountDidChange()
             // Stay authenticated — user still has their username
         }
     }
@@ -277,7 +373,9 @@ final class AuthViewModel: ObservableObject {
     /// Called after Auth + Firestore deletion is complete (or after best-effort fallback).
     func finishDeleteCleanup() {
         // Clear ALL local user data
-        UserDefaults.standard.removeObject(forKey: "perfecttap_player_profile")
+        PlayerProfile.clearSaved()
+        SessionMetricsStore.shared.clearAll()
+        UserDefaults.standard.removeObject(forKey: EffectsLevel.storageKey)
         UserDefaults.standard.removeObject(forKey: "perfecttap_device_uid")
         UserDefaults.standard.removeObject(forKey: "perfecttap_sound")
         UserDefaults.standard.removeObject(forKey: "perfecttap_music")
@@ -320,7 +418,36 @@ final class AuthViewModel: ObservableObject {
         return String((0..<6).map { _ in chars.randomElement() ?? "A" })
     }
 
-    private func mergeProfiles(local: PlayerProfile, cloud: PlayerProfile, firebaseUID: String) -> PlayerProfile {
+    nonisolated static func sha256(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    nonisolated static func randomNonce(length: Int = 32) -> String {
+        precondition(length > 0)
+        let alphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        result.reserveCapacity(length)
+        while result.count < length {
+            var bytes = [UInt8](repeating: 0, count: 16)
+            guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+                return UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            }
+            for byte in bytes where byte < alphabet.count * (256 / alphabet.count) {
+                result.append(alphabet[Int(byte) % alphabet.count])
+                if result.count == length { break }
+            }
+        }
+        return result
+    }
+
+    private func mergeProfiles(local localIn: PlayerProfile, cloud cloudIn: PlayerProfile, firebaseUID: String) -> PlayerProfile {
+        // Season fields are only comparable within one season: roll both
+        // sides forward to the current season before the max/union merge.
+        let currentSeason = SeasonSchedule.current().number
+        var local = localIn
+        var cloud = cloudIn
+        local.applySeasonRollover(currentSeason: currentSeason)
+        cloud.applySeasonRollover(currentSeason: currentSeason)
         var merged = local
         merged.uid = firebaseUID
 
@@ -329,7 +456,11 @@ final class AuthViewModel: ObservableObject {
         merged.friendCode = cloud.friendCode.isEmpty ? local.friendCode : cloud.friendCode
 
         // 2) Core progression/economy
-        merged.coins = max(local.coins, cloud.coins)
+        // Once the authoritative ledger is owner-enabled, only the server
+        // balance may cross an identity merge. The legacy rollout keeps the
+        // historical max merge until reconciliation is approved.
+        let authoritative = EconomyManager.shared.service.isAuthoritative
+        merged.coins = Self.mergedCoins(local: local.coins, cloud: cloud.coins, authoritative: authoritative)
         if cloud.level > local.level || (cloud.level == local.level && cloud.xp > local.xp) {
             merged.level = cloud.level
             merged.xp = cloud.xp
@@ -354,18 +485,33 @@ final class AuthViewModel: ObservableObject {
         merged.bestScoresExtra = mergedExtra
 
         // 5) Set-like unions
-        merged.ownedItems = unionPreservingOrder(local.ownedItems, cloud.ownedItems)
+        merged.ownedItems = Self.mergedOwnedItems(local: local.ownedItems, cloud: cloud.ownedItems,
+                                                  authoritative: authoritative)
         merged.friends = unionPreservingOrder(local.friends, cloud.friends)
-        merged.achievements = unionPreservingOrder(local.achievements, cloud.achievements)
-        merged.completedChallenges = unionPreservingOrder(local.completedChallenges, cloud.completedChallenges)
-        merged.seasonClaimedTiers = unionPreservingOrder(local.seasonClaimedTiers, cloud.seasonClaimedTiers)
+        if authoritative {
+            // Claim markers decide which reward events are sent. The server
+            // paid them to the account that sent them, so a guest's markers
+            // must not suppress this account's own claims: keep the cloud
+            // copy (a marker lost here only re-sends an event the server
+            // answers `already_claimed`).
+            merged.achievements = cloud.achievements
+            merged.completedChallenges = cloud.completedChallenges
+            merged.seasonClaimedTiers = cloud.seasonClaimedTiers
+        } else {
+            merged.achievements = unionPreservingOrder(local.achievements, cloud.achievements)
+            merged.completedChallenges = unionPreservingOrder(local.completedChallenges, cloud.completedChallenges)
+            merged.seasonClaimedTiers = unionPreservingOrder(local.seasonClaimedTiers, cloud.seasonClaimedTiers)
+        }
 
         // 6) Season fields
         merged.seasonXP = max(local.seasonXP, cloud.seasonXP)
         merged.seasonTier = max(local.seasonTier, cloud.seasonTier)
         merged.seasonAdProgress = max(local.seasonAdProgress, cloud.seasonAdProgress)
         merged.seasonPremium = local.seasonPremium || cloud.seasonPremium
-        merged.noAds = local.noAds || cloud.noAds
+        merged.seasonProgressNumber = currentSeason
+        // With server verification the purchase ledger owns Remove Ads (a
+        // refund must be able to turn it off); until then keep the OR merge.
+        merged.noAds = FeatureFlags.serverPurchaseVerification ? cloud.noAds : (local.noAds || cloud.noAds)
 
         // 7) Stats
         merged.stats.totalGames = max(local.stats.totalGames, cloud.stats.totalGames)
@@ -441,6 +587,28 @@ final class AuthViewModel: ObservableObject {
 
         merged.normalizeAndMigrate()
         return merged
+    }
+
+    /// Coins across an identity merge. Authoritative economy: only the server
+    /// balance crosses (never `max(local, cloud)`, which minted coins).
+    nonisolated static func mergedCoins(local: Int, cloud: Int, authoritative: Bool) -> Int {
+        authoritative ? cloud : max(local, cloud)
+    }
+
+    /// Owned items across an identity merge. Legacy: plain union. Authoritative
+    /// economy: the server list plus only local items with StoreKit evidence
+    /// (premium skins, re-verified from Apple's signed entitlements). Coin-sold
+    /// items owned only locally have no server evidence and are not merged in.
+    nonisolated static func mergedOwnedItems(local: [String], cloud: [String], authoritative: Bool) -> [String] {
+        let candidates = authoritative
+            ? local.filter { ShopItem.item(id: $0)?.isPremium == true }
+            : local
+        var out: [String] = []
+        var seen = Set<String>()
+        for value in candidates + cloud where seen.insert(value).inserted {
+            out.append(value)
+        }
+        return out
     }
 
     private func unionPreservingOrder<T: Hashable>(_ local: [T], _ cloud: [T]) -> [T] {
@@ -537,5 +705,45 @@ final class AuthViewModel: ObservableObject {
         fmt.timeZone = TimeZone(secondsFromGMT: 0)
         fmt.dateFormat = "yyyy-MM-dd"
         return fmt.date(from: raw)
+    }
+}
+
+private final class AppleAuthorizationCoordinator: NSObject,
+                                                   ASAuthorizationControllerDelegate,
+                                                   ASAuthorizationControllerPresentationContextProviding {
+    private var continuation: CheckedContinuation<ASAuthorization, Error>?
+
+    @MainActor
+    static func authorize(_ request: ASAuthorizationAppleIDRequest) async throws -> ASAuthorization {
+        let coordinator = AppleAuthorizationCoordinator()
+        return try await coordinator.perform(request)
+    }
+
+    @MainActor
+    private func perform(_ request: ASAuthorizationAppleIDRequest) async throws -> ASAuthorization {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            let controller = ASAuthorizationController(authorizationRequests: [request])
+            controller.delegate = self
+            controller.presentationContextProvider = self
+            controller.performRequests()
+        }
+    }
+
+    func authorizationController(controller: ASAuthorizationController,
+                                 didCompleteWithAuthorization authorization: ASAuthorization) {
+        continuation?.resume(returning: authorization)
+        continuation = nil
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first ?? ASPresentationAnchor()
     }
 }

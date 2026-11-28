@@ -20,6 +20,7 @@ enum AppRoute: Hashable {
     case friendDetail(String)   // friend UID
     case leaderboard
     case settings
+    case timingProgress
 }
 
 // Make GameResult hashable (used as nav value).
@@ -43,8 +44,22 @@ final class AppRouter: ObservableObject {
         _ = path.popLast()
     }
 
+    /// A round is on the navigation stack (system prompts must wait).
+    var isGameOnStack: Bool {
+        path.contains { if case .game = $0 { return true } else { return false } }
+    }
+
     func popToRoot() {
         path.removeAll()
+    }
+
+    /// Replace the whole stack in ONE change (e.g. game → game over, game over →
+    /// new game). The old pattern — popToRoot() then push 50 ms later — briefly
+    /// re-mounted HomeView between the two (profile reload, 3 realtime
+    /// subscriptions opened then closed, theme reset) and measured up to ~230 ms
+    /// of main-thread work at every round end (docs/perf).
+    func replaceStack(with routes: [AppRoute]) {
+        path = routes
     }
 }
 
@@ -71,6 +86,7 @@ extension AppRoute {
         case .friendDetail(let uid): FriendDetailView(friendUID: uid)
         case .leaderboard:    LeaderboardView()
         case .settings:       GameSettingsView()
+        case .timingProgress: TimingProgressView()
         }
     }
 }

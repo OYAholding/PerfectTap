@@ -32,7 +32,9 @@ final class ModeRuntimeQATests: XCTestCase {
         .init(name: "Rush", cardTitle: "RUSH", expectsScoreHUD: true, expectsTimerHUD: true, hidesHUD: false, expectsZenStatsHUD: false, expectsRevive: true, expectsModeLabel: true, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: "TIME'S UP!"),
         .init(name: "Hardcore Combo", cardTitle: "HARDCORE COMBO", expectsScoreHUD: true, expectsTimerHUD: false, hidesHUD: false, expectsZenStatsHUD: false, expectsRevive: true, expectsModeLabel: true, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil),
         .init(name: "Tiny Window", cardTitle: "TINY WINDOW", expectsScoreHUD: true, expectsTimerHUD: false, hidesHUD: false, expectsZenStatsHUD: false, expectsRevive: true, expectsModeLabel: true, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil),
-        .init(name: "Focus", cardTitle: "FOCUS", expectsScoreHUD: false, expectsTimerHUD: false, hidesHUD: true, expectsZenStatsHUD: false, expectsRevive: false, expectsModeLabel: false, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil)
+        .init(name: "Practice", cardTitle: "PRACTICE SESSION", expectsScoreHUD: false, expectsTimerHUD: true, hidesHUD: false, expectsZenStatsHUD: false, expectsRevive: false, expectsModeLabel: true, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil),
+        // "Focus" is shown as "Minimal" since 1.2.0 (raw value unchanged).
+        .init(name: "Focus", cardTitle: "MINIMAL", expectsScoreHUD: false, expectsTimerHUD: false, hidesHUD: true, expectsZenStatsHUD: false, expectsRevive: false, expectsModeLabel: false, expectsStrictPerfectUI: false, expectsHiddenZoneLabels: false, expectsTimedGameOverTitle: nil)
     ]
 
     override func setUpWithError() throws {
@@ -43,6 +45,11 @@ final class ModeRuntimeQATests: XCTestCase {
         // Real full-screen ads cannot be dismissed by XCUITest; real-ad revive is a
         // manual TestFlight check (docs/RELEASE_PLAN_1.1.0.he.md §6 #7).
         app.launchArguments += ["-PTUITestNoAds"]
+        // Opt-in: `TEST_RUNNER_PT_QA_OFFLINE=1 xcodebuild test …` runs the matrix
+        // against the offline backend (no anonymous user created in Supabase).
+        if ProcessInfo.processInfo.environment["PT_QA_OFFLINE"] == "1" {
+            app.launchArguments += ["-PTUITestOfflineBackend"]
+        }
         app.launch()
         completeOnboardingIfNeeded()
         dismissTutorialIfNeeded()
@@ -80,7 +87,7 @@ final class ModeRuntimeQATests: XCTestCase {
             verifyTimedModeRun(failures: &failures)
         } else if mode.expectsRevive {
             verifyLifeModesRevivePolicy(modeName: mode.name, failures: &failures)
-        } else if mode.name == "Zen" || mode.name == "Focus" {
+        } else if mode.name == "Zen" || mode.name == "Focus" || mode.name == "Practice" {
             // No fail pressure modes: quit intentionally to complete run
             if !exitPressureFreeMode() {
                 failures.append("pressure_free_mode_exit_failed")
@@ -198,15 +205,36 @@ final class ModeRuntimeQATests: XCTestCase {
             if !desc.exists {
                 failures.append("rush_revive_copy_missing_no_time_bonus")
             }
-            let continueButton = app.buttons["CONTINUE — FREE"].exists ? app.buttons["CONTINUE — FREE"] : app.buttons["WATCH AD TO CONTINUE"]
-            if continueButton.exists {
+            // ReviveModalView: "WATCH OPTIONAL AD TO CONTINUE". UI tests run with
+            // -PTUITestNoAds, so the ad has no inventory and the modal stays;
+            // "Give Up" then ends the round instead of hanging the matrix.
+            let continueButton = app.buttons["WATCH OPTIONAL AD TO CONTINUE"]
+            if continueButton.waitForExistence(timeout: 3) {
                 continueButton.tap()
-                _ = app.buttons["TAP!"].waitForExistence(timeout: 6)
+                // `TAP!` stays in the hierarchy behind the modal, so it cannot
+                // signal a revive. Wait for the modal to either close (revived)
+                // or report why no ad ran, then give up if it is still open.
+                let closed = NSPredicate(format: "exists == false")
+                let modalClosed = expectation(for: closed, evaluatedWith: app.staticTexts["CONTINUE?"])
+                _ = XCTWaiter.wait(for: [modalClosed], timeout: 6)
+                if app.staticTexts["CONTINUE?"].exists {
+                    rushDeclinedRevive = true
+                    let giveUp = app.buttons["Give Up"]
+                    let enabled = NSPredicate(format: "isEnabled == true")
+                    _ = XCTWaiter.wait(for: [expectation(for: enabled, evaluatedWith: giveUp)], timeout: 6)
+                    giveUp.tap()
+                }
             } else {
                 failures.append("rush_revive_continue_button_missing")
+                if app.buttons["Give Up"].exists {
+                    rushDeclinedRevive = true
+                    app.buttons["Give Up"].tap()
+                }
             }
 
-            if let before = timerBefore, let after = currentTimerSeconds(), after > before + 2 {
+            // The no-time-bonus policy can only be observed after a real revive.
+            if !rushDeclinedRevive, let before = timerBefore, let after = currentTimerSeconds(),
+               after > before + 2 {
                 failures.append("rush_revive_time_bonus_detected_unexpected")
             }
         } else {
@@ -217,10 +245,15 @@ final class ModeRuntimeQATests: XCTestCase {
             failures.append("rush_did_not_end")
             return
         }
-        if !app.staticTexts["TIME'S UP!"].exists {
+        // Declining the revive ends the round on lives, not on the timer, so the
+        // timed title is only expected when the round actually ran out of time.
+        if !rushDeclinedRevive, !app.staticTexts["TIME'S UP!"].exists {
             failures.append("rush_game_over_title_mismatch")
         }
     }
+
+    /// Set when the Rush check had to decline the revive (UI tests run without ads).
+    private var rushDeclinedRevive = false
 
     private func verifyLifeModesRevivePolicy(modeName: String, failures: inout [String]) {
         var sawRevive = false
@@ -339,20 +372,20 @@ final class ModeRuntimeQATests: XCTestCase {
     }
 
     private func currentTimerSeconds() -> Int? {
-        let labels = app.staticTexts.allElementsBoundByIndex.map(\.label)
-        for label in labels {
-            guard label.hasSuffix("s") else { continue }
-            let digits = label.dropLast()
-            if let value = Int(digits) {
-                return value
-            }
-        }
-        return nil
+        // One query instead of indexing every StaticText: the screen can change
+        // (e.g. round end → Game Over) between counting and reading by index.
+        let timer = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+s$")).firstMatch
+        guard timer.exists else { return nil }
+        return Int(timer.label.dropLast())
     }
 
     private func emitResult(mode: String, pass: Bool, notes: [String]) {
         let status = pass ? "PASS" : "FAIL"
         let detail = notes.isEmpty ? "ok" : notes.joined(separator: ",")
         print("QA_RESULT|\(mode)|\(status)|\(detail)")
+        // Make the matrix fail when a mode fails (it used to print FAIL and pass).
+        if !pass {
+            XCTFail("Mode runtime QA failed for \(mode): \(detail)")
+        }
     }
 }

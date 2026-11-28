@@ -17,6 +17,9 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
     case hardcoreCombo = "hardcore_combo"
     case tinyWindow   = "tiny_window"
     case focus        = "focus"
+    /// Fixed, repeatable protocol (research R2): fixed pace and length, no
+    /// lives, no ramp, no revive. The only mode shown on the Progress screen.
+    case practice     = "practice"
 
     var displayName: String {
         switch self {
@@ -34,7 +37,11 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
         case .rush:          return "Rush"
         case .hardcoreCombo: return "Hardcore Combo"
         case .tinyWindow:    return "Tiny Window"
-        case .focus:         return "Focus"
+        // Shown as "Minimal": a mode name must not imply an attention benefit
+        // (docs/research/MODE_EVIDENCE_MATRIX.md R9). Raw value stays "focus"
+        // so saved best scores and analytics keep working.
+        case .focus:         return "Minimal"
+        case .practice:      return "Practice Session"
         }
     }
 
@@ -56,7 +63,8 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
         case .rush:          return "30 seconds. Insane speed. Pure reflex."
         case .hardcoreCombo: return "Break combo and you'll trigger a speed shock."
         case .tinyWindow:    return "PERFECT zone is half the normal size."
-        case .focus:         return "No HUD. No score tracking. Just you and the bar."
+        case .focus:         return "No score, no combo. Just the bar and your lives."
+        case .practice:      return "Same pace, same length, every time. See your timing consistency."
         }
     }
 
@@ -77,12 +85,13 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
         case .hardcoreCombo: return "🔥"
         case .tinyWindow:    return "🪡"
         case .focus:         return "🧘"
+        case .practice:      return "📈"
         }
     }
 
     var initialLives: Int? {
         switch self {
-        case .zen, .timed:                    return nil
+        case .zen, .timed, .practice:         return nil
         case .suddenDeath:                    return 1
         case .precision, .tinyWindow:         return 2
         case .rush:                           return 5
@@ -103,23 +112,24 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
         case .hardcoreCombo: return 1.0
         case .tinyWindow:    return 1.1
         case .focus:         return 1.1
+        case .practice:      return PracticeSession.speed
         default:             return GameConfig.classicStartSpeed
         }
     }
 
     var earnCoins: Bool    { self == .classic || self == .duel }
     var earnXP: Bool       { self != .zen }
-    var trackScore: Bool   { self != .zen && self != .focus }
+    var trackScore: Bool   { self != .zen && self != .focus && self != .practice }
     var usesLives: Bool    { initialLives != nil }
 
     var hasQuitButton: Bool {
         switch self {
-        case .endless, .comboFrenzy, .chaos, .hardcoreCombo, .focus: return true
+        case .endless, .comboFrenzy, .chaos, .hardcoreCombo, .focus, .practice: return true
         default: return false
         }
     }
 
-    var hasTimer: Bool { self == .timed || self == .rush }
+    var hasTimer: Bool { self == .timed || self == .rush || self == .practice }
 
     /// Ranked on the server-verified leaderboard (must match MODES in
     /// functions/src/scoring.ts).
@@ -132,6 +142,7 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
         switch self {
         case .rush:  return 30.0
         case .timed: return GameConfig.timedDuration
+        case .practice: return Double(PracticeSession.selectedDuration)
         default:     return 0
         }
     }
@@ -140,7 +151,7 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
     /// Per-mode revive policy.
     var supportsRevive: Bool {
         switch self {
-        case .zen, .timed, .suddenDeath:
+        case .zen, .timed, .suddenDeath, .practice:
             return false
         default:
             return usesLives
@@ -160,7 +171,7 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
 
     /// Modes shown in the mode select screen (excludes duel — entered via lobby)
     static var selectableModes: [GameMode] {
-        [.classic, .endless, .timed, .suddenDeath, .comboFrenzy, .zen,
+        [.classic, .practice, .endless, .timed, .suddenDeath, .comboFrenzy, .zen,
          .precision, .chaos, .mirror, .invisibleZone, .rush, .hardcoreCombo, .tinyWindow, .focus]
     }
 
@@ -214,6 +225,7 @@ enum GameMode: String, CaseIterable, Codable, Hashable {
         case .hardcoreCombo: return "Combo break = speed shock + tighter PERFECT window"
         case .tinyWindow:    return "Visible PERFECT zone starts tiny and keeps shrinking"
         case .focus:         return "Minimal HUD and no score tracking"
+        case .practice:      return "Fixed pace and length. Shows your timing trend"
         default:             return nil
         }
     }

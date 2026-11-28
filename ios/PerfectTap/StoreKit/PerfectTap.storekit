@@ -1,0 +1,164 @@
+{
+  "identifier": "8F1C2D3E",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "6740000000",
+      "localizations": [
+        {
+          "description": "500 coins for the PerfectTap shop",
+          "displayName": "500 Coins",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.coins.500",
+      "referenceName": "Coins 500",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6740000001",
+      "localizations": [
+        {
+          "description": "1,200 coins for the PerfectTap shop",
+          "displayName": "1,200 Coins",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.coins.1200",
+      "referenceName": "Coins 1200",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "3.99",
+      "familyShareable": false,
+      "internalID": "6740000002",
+      "localizations": [
+        {
+          "description": "3,000 coins for the PerfectTap shop",
+          "displayName": "3,000 Coins",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.coins.3000",
+      "referenceName": "Coins 3000",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "9.99",
+      "familyShareable": false,
+      "internalID": "6740000003",
+      "localizations": [
+        {
+          "description": "8,000 coins for the PerfectTap shop",
+          "displayName": "8,000 Coins",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.coins.8000",
+      "referenceName": "Coins 8000",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "2.99",
+      "familyShareable": false,
+      "internalID": "6740000004",
+      "localizations": [
+        {
+          "description": "Removes automatic interstitial ads. Optional rewarded ads remain available when you choose them.",
+          "displayName": "Remove Forced Ads",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.removeads",
+      "referenceName": "Remove Forced Ads",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6740000005",
+      "localizations": [
+        {
+          "description": "Cosmetic skin. Changes colours only.",
+          "displayName": "Neon Pulse",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.skin.neonpulse",
+      "referenceName": "Skin Neon Pulse",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6740000006",
+      "localizations": [
+        {
+          "description": "Cosmetic skin. Changes colours only.",
+          "displayName": "Liquid Chrome",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.skin.liquidchrome",
+      "referenceName": "Skin Liquid Chrome",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6740000007",
+      "localizations": [
+        {
+          "description": "Cosmetic skin. Changes colours only.",
+          "displayName": "Glitch Mode",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.skin.glitchmode",
+      "referenceName": "Skin Glitch Mode",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6740000008",
+      "localizations": [
+        {
+          "description": "Cosmetic skin. Changes colours only.",
+          "displayName": "Cosmic Gold",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.perfecttap.skin.cosmicgold",
+      "referenceName": "Skin Cosmic Gold",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "K88C7DPG4C",
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 3,
+    "minor": 0
+  },
+  "appPolicies": {
+    "eula": "",
+    "policies": [
+      {
+        "locale": "en_US",
+        "policyText": "",
+        "policyURL": ""
+      }
+    ]
+  }
+}

@@ -157,7 +157,7 @@ final class ConsentFlowTests: XCTestCase {
 }
 
 @MainActor
-private final class FakeConsentEnvironment: ConsentEnvironment {
+final class FakeConsentEnvironment: ConsentEnvironment {
     var calls: [String] = []
     var applied: [AdPrivacyDecision] = []
     var tracking: TrackingAuthorization

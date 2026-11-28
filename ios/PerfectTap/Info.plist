@@ -32,10 +32,26 @@
 	<false/>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>PerfectTap shows ads. If you allow tracking, ads can be more relevant to you. If you don't, you'll still see ads, but they won't be personalized. The game works the same either way.</string>
+	<key>PT_AUTHORITATIVE_ECONOMY_ENABLED</key>
+	<string>$(PT_AUTHORITATIVE_ECONOMY_ENABLED)</string>
 	<key>PT_BACKEND</key>
 	<string>$(PT_BACKEND)</string>
 	<key>PT_EMAIL_OTP_ENABLED</key>
 	<string>$(PT_EMAIL_OTP_ENABLED)</string>
+	<key>PT_IAP_CATALOG_ENABLED</key>
+	<string>$(PT_IAP_CATALOG_ENABLED)</string>
+	<key>PT_IAP_COIN_PACKS_ENABLED</key>
+	<string>$(PT_IAP_COIN_PACKS_ENABLED)</string>
+	<key>PT_IAP_LOCAL_STOREKIT_TESTING</key>
+	<string>$(PT_IAP_LOCAL_STOREKIT_TESTING)</string>
+	<key>PT_IAP_PREMIUM_SKINS_ENABLED</key>
+	<string>$(PT_IAP_PREMIUM_SKINS_ENABLED)</string>
+	<key>PT_IAP_REMOVE_ADS_ENABLED</key>
+	<string>$(PT_IAP_REMOVE_ADS_ENABLED)</string>
+	<key>PT_IAP_SERVER_VERIFICATION_ENABLED</key>
+	<string>$(PT_IAP_SERVER_VERIFICATION_ENABLED)</string>
+	<key>PT_MONETIZATION_PROFILE</key>
+	<string>$(PT_MONETIZATION_PROFILE)</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>

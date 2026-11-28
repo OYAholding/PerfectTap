@@ -33,7 +33,7 @@ App Store Connect → PerfectTap → **App Privacy** → Edit. השאלון הו
 | Contact Info → **Name** | App Functionality | Yes | No | **להשאיר** (כבר מוצהר). שם המשתמש במשחק עשוי להיחשב שם |
 | Identifiers → **Device ID** | Third-Party Advertising, Analytics | Yes | **Yes** | IDFA אחרי ATT, ‏IDFV. ‏AdMob ו-Firebase Analytics |
 | Identifiers → **User ID** | App Functionality | Yes | No | מזהה חשבון ב-Supabase (ב-1.0: ‏Firebase UID) |
-| Contact Info → **Email Address** | App Functionality | Yes | No | חשבונות אימייל ישנים (Firebase) שעוברים ב-claim. ‏Cloud Backup (כבוי כרגע) |
+| Contact Info → **Email Address** | App Functionality | Yes | No | חשבונות אימייל ישנים, Cloud Backup אופציונלי וכתובת relay אפשרית מ-Sign in with Apple |
 | User Content → **Gameplay Content** | App Functionality | Yes | No | שם משתמש, ניקוד, חברים, דו-קרבות, לוחות תוצאות |
 | Location → **Coarse Location** | Third-Party Advertising, Analytics, App Functionality | Yes | No | נגזר מ-IP ב-AdMob. ‏UMP קובע לפיו אזור (App Functionality) |
 | Usage Data → **Product Interaction** | Analytics, Third-Party Advertising, App Functionality | Yes | No | אירועי Firebase Analytics, ‏AdMob ו-UMP |
@@ -42,8 +42,13 @@ App Store Connect → PerfectTap → **App Privacy** → Edit. השאלון הו
 | Diagnostics → **Performance Data** | Analytics, Third-Party Advertising, App Functionality | No | No | AdMob ו-UMP |
 | Diagnostics → **Other Diagnostic Data** | Analytics, Third-Party Advertising | No | No | AdMob |
 
+**להוסיף עבור 1.2.0 לפני הגשה:**
+- **Purchases / Purchase History:** יש להצהיר שהמידע מקושר למשתמש, אינו משמש למעקב,
+  ומשמש ל־App Functionality (כולל אימות ומניעת הונאה). השרת שומר מזהי עסקה,
+  מזהה מוצר, סביבת Apple, זמני רכישה/ביטול ומזהה החשבון לצורך אימות, שחזור והחזרים.
+  השינוי ב־App Store Connect נשאר פעולה ידנית; פרסום השאלון לא בוצע מהקוד.
+
 **לא לסמן:**
-- **Purchases:** אין IAP ב-App Store Connect, וה-UI כבוי.
 - **Precise Location**, ‏**Health**, ‏**Financial**, ‏**Contacts**, ‏**Photos**, ‏**Audio**, ‏**Browsing / Search History**, ‏**Sensitive Info**: לא נאספים.
 - **Push / Messaging:** ‏FirebaseMessaging הוסר ב-1.1.0. ב-1.0 הוא היה מקושר בלי הרשאת push, ולא מצאתי בו איסוף מידע שדורש הצהרה נפרדת.
 

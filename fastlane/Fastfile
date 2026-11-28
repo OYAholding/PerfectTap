@@ -12,9 +12,15 @@
 #   * `beta` and `metadata_push` write to App Store Connect and require
 #     PT_CONFIRM=yes. Neither one submits for App Review, distributes to
 #     external testers, or releases anything.
+#   * `iap_reconcile` is a dry-run unless called with `confirm_create:true`
+#     AND PT_CONFIRM=yes. It never deletes, never changes a product type and
+#     never submits in-app purchases for review.
+#   * `build configuration:Release-IAP` (monetization ceiling ON, server-gated)
+#     additionally requires PT_CONFIRM_IAP_CEILING=yes.
 
 require "json"
 require "net/http"
+require "time"
 
 PT_APP_ID      = "6760975737"
 PT_BUNDLE_ID   = "com.perfecttap.app"
@@ -24,6 +30,9 @@ PT_PROJECT_DIR = File.expand_path("../ios/PerfectTap", __dir__)
 PT_SCHEME      = "PerfectTap"
 PT_OUTPUT_DIR  = File.expand_path("../build/fastlane", __dir__)
 PT_METADATA    = File.expand_path("metadata", __dir__)
+PT_IAP_CATALOG = File.expand_path("iap/catalog.json", __dir__)
+PT_IAP_NOTES   = File.expand_path("iap/review-notes.en-US.txt", __dir__)
+PT_BUILD_CONFIGURATIONS = { "Release" => "Off", "Release-IAP" => "AppStoreIAP" }.freeze
 
 default_platform(:ios)
 
@@ -105,6 +114,44 @@ def pt_require_confirmation!(what)
   UI.user_error!("#{what} writes to App Store Connect. Re-run with PT_CONFIRM=yes after explicit approval.")
 end
 
+def pt_iap_catalog
+  UI.user_error!("Missing #{PT_IAP_CATALOG}") unless File.exist?(PT_IAP_CATALOG)
+  catalog = JSON.parse(File.read(PT_IAP_CATALOG))
+  UI.user_error!("IAP catalog targets the wrong app") unless catalog["appId"] == PT_APP_ID && catalog["bundleId"] == PT_BUNDLE_ID
+  products = catalog["products"].to_a
+  ids = products.map { |p| p["productId"] }
+  UI.user_error!("IAP catalog must contain 9 unique products") unless products.size == 9 && ids.uniq.size == 9
+  catalog
+end
+
+def pt_validate_local_iap_catalog!
+  catalog = pt_iap_catalog
+  storekit_path = File.expand_path("../ios/PerfectTap/StoreKit/PerfectTap.storekit", __dir__)
+  storekit = JSON.parse(File.read(storekit_path))["products"].to_h { |p| [p["productID"], p] }
+  catalog["products"].each do |product|
+    local = storekit[product["productId"]]
+    UI.user_error!("#{product['productId']} missing from PerfectTap.storekit") unless local
+    expected_type = product["type"] == "CONSUMABLE" ? "Consumable" : "NonConsumable"
+    UI.user_error!("#{product['productId']} type mismatch") unless local["type"] == expected_type
+    UI.user_error!("#{product['productId']} local test price mismatch") unless local["displayPrice"] == product["priceUSD"]
+    required = product.values_at("referenceName", "displayName", "description", "reviewScreenshot")
+    UI.user_error!("#{product['productId']} metadata is incomplete") if required.any? { |v| v.to_s.strip.empty? }
+    english = local["localizations"].to_a.find { |l| l["locale"] == "en_US" }
+    UI.user_error!("#{product['productId']} lacks complete en_US StoreKit localization") if
+      english.nil? || english.values_at("displayName", "description").any? { |v| v.to_s.strip.empty? }
+  end
+  catalog
+end
+
+def pt_validate_review_screenshot!(path)
+  UI.user_error!("Missing review screenshot #{path}") unless File.exist?(path)
+  data = File.binread(path, 24)
+  UI.user_error!("Review screenshot is not a PNG: #{path}") unless data.start_with?("\x89PNG\r\n\x1a\n".b)
+  width, height = data.byteslice(16, 8).unpack("NN")
+  UI.user_error!("Review screenshot is too small: #{path} (#{width}x#{height})") if width < 640 || height < 960
+  UI.user_error!("Review screenshot looks empty: #{path}") if File.size(path) < 10_000
+end
+
 def pt_url_status(url)
   return "not set" if url.to_s.empty?
   uri = URI(url)
@@ -117,6 +164,83 @@ rescue StandardError => e
 end
 
 platform :ios do
+  desc "IAP reconciler: diff catalog.json vs App Store Connect. DRY-RUN unless confirm_create:true and PT_CONFIRM=yes"
+  lane :iap_reconcile do |options|
+    require_relative "iap_reconciler"
+    catalog = pt_validate_local_iap_catalog!
+    notes = File.read(PT_IAP_NOTES).strip
+    desired = PTIap.desired_products(catalog, notes, File.expand_path("iap", __dir__))
+    confirm = options[:confirm_create].to_s == "true"
+    if confirm
+      pt_require_confirmation!("Creating / updating in-app purchases")
+      desired.map { |d| d[:screenshot_path] }.uniq.each { |path| pt_validate_review_screenshot!(path) }
+    end
+    pt_api_key
+    pt_assert_app!
+    api = PTIap::Api.new(-> { Spaceship::ConnectAPI.token.text }, ->(message) { UI.user_error!(message) })
+    territories = api.get_all("/v1/territories?limit=200").map { |t| t["id"] }
+    live = PTIap.list_iaps(api, PT_APP_ID)
+    live_by_id = live.to_h { |i| [i.dig("attributes", "productId"), i] }
+    grid = PTIap.usd_price_grid_preview(api, PT_APP_ID)
+
+    plan = desired.map do |d|
+      remote = live_by_id[d[:product_id]] && PTIap.remote_state(api, live_by_id[d[:product_id]])
+      actions, blockers = PTIap.diff(d, remote, territories)
+      price = BigDecimal(d[:price_usd])
+      point = remote ? PTIap.usd_price_points_for_iap(api, remote[:id]).key?(price) : grid.include?(price)
+      blockers << "no USD price point #{d[:price_usd]}" unless point
+      { desired: d, remote: remote, actions: actions, blockers: blockers, price_point: point }
+    end
+
+    rows = plan.map do |p|
+      [p[:desired][:product_id], p[:remote] ? p[:remote][:state] : "MISSING",
+       "#{p[:desired][:price_usd]} / #{p[:remote] && p[:remote][:price_usd] || '-'}",
+       p[:price_point] ? (p[:remote] ? "IAP grid" : "app grid (preview)") : "NOT FOUND",
+       p[:actions].empty? ? "in sync" : p[:actions].map { |a| a[:step] }.join(","),
+       p[:blockers].join("; ")]
+    end
+    puts Terminal::Table.new(title: "PerfectTap IAP reconcile (#{confirm ? 'APPLY' : 'DRY RUN'})",
+                             headings: ["Product", "ASC state", "USD catalog / ASC", "Price point", "Actions", "Blockers"], rows: rows)
+    extras = live_by_id.keys - desired.map { |d| d[:product_id] }
+    UI.important("Unexpected App Store products (left untouched): #{extras.join(', ')}") unless extras.empty?
+    UI.message("Territories available: #{territories.size}; USD grid points: #{grid.size}")
+
+    FileUtils.mkdir_p(PT_OUTPUT_DIR)
+    report = {
+      generatedAt: Time.now.utc.iso8601, appId: PT_APP_ID, mode: confirm ? "APPLY" : "DRY_RUN",
+      territories: territories.size, unexpectedProducts: extras,
+      products: plan.map do |p|
+        { productId: p[:desired][:product_id], type: p[:desired][:type], ascState: p[:remote] ? p[:remote][:state] : "MISSING",
+          catalogPriceUSD: p[:desired][:price_usd], ascPriceUSD: p[:remote] && p[:remote][:price_usd],
+          pricePointFound: p[:price_point], actions: p[:actions], blockers: p[:blockers] }
+      end
+    }
+    path = File.join(PT_OUTPUT_DIR, "iap_reconcile_report.json")
+    File.write(path, JSON.pretty_generate(report) + "\n")
+    UI.message("Plan written to #{path}")
+
+    unless confirm
+      UI.important("DRY RUN: no App Store Connect write was made. Apply only after owner approval with " \
+                   "PT_CONFIRM=yes bundle exec fastlane iap_reconcile confirm_create:true")
+      next
+    end
+    blocked = plan.reject { |p| p[:blockers].empty? }
+    UI.user_error!("Blockers must be resolved first: #{blocked.map { |p| p[:desired][:product_id] }.join(', ')}") unless blocked.empty?
+    plan.reject { |p| p[:actions].empty? }.each do |p|
+      PTIap.apply!(api, PT_APP_ID, p[:desired], p[:remote], p[:actions], territories, ->(m) { UI.message(m) })
+    end
+
+    # Read-back verification: everything must now be in sync.
+    after = PTIap.list_iaps(api, PT_APP_ID).to_h { |i| [i.dig("attributes", "productId"), i] }
+    drift = desired.filter_map do |d|
+      remote = after[d[:product_id]] && PTIap.remote_state(api, after[d[:product_id]])
+      actions, blockers = PTIap.diff(d, remote, territories)
+      "#{d[:product_id]}: #{(actions.map { |a| a[:step] } + blockers).join(', ')}" unless actions.empty? && blockers.empty?
+    end
+    UI.user_error!("Read-back verification failed:\n#{drift.join("\n")}") unless drift.empty?
+    UI.success("All #{desired.size} in-app purchases match catalog.json (read back). Nothing was submitted for review.")
+  end
+
   desc "Read-only: verify API access and print versions, builds, TestFlight and review status"
   lane :asc_check do
     pt_api_key
@@ -169,6 +293,57 @@ platform :ios do
     end
   end
 
+  desc "Read-only: compare the prepared 9-product catalog with App Store Connect"
+  lane :iap_check do
+    pt_api_key
+    pt_assert_app!
+    wanted = pt_iap_catalog["products"].to_h { |p| [p["productId"], p] }
+    live = pt_get("/v1/apps/#{PT_APP_ID}/inAppPurchasesV2?limit=200")["data"]
+    live_by_id = live.to_h { |p| [p.dig("attributes", "productId"), p] }
+    rows = wanted.map do |product_id, product|
+      remote = live_by_id[product_id]
+      [product_id, product["type"], product["priceUSD"], remote&.dig("attributes", "state") || "MISSING"]
+    end
+    puts Terminal::Table.new(title: "PerfectTap IAP catalog (read-only)", headings: %w[Product Type USD ASC], rows: rows)
+    extras = live_by_id.keys - wanted.keys
+    UI.important("Unexpected App Store products: #{extras.join(', ')}") unless extras.empty?
+    UI.message("Prepared: #{wanted.size}; App Store Connect: #{live.size}; missing: #{wanted.keys.count { |id| !live_by_id.key?(id) }}")
+  end
+
+  desc "Local draft only: validate IAP metadata and local test prices (no screenshot or ASC required)"
+  lane :iap_prepare do
+    catalog = pt_validate_local_iap_catalog!
+    FileUtils.mkdir_p(PT_OUTPUT_DIR)
+    report = {
+      generatedAt: Time.now.utc.iso8601,
+      appId: PT_APP_ID,
+      mode: "DRAFT_PREPARE_ONLY_NO_APP_STORE_WRITES",
+      productCount: catalog["products"].size,
+      consumables: catalog["products"].count { |p| p["type"] == "CONSUMABLE" },
+      nonConsumables: catalog["products"].count { |p| p["type"] == "NON_CONSUMABLE" },
+      localPricesAreDraft: true,
+      reviewNotes: File.expand_path("iap/review-notes.en-US.txt", __dir__)
+    }
+    path = File.join(PT_OUTPUT_DIR, "iap_prepare_report.json")
+    File.write(path, JSON.pretty_generate(report) + "\n")
+    UI.success("Prepared 9 draft IAPs locally: #{path}. Prices are local test values, not live App Store prices.")
+  end
+
+  desc "Read-only final gate: require all ASC products and valid per-product review screenshots"
+  lane :iap_submission_validate do
+    catalog = pt_validate_local_iap_catalog!
+    catalog["products"].map { |p| p["reviewScreenshot"] }.uniq.each do |relative|
+      pt_validate_review_screenshot!(File.expand_path("iap/#{relative}", __dir__))
+    end
+    pt_api_key
+    pt_assert_app!
+    live = pt_get("/v1/apps/#{PT_APP_ID}/inAppPurchasesV2?limit=200")["data"]
+    live_ids = live.map { |p| p.dig("attributes", "productId") }
+    missing = catalog["products"].map { |p| p["productId"] } - live_ids
+    UI.user_error!("App Store Connect is missing: #{missing.join(', ')}") unless missing.empty?
+    UI.success("Final IAP submission inputs validated read-only. No App Store Connect write was made.")
+  end
+
   desc "Read-only: download App Store metadata into fastlane/metadata (local files only)"
   lane :metadata_pull do |options|
     api_key = pt_api_key
@@ -188,8 +363,14 @@ platform :ios do
     UI.success("Metadata for #{version.version_string} written to #{path}")
   end
 
-  desc "Local build only: XcodeGen + signed App Store .ipa in build/fastlane (no upload)"
+  desc "Local build only: XcodeGen + signed App Store .ipa (configuration:Release default; Release-IAP needs PT_CONFIRM_IAP_CEILING=yes)"
   lane :build do |options|
+    configuration = (options[:configuration] || "Release").to_s
+    expected_profile = PT_BUILD_CONFIGURATIONS[configuration]
+    UI.user_error!("configuration must be one of #{PT_BUILD_CONFIGURATIONS.keys.join(', ')}") unless expected_profile
+    if configuration == "Release-IAP" && ENV["PT_CONFIRM_IAP_CEILING"] != "yes"
+      UI.user_error!("Release-IAP can sell once the server gate opens. Re-run with PT_CONFIRM_IAP_CEILING=yes after owner approval.")
+    end
     pt_api_key
     pt_assert_app!
     sh("cd #{PT_PROJECT_DIR.shellescape} && xcodegen generate")
@@ -198,7 +379,7 @@ platform :ios do
     build_app(
       project: PT_PROJECT,
       scheme: PT_SCHEME,
-      configuration: "Release",
+      configuration: configuration,
       export_method: "app-store",
       output_directory: PT_OUTPUT_DIR,
       output_name: "PerfectTap.ipa",
@@ -221,7 +402,12 @@ platform :ios do
     unless built["CFBundleShortVersionString"] == expected && built["CFBundleVersion"] == build_number.to_s
       UI.user_error!("IPA is #{built['CFBundleShortVersionString']} (#{built['CFBundleVersion']}), expected #{expected} (#{build_number})")
     end
-    UI.success("IPA #{expected} (#{build_number}) — #{built['CFBundleIdentifier']}")
+    # The monetization ceiling compiled into the IPA must be the one requested.
+    profile = built["PT_MONETIZATION_PROFILE"]
+    UI.user_error!("IPA monetization profile is #{profile.inspect}, expected #{expected_profile}") unless profile == expected_profile
+    UI.user_error!("IPA enables local StoreKit testing") unless built["PT_IAP_LOCAL_STOREKIT_TESTING"] == "NO"
+    UI.user_error!("IPA enables the authoritative economy without approval") unless built["PT_AUTHORITATIVE_ECONOMY_ENABLED"] == "NO"
+    UI.success("IPA #{expected} (#{build_number}) — #{built['CFBundleIdentifier']} — monetization ceiling #{profile}")
   end
 
   desc "Read-only: version/build/privacy/URL/secret checks before a release (fails on blockers)"

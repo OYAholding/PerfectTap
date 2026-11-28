@@ -12,16 +12,21 @@ struct LuckyWheelView: View {
     @State private var authoritativeDay: String? = nil
     @State private var spinRequestReserved = false
 
-    private let segments: [(label: String, color: Color, coins: Int)] = [
-        ("25 🪙",  Color(red: 0.59, green: 0.28, blue: 0.98), 25),
-        ("50 🪙",  Color(red: 0.22, green: 0.82, blue: 0.98), 50),
-        ("10 🪙",  Color(red: 0.85, green: 0.28, blue: 0.94), 10),
-        ("100 🪙", Color(red: 0.98, green: 0.73, blue: 0.26), 100),
-        ("35 🪙",  Color(red: 0.22, green: 0.82, blue: 0.49), 35),
-        ("5 🪙",   Color(red: 0.95, green: 0.24, blue: 0.37), 5),
-        ("250 🪙", Color(red: 0.98, green: 0.45, blue: 0.10), 250),
-        ("75 🪙",  Color(red: 0.47, green: 0.18, blue: 0.85), 75),
-    ]
+    private var segments: [(label: String, color: Color, coins: Int)] {
+        let colors = [
+            Color(red: 0.59, green: 0.28, blue: 0.98),
+            Color(red: 0.22, green: 0.82, blue: 0.98),
+            Color(red: 0.85, green: 0.28, blue: 0.94),
+            Color(red: 0.98, green: 0.73, blue: 0.26),
+            Color(red: 0.22, green: 0.82, blue: 0.49),
+            Color(red: 0.95, green: 0.24, blue: 0.37),
+            Color(red: 0.98, green: 0.45, blue: 0.10),
+            Color(red: 0.47, green: 0.18, blue: 0.85),
+        ]
+        return zip(EconomyConfig.current.wheelRewards, colors).map { coins, color in
+            ("\(coins) 🪙", color, coins)
+        }
+    }
     private let wheelLastSpinDayKey = "perfecttap_wheel_last_spin_server_day"
     private let wheelLegacyLastSpinKey = "perfecttap_last_spin"
     private let wheelPendingSpinIDKey = "perfecttap_wheel_pending_spin_id"
@@ -172,7 +177,37 @@ struct LuckyWheelView: View {
         canSpin = false
         result = nil
 
-        let winIndex = Int.random(in: 0..<segments.count)
+        let winIndex: Int
+        let economy = EconomyManager.shared.service
+        if economy.isAuthoritative {
+            // The server picks the segment; the animation lands on it.
+            switch await economy.spinWheel() {
+            case .landed(let index, _) where segments.indices.contains(index):
+                winIndex = index
+            case .alreadyClaimed:
+                setLastConsumedSpinDay(day)
+                isSpinning = false
+                availabilityMessage = "Today's spin was already used."
+                return
+            case .queued:
+                setLastConsumedSpinDay(day)
+                isSpinning = false
+                availabilityMessage = "Spin saved. Your coins will be added when the server confirms it."
+                return
+            case .failed(let code):
+                isSpinning = false
+                canSpin = code != "legacy_review_required"
+                availabilityMessage = EconomyErrorPolicy.userMessage(for: code)
+                return
+            case .landed:
+                // Index outside the displayed wheel: config mismatch, nothing shown.
+                isSpinning = false
+                availabilityMessage = "The server could not confirm this spin. Please try again."
+                return
+            }
+        } else {
+            winIndex = Int.random(in: 0..<segments.count)
+        }
         let spinID = UUID().uuidString
         persistPendingSpin(id: spinID, day: day, index: winIndex)
         setLastConsumedSpinDay(day)

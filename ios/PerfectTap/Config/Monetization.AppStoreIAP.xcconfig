@@ -1,0 +1,19 @@
+// PerfectTap monetization capability ceiling: APP STORE IAP (Release-IAP only).
+// The binary uploaded to TestFlight / App Review for the IAP release. It MAY sell,
+// but only while the server gate (public.get_iap_sales_status) opens sales for the
+// StoreKit environment it runs in. Sandbox (TestFlight, App Review) and Production
+// (App Store) are switched separately on the server and both start CLOSED.
+// Every purchase is verified by the verify-purchase Edge Function before finish().
+// The fastlane build lane refuses this configuration without
+// PT_CONFIRM_IAP_CEILING=yes (owner approval).
+PT_MONETIZATION_PROFILE = AppStoreIAP
+PT_IAP_CATALOG_ENABLED = YES
+PT_IAP_SERVER_VERIFICATION_ENABLED = YES
+PT_IAP_COIN_PACKS_ENABLED = YES
+PT_IAP_REMOVE_ADS_ENABLED = YES
+PT_IAP_PREMIUM_SKINS_ENABLED = YES
+PT_IAP_LOCAL_STOREKIT_TESTING = NO
+// Model B stays off until the owner approves it AND the iOS economy client falls
+// back to the legacy path on `economy_disabled` (runtime gate = active
+// economy_configs row). Flip only together with that client change.
+PT_AUTHORITATIVE_ECONOMY_ENABLED = NO

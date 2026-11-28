@@ -33,6 +33,14 @@ struct AuthoritativeDayVerificationResult {
     let usedFallback: Bool
 }
 
+/// Result of upgrading a guest to a recoverable Apple/email identity. Linking
+/// keeps the anonymous UID; signing in to an existing identity changes it and
+/// requires the caller to merge the local profile into the recovered profile.
+struct PermanentIdentityResult: Equatable {
+    let uid: String
+    let keptAnonymousUID: Bool
+}
+
 /// Result of a delete-account attempt.
 enum BackendDeleteResult {
     case success          // Auth user + cloud data deleted
@@ -72,7 +80,9 @@ protocol GameBackend: AnyObject {
     var currentUID: String? { get }
     var currentUserEmail: String? { get }
     var isLinkedToEmail: Bool { get }
+    var isPermanentAccount: Bool { get }
     func signInAnonymously() async -> String?
+    func linkOrSignInWithApple(idToken: String, nonce: String?, fullName: PersonNameComponents?) async throws -> PermanentIdentityResult
     /// Links email/password to the current account. May throw
     /// `.verificationCodeSent`; then call `confirmEmailLink` with the emailed code.
     func linkAnonymousAccount(email: String, password: String) async throws -> String
@@ -262,6 +272,12 @@ enum Backend {
     static let shared: GameBackend = {
         // Unit tests must never create users or write data in real projects.
         if isRunningUnitTests { return OfflineBackend.shared }
+        #if DEBUG
+        // Perf / QA UI runs: never create anonymous users in the real project.
+        if ProcessInfo.processInfo.arguments.contains("-PTUITestOfflineBackend") {
+            return OfflineBackend.shared
+        }
+        #endif
         switch kind {
         case .supabase:
             if let service = SupabaseService.makeShared() { return service }

@@ -11,6 +11,8 @@ struct GameSettingsView: View {
     @State private var soundEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_sound") as? Bool ?? true
     @State private var musicEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_music") as? Bool ?? true
     @State private var hapticsEnabled: Bool = UserDefaults.standard.object(forKey: "perfecttap_haptics") as? Bool ?? true
+    @AppStorage(EffectsLevel.storageKey) private var effectsLevel: String = EffectsLevel.full.rawValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showLinkAccount = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -18,6 +20,7 @@ struct GameSettingsView: View {
     @State private var profile: PlayerProfile = PlayerProfile.load() ?? PlayerProfile()
     @State private var showPrivacyPolicy = false
     @State private var showTermsOfUse = false
+    @State private var restoreMessage: String?
 
     /// Real build version (was hard-coded "1.0.0" while the app ships 1.0.2).
     static var appVersion: String {
@@ -77,10 +80,28 @@ struct GameSettingsView: View {
                                 }
                         }
 
+                        // Visual effects (particles, glow, popup motion, cosmetic effects)
+                        settingsSection("VISUAL EFFECTS") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Picker("Effects", selection: $effectsLevel) {
+                                    ForEach(EffectsLevel.allCases) { level in
+                                        Text(level.label).tag(level.rawValue)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                Text(reduceMotion
+                                     ? "Reduce Motion is on in iOS settings, so effects are limited to Reduced."
+                                     : "Reduced or Off removes particles and motion. Gameplay and scoring stay the same.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.white.opacity(0.4))
+                            }
+                            .padding(14)
+                        }
+
                         // Theme picker — only shows owned themes
                         settingsSection("THEME") {
                             let ownedThemes = AppTheme.all.filter { theme in
-                                let themeID = "theme_\(theme.name)"
+                                let themeID = ShopItem.themeID(forName: theme.name)
                                 // "default" theme is always owned; check ownership for others
                                 return theme.name == "default" || profile.ownedItems.contains(themeID)
                             }
@@ -132,7 +153,14 @@ struct GameSettingsView: View {
 
                             // Restore purchases
                             Button {
-                                Task { await PurchaseManager.shared.restorePurchases() }
+                                Task {
+                                    let result = await PurchaseManager.shared.restorePurchases()
+                                    switch result {
+                                    case .restored(let count): restoreMessage = "Restored \(count) purchase\(count == 1 ? "" : "s")."
+                                    case .nothingToRestore: restoreMessage = "No restorable purchases were found."
+                                    case .failed(let message): restoreMessage = message
+                                    }
+                                }
                             } label: {
                                 HStack {
                                     Image(systemName: "arrow.clockwise").foregroundColor(Color(red: 0.59, green: 0.28, blue: 0.98))
@@ -298,6 +326,12 @@ struct GameSettingsView: View {
             }
         } message: {
             Text("Enter your password to complete account deletion.")
+        }
+        .alert(restoreMessage ?? "", isPresented: Binding(
+            get: { restoreMessage != nil },
+            set: { if !$0 { restoreMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { restoreMessage = nil }
         }
     }
 

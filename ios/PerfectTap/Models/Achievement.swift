@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Achievement (ported from achievementSystem.jsx — all 37 + extras)
+// MARK: - Achievement (ported from achievementSystem.jsx — 36 entries; the server mirrors these)
 struct Achievement: Identifiable {
     let id: String
     let title: String

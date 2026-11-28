@@ -67,6 +67,11 @@ final class SupabaseService: GameBackend {
         return !user.isAnonymous && user.email != nil
     }
 
+    var isPermanentAccount: Bool {
+        guard let user = client.auth.currentUser else { return false }
+        return !user.isAnonymous
+    }
+
     /// Restores the Keychain session or creates an anonymous user, then (once)
     /// moves this device's Firebase-era progress onto it.
     func signInAnonymously() async -> String? {
@@ -87,6 +92,26 @@ final class SupabaseService: GameBackend {
         }
         if let uid { await claimLegacyAccountIfNeeded(uid: uid) }
         return uid
+    }
+
+    /// Native Sign in with Apple. First use links the identity to the current
+    /// anonymous user (same UUID and server data). If the Apple identity already
+    /// exists, sign in to that permanent user so the caller can merge profiles.
+    func linkOrSignInWithApple(idToken: String, nonce: String?, fullName: PersonNameComponents?) async throws -> PermanentIdentityResult {
+        guard let oldUID = currentUID else { throw BackendError.notSignedIn }
+        let credentials = OpenIDConnectCredentials(provider: .apple, idToken: idToken, nonce: nonce)
+        do {
+            let session = try await client.auth.linkIdentityWithIdToken(credentials: credentials)
+            return PermanentIdentityResult(uid: session.user.id.uuidString.lowercased(), keptAnonymousUID: true)
+        } catch let authError as AuthError where authError.errorCode == .identityAlreadyExists {
+            let session = try await client.auth.signInWithIdToken(credentials: credentials)
+            let uid = session.user.id.uuidString.lowercased()
+            return PermanentIdentityResult(uid: uid, keptAnonymousUID: uid == oldUID)
+        } catch let authError as AuthError where authError.errorCode == .manualLinkingDisabled {
+            throw BackendError.server("Sign in with Apple is not configured yet. Your local progress is unchanged.")
+        } catch {
+            throw mapAuthError(error)
+        }
     }
 
     /// Step 1 of "Cloud Backup": Supabase emails a one-time code to the address.
@@ -270,6 +295,46 @@ final class SupabaseService: GameBackend {
         let usernameConflict: Bool?
     }
 
+    /// Sends a StoreKit 2 signed transaction to the `verify-purchase` edge
+    /// function, which verifies it with Apple's certificates and records it in
+    /// the purchase ledger idempotently (unique transaction ID).
+    static let definitiveRejections: Set<String> = [
+        "invalid_signature", "wrong_bundle", "invalid_transaction", "invalid_environment", "missing_account_token",
+    ]
+
+    /// Maps a `verify-purchase` reply. A refunded/revoked transaction must
+    /// never count as verified (it would be granted on device).
+    nonisolated static func purchaseVerification(status: String, reason: String?) -> PurchaseVerification {
+        switch status {
+        case "granted", "already_granted", "verified_local_restore":
+            return .verified
+        case "revoked", "already_revoked":
+            return .rejected("revoked")
+        default:
+            return .rejected(reason ?? status)
+        }
+    }
+
+    func verifyPurchase(jws: String) async -> PurchaseVerification {
+        struct Body: Encodable { let signedTransaction: String }
+        struct Reply: Decodable { let status: String; let reason: String? }
+        struct ErrorReply: Decodable { let error: String }
+        do {
+            let reply: Reply = try await client.functions.invoke(
+                "verify-purchase", options: FunctionInvokeOptions(body: Body(signedTransaction: jws)))
+            return Self.purchaseVerification(status: reply.status, reason: reply.reason)
+        } catch FunctionsError.httpError(_, let data) {
+            // Only definitive answers finish the transaction without a grant.
+            // Anything recoverable (wrong game account signed in, product not
+            // yet configured on the server, rate limit, outage) stays unfinished
+            // and is retried, so a paying player is never left with nothing.
+            let code = (try? JSONDecoder().decode(ErrorReply.self, from: data))?.error ?? ""
+            return Self.definitiveRejections.contains(code) ? .rejected(code) : .unavailable
+        } catch {
+            return .unavailable
+        }
+    }
+
     private func invokeClaim(firebaseToken: String, password: String?) async throws -> ClaimReply {
         struct Body: Encodable { let firebaseIdToken: String; let password: String? }
         do {
@@ -350,6 +415,73 @@ final class SupabaseService: GameBackend {
               let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return nil }
         return BackendCodec.decodeProfile(dict)
+    }
+
+    struct EconomyState: Decodable, Equatable {
+        let confirmedBalance: Int
+        let coinDebt: Int
+        let configVersion: String?
+        let legacyStatus: String
+        let disputedBalance: Int
+    }
+
+    struct EconomyMutation: Decodable, Equatable {
+        let status: String
+        let balance: Int?
+        let coinDebt: Int?
+        let itemID: String?
+        var granted: Int? = nil
+        var segmentIndex: Int? = nil
+    }
+
+    func loadEconomyState() async throws -> EconomyState {
+        try await client.rpc("get_my_economy_state").execute().value
+    }
+
+    func claimDailyEconomyReward(eventID: UUID) async throws -> EconomyMutation {
+        try await client.rpc(
+            "claim_daily_economy_reward",
+            params: ["p_event_key": eventID.uuidString.lowercased()]
+        ).execute().value
+    }
+
+    func purchaseEconomyItem(_ itemID: String, eventID: UUID) async throws -> EconomyMutation {
+        struct Params: Encodable {
+            let p_event_key: String
+            let p_item_id: String
+        }
+        return try await client.rpc(
+            "purchase_economy_item",
+            params: Params(p_event_key: eventID.uuidString.lowercased(), p_item_id: itemID)
+        ).execute().value
+    }
+
+    /// Contract v1 `submit_economy_event`: the client reports what happened;
+    /// the server computes the grant. Never sends an amount.
+    func submitEconomyEvent(eventKey: UUID, source: String,
+                            payload: [String: EconomyJSONValue]) async throws -> EconomyMutation {
+        struct Params: Encodable {
+            let p_event_key: String
+            let p_source: String
+            let p_payload: [String: EconomyJSONValue]
+        }
+        return try await client.rpc(
+            "submit_economy_event",
+            params: Params(p_event_key: eventKey.uuidString.lowercased(), p_source: source, p_payload: payload)
+        ).execute().value
+    }
+
+    /// Maps an economy RPC failure to the contract's error code
+    /// (`private.fail(code)` raises P0001 with the code as message), or
+    /// `nil` when the request did not reach the server (retry later).
+    func economyFailure(_ error: Error) -> EconomyRemoteFailure {
+        if isNetworkError(error) { return .network }
+        if let postgrest = error as? PostgrestError {
+            return .server(postgrest.message.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if error is DecodingError { return .server("invalid_response") }
+        if (error as NSError).domain == NSURLErrorDomain { return .network }
+        return .network
     }
 
     func saveProfile(_ profile: PlayerProfile) async {
@@ -820,8 +952,10 @@ final class RealtimeQueryListener<Value>: RealtimeListenerHandle {
         let statuses = channel.statusChange
 
         task = Task { @MainActor [weak self] in
-            // Initial authoritative state.
-            deliver(await reload())
+            // Initial authoritative state (skip if the listener was removed meanwhile).
+            let initial = await reload()
+            guard !Task.isCancelled else { return }
+            deliver(initial)
 
             await withTaskGroup(of: Void.self) { group in
                 // Change events → reload (coalesced: one reload in flight at a time).

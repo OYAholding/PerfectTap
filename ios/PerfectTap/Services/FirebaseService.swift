@@ -62,6 +62,27 @@ final class FirebaseService: GameBackend {
         #endif
     }
 
+    func linkOrSignInWithApple(idToken: String, nonce: String?, fullName: PersonNameComponents?) async throws -> PermanentIdentityResult {
+        #if canImport(FirebaseAuth)
+        guard let current = Auth.auth().currentUser else { throw BackendError.notSignedIn }
+        let previousUID = current.uid
+        let credential = OAuthProvider.appleCredential(withIDToken: idToken, rawNonce: nonce, fullName: fullName)
+        if current.isAnonymous {
+            do {
+                let result = try await current.link(with: credential)
+                return PermanentIdentityResult(uid: result.user.uid, keptAnonymousUID: true)
+            } catch let error as NSError where error.code == AuthErrorCode.credentialAlreadyInUse.rawValue {
+                let result = try await Auth.auth().signIn(with: credential)
+                return PermanentIdentityResult(uid: result.user.uid, keptAnonymousUID: result.user.uid == previousUID)
+            }
+        }
+        let result = try await Auth.auth().signIn(with: credential)
+        return PermanentIdentityResult(uid: result.user.uid, keptAnonymousUID: result.user.uid == previousUID)
+        #else
+        throw BackendError.network
+        #endif
+    }
+
     /// Links the current anonymous account to an email/password credential.
     /// This upgrades the anonymous user to a permanent account while keeping the same UID.
     func linkAnonymousAccount(email: String, password: String) async throws -> String {
@@ -234,6 +255,8 @@ final class FirebaseService: GameBackend {
         return false
         #endif
     }
+
+    var isPermanentAccount: Bool { isLinkedToEmail }
 
     var currentUID: String? {
         #if canImport(FirebaseAuth)

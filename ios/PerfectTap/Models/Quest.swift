@@ -41,18 +41,18 @@ extension DailyQuest {
     static func generate(seed: Int) -> [DailyQuest] {
         // Deterministic quest pool based on seed
         let pool: [DailyQuest] = [
-            DailyQuest(id: "q_games_3",   title: "Game Starter",    description: "Play 3 games",             icon: "🎮", difficulty: .easy,   goal: 3,    metric: .games,       reward: 40),
-            DailyQuest(id: "q_games_5",   title: "Keep Playing",    description: "Play 5 games",             icon: "🕹️", difficulty: .easy,   goal: 5,    metric: .games,       reward: 50),
-            DailyQuest(id: "q_score_500", title: "Score Runner",    description: "Score 500 in one game",    icon: "⭐", difficulty: .easy,   goal: 500,  metric: .score,       reward: 50),
-            DailyQuest(id: "q_score_1000",title: "Score Hunter",    description: "Score 1000 in one game",   icon: "🌟", difficulty: .medium, goal: 1000, metric: .score,       reward: 80),
-            DailyQuest(id: "q_score_2000",title: "High Scorer",     description: "Score 2000 in one game",   icon: "💫", difficulty: .hard,   goal: 2000, metric: .score,       reward: 150),
-            DailyQuest(id: "q_combo_10",  title: "Chain Builder",   description: "Reach a 10x combo",        icon: "🔗", difficulty: .easy,   goal: 10,   metric: .combo,       reward: 40),
-            DailyQuest(id: "q_combo_20",  title: "Combo King",      description: "Reach a 20x combo",        icon: "⛓️", difficulty: .medium, goal: 20,   metric: .combo,       reward: 100),
-            DailyQuest(id: "q_combo_30",  title: "Combo Master",    description: "Reach a 30x combo",        icon: "💥", difficulty: .hard,   goal: 30,   metric: .combo,       reward: 200),
-            DailyQuest(id: "q_coins_100", title: "Coin Farmer",     description: "Earn 100 coins today",     icon: "🪙", difficulty: .easy,   goal: 100,  metric: .coins,       reward: 50),
-            DailyQuest(id: "q_perfect_20",title: "Perfect Touch",   description: "Hit 20 perfect taps",      icon: "🎯", difficulty: .medium, goal: 20,   metric: .perfects,    reward: 80),
-            DailyQuest(id: "q_duel_1",    title: "Duel Starter",    description: "Complete 1 duel",          icon: "⚔️", difficulty: .medium, goal: 1,    metric: .duels,       reward: 100),
-            DailyQuest(id: "q_sudden_300",title: "Death Defyer",    description: "Score 300 in Sudden Death",icon: "💀", difficulty: .hard,   goal: 300,  metric: .suddenScore, reward: 200),
+            DailyQuest(id: "q_games_3",   title: "Game Starter",    description: "Play 3 games",             icon: "🎮", difficulty: .easy,   goal: 3,    metric: .games,       reward: EconomyConfig.current.questReward(.easy, fallback: 40)),
+            DailyQuest(id: "q_games_5",   title: "Keep Playing",    description: "Play 5 games",             icon: "🕹️", difficulty: .easy,   goal: 5,    metric: .games,       reward: EconomyConfig.current.questReward(.easy, fallback: 50)),
+            DailyQuest(id: "q_score_500", title: "Score Runner",    description: "Score 500 in one game",    icon: "⭐", difficulty: .easy,   goal: 500,  metric: .score,       reward: EconomyConfig.current.questReward(.easy, fallback: 50)),
+            DailyQuest(id: "q_score_1000",title: "Score Hunter",    description: "Score 1000 in one game",   icon: "🌟", difficulty: .medium, goal: 1000, metric: .score,       reward: EconomyConfig.current.questReward(.medium, fallback: 80)),
+            DailyQuest(id: "q_score_2000",title: "High Scorer",     description: "Score 2000 in one game",   icon: "💫", difficulty: .hard,   goal: 2000, metric: .score,       reward: EconomyConfig.current.questReward(.hard, fallback: 150)),
+            DailyQuest(id: "q_combo_10",  title: "Chain Builder",   description: "Reach a 10x combo",        icon: "🔗", difficulty: .easy,   goal: 10,   metric: .combo,       reward: EconomyConfig.current.questReward(.easy, fallback: 40)),
+            DailyQuest(id: "q_combo_20",  title: "Combo King",      description: "Reach a 20x combo",        icon: "⛓️", difficulty: .medium, goal: 20,   metric: .combo,       reward: EconomyConfig.current.questReward(.medium, fallback: 100)),
+            DailyQuest(id: "q_combo_30",  title: "Combo Master",    description: "Reach a 30x combo",        icon: "💥", difficulty: .hard,   goal: 30,   metric: .combo,       reward: EconomyConfig.current.questReward(.hard, fallback: 200)),
+            DailyQuest(id: "q_coins_100", title: "Coin Farmer",     description: "Earn 100 coins today",     icon: "🪙", difficulty: .easy,   goal: 100,  metric: .coins,       reward: EconomyConfig.current.questReward(.easy, fallback: 50)),
+            DailyQuest(id: "q_perfect_20",title: "Perfect Touch",   description: "Hit 20 perfect taps",      icon: "🎯", difficulty: .medium, goal: 20,   metric: .perfects,    reward: EconomyConfig.current.questReward(.medium, fallback: 80)),
+            DailyQuest(id: "q_duel_1",    title: "Duel Starter",    description: "Complete 1 duel",          icon: "⚔️", difficulty: .medium, goal: 1,    metric: .duels,       reward: EconomyConfig.current.questReward(.medium, fallback: 100)),
+            DailyQuest(id: "q_sudden_300",title: "Death Defyer",    description: "Score 300 in Sudden Death",icon: "💀", difficulty: .hard,   goal: 300,  metric: .suddenScore, reward: EconomyConfig.current.questReward(.hard, fallback: 200)),
         ]
 
         // Pick 3 quests based on seed (deterministic)

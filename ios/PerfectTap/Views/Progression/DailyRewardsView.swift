@@ -10,7 +10,7 @@ struct DailyRewardsView: View {
     @State private var eligibilityMessage: String? = nil
     @State private var isClaiming = false
 
-    private let dayRewards = [25, 35, 50, 75, 100, 125, 250]   // coins per day in 7-day cycle
+    private let dayRewards = EconomyConfig.current.dailyRewards
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -153,6 +153,13 @@ struct DailyRewardsView: View {
         }
     }
 
+    /// Display-only estimate of the server streak for the pending label.
+    private func estimatedStreak(_ currentDay: String) -> Int {
+        guard !profile.dailyRewardLastClaim.isEmpty,
+              dayDelta(from: profile.dailyRewardLastClaim, to: currentDay) == 1 else { return 0 }
+        return profile.dailyRewardStreak
+    }
+
     private func dayDelta(from earlierDay: String, to laterDay: String) -> Int? {
         guard let earlier = Self.dayFormatter.date(from: earlierDay),
               let later = Self.dayFormatter.date(from: laterDay) else { return nil }
@@ -176,6 +183,29 @@ struct DailyRewardsView: View {
             : nil
         guard canClaim else { return }
 
+        let economy = EconomyManager.shared.service
+        if economy.isAuthoritative {
+            // Server computes the reward from its streak; nothing is credited locally.
+            let estimate = EconomyConfig.balancedPremiumRC1.dailyReward(streak: estimatedStreak(currentDay))
+            switch await economy.claimDailyReward(estimatedCoins: estimate) {
+            case .claimed(let coins):
+                profile = EconomyManager.shared.currentProfile()
+                claimedAmount = coins
+                withAnimation { showClaimed = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation { showClaimed = false }
+                }
+            case .alreadyClaimed:
+                profile = EconomyManager.shared.currentProfile()
+                eligibilityMessage = "Today's reward was already claimed."
+            case .queued:
+                eligibilityMessage = "Reward saved. It will be added when the server confirms it (shown as pending)."
+            case .failed(let code):
+                eligibilityMessage = EconomyErrorPolicy.userMessage(for: code)
+            }
+            return
+        }
+
         profile = EconomyManager.shared.updateProfile { profile in
             // Reset streak if the player missed a day (last claim was not yesterday)
             if !profile.dailyRewardLastClaim.isEmpty {
@@ -192,8 +222,8 @@ struct DailyRewardsView: View {
 
             let reward = dayRewards[profile.dailyRewardStreak % dayRewards.count]
             claimedAmount = reward  // store BEFORE incrementing streak
-            profile.coins += reward
-            profile.stats.totalCoinsEarned += reward
+            economy.recordGrant(.legacy(.dailyReward), legacyCoins: reward,
+                                countsTowardTotalEarned: true, profile: &profile)
             profile.dailyRewardStreak += 1
             profile.dailyRewardLastClaim = currentDay
         }

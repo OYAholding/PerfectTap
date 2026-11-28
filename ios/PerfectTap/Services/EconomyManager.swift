@@ -31,20 +31,27 @@ final class EconomyManager {
         PlayerProfile.load() ?? PlayerProfile()
     }
 
+    // MARK: - Economy service seam
+
+    /// The single coin source/sink seam. Tests inject a fake or a
+    /// `LedgerEconomyService` with an in-memory remote.
+    var service: EconomyService = LedgerEconomyService.shared
+
     // MARK: - Currency
 
-    /// Add coins to player profile (from gameplay, quests, purchases, etc.)
+    /// Add coins from a legacy entry point. Flag OFF: unchanged local credit.
+    /// Flag ON: no local mutation (each source has its own server path).
     func addCoins(_ amount: Int, source: CoinSource) {
-        guard amount > 0 else { return }
+        guard amount > 0, !service.isAuthoritative else { return }
         _ = updateProfile { profile in
-            profile.coins += amount
-            profile.stats.totalCoinsEarned += amount
+            self.service.recordGrant(.legacy(source), legacyCoins: amount,
+                                     countsTowardTotalEarned: true, profile: &profile)
         }
     }
 
-    /// Spend coins (for shop purchases). Returns true if successful.
+    /// Spend coins locally. Flag ON: refused — spending is server-side only.
     func spendCoins(_ amount: Int) -> Bool {
-        guard amount > 0 else { return false }
+        guard amount > 0, !service.isAuthoritative else { return false }
         var didSpend = false
         _ = updateProfile { profile in
             guard profile.coins >= amount else { return }
@@ -54,9 +61,9 @@ final class EconomyManager {
         return didSpend
     }
 
-    /// Current coin balance
+    /// Current coin balance (flag ON: the server-confirmed balance).
     var coinBalance: Int {
-        currentProfile().coins
+        service.spendableBalance(profile: currentProfile())
     }
 
     // MARK: - Item Ownership
@@ -67,9 +74,13 @@ final class EconomyManager {
         return isOwned(itemID, in: profile)
     }
 
-    private func isOwned(_ itemID: String, in profile: PlayerProfile) -> Bool {
+    func isOwned(_ itemID: String, in profile: PlayerProfile) -> Bool {
+        Self.isOwned(itemID, in: profile)
+    }
+
+    nonisolated static func isOwned(_ itemID: String, in profile: PlayerProfile) -> Bool {
         // Free items are always owned
-        if let item = ShopItem.allItems.first(where: { $0.id == itemID }), item.isFree {
+        if let item = ShopItem.item(id: itemID), item.isFree {
             return true
         }
         return profile.ownedItems.contains(itemID)
@@ -84,9 +95,20 @@ final class EconomyManager {
         }
     }
 
-    /// Buy an item with coins. Returns true if purchase succeeded.
+    /// Remove an item after a refund / revoked purchase. Unequips it.
+    func revokeItem(_ itemID: String) {
+        _ = updateProfile { profile in
+            profile.ownedItems.removeAll { $0 == itemID }
+            if itemID.hasPrefix("theme_"), profile.equippedTheme == ShopItem.themeName(forID: itemID) {
+                profile.equippedTheme = "default"
+            }
+        }
+    }
+
+    /// Buy an item with coins locally (legacy path). Returns true if purchase
+    /// succeeded. Premium skins are only sold through StoreKit. Flag ON: refused.
     func buyItem(_ item: ShopItem) -> Bool {
-        guard !item.isFree else { return false }
+        guard !item.isFree, !item.isPremium, !service.isAuthoritative else { return false }
         var purchased = false
         _ = updateProfile { profile in
             guard !self.isOwned(item.id, in: profile) else { return }
@@ -100,6 +122,11 @@ final class EconomyManager {
         return purchased
     }
 
+    /// Shop entry point for both rollout paths.
+    func buyItemForCurrentRollout(_ item: ShopItem) async -> Bool {
+        await service.purchaseItem(item)
+    }
+
     // MARK: - Equip
 
     func equipItem(_ item: ShopItem) {
@@ -107,8 +134,7 @@ final class EconomyManager {
         _ = updateProfile { profile in
             switch item.category {
             case .themes:
-                let themeName = item.id.replacingOccurrences(of: "theme_", with: "")
-                profile.equippedTheme = themeName
+                profile.equippedTheme = ShopItem.themeName(forID: item.id)
             case .tapFX:
                 profile.equippedTapFX = item.id
             case .trails:
@@ -124,11 +150,13 @@ final class EconomyManager {
     }
 
     func isEquipped(_ item: ShopItem) -> Bool {
-        let profile = currentProfile()
+        isEquipped(item, in: currentProfile())
+    }
+
+    func isEquipped(_ item: ShopItem, in profile: PlayerProfile) -> Bool {
         switch item.category {
         case .themes:
-            let themeName = item.id.replacingOccurrences(of: "theme_", with: "")
-            return profile.equippedTheme == themeName
+            return profile.equippedTheme == ShopItem.themeName(forID: item.id)
         case .tapFX:   return profile.equippedTapFX == item.id
         case .trails:  return profile.equippedTrail == item.id
         case .badges:  return profile.equippedBadge == item.id
@@ -147,7 +175,8 @@ final class EconomyManager {
     // MARK: - Revive Eligibility
 
     /// Check if revive is available for the current session.
-    /// Limit: 1 revive per game (no daily cap).
+    /// Session guard: one revive per game. The rewarded placement separately
+    /// enforces the owner-candidate cap of three verified claims per server day.
     func canRevive(mode: GameMode, hasUsedReviveThisGame: Bool) -> Bool {
         guard mode.supportsRevive else { return false }
         guard !hasUsedReviveThisGame else { return false }
@@ -166,6 +195,32 @@ final class EconomyManager {
         }
     }
 
+    /// Refunded Remove Ads purchase.
+    func revokeNoAds() {
+        _ = updateProfile { profile in
+            profile.noAds = false
+        }
+    }
+
+    /// Refunded coin pack: remove the credited coins, never below zero.
+    func debitCoins(_ amount: Int) {
+        guard amount > 0 else { return }
+        service.applyPurchasedCoins(-amount)
+    }
+
+    /// StoreKit entry point used by PurchaseManager. Coin effects go through
+    /// the economy service (flag ON: the server ledger credits/debits them).
+    func apply(_ effect: EntitlementEffect) {
+        switch effect {
+        case .creditCoins(let n): if n > 0 { service.applyPurchasedCoins(n) }
+        case .debitCoins(let n):  debitCoins(n)
+        case .grantNoAds:         grantNoAds()
+        case .revokeNoAds:        revokeNoAds()
+        case .grantItem(let id):  grantItem(id)
+        case .revokeItem(let id): revokeItem(id)
+        }
+    }
+
 }
 
 // MARK: - Coin Sources (for analytics/tracking)
@@ -177,4 +232,5 @@ enum CoinSource: String {
     case quest          // Daily quest
     case dailyReward    // Daily login reward
     case wheelSpin      // Lucky wheel
+    case rewardedAd     // Optional, capped rewarded placement
 }

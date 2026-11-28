@@ -38,6 +38,11 @@ struct GameResult {
     var newAchievements: [Achievement]
     var isNewBest: Bool
     var isDuelSession: Bool = false
+    /// Timing statistics for this round (nil if no taps). On-device only.
+    var metrics: SessionMetrics? = nil
+    /// Authoritative economy only: outbox key of this round's gameplay/duel
+    /// event (coins are pending until the server confirms). Nil on the legacy path.
+    var economyEventKey: UUID? = nil
 }
 
 // MARK: - Indicator relay (separate ObservableObject for 60fps updates)
@@ -71,6 +76,8 @@ final class GameViewModel: ObservableObject {
     @Published var zenTotal: Int = 0
     @Published var speedLevel: Int = 1
     @Published var tapBarPerfectZoneScale: Double = 1.0
+    /// Signed error of the last tap in ms (Practice Session only; nil elsewhere).
+    @Published private(set) var lastTapErrorMs: Double? = nil
 
     // MARK: Indicator position — separate observable
     // Updated at 60fps by CADisplayLink. Uses a separate IndicatorRelay object
@@ -94,6 +101,13 @@ final class GameViewModel: ObservableObject {
     /// Game fact (not lifecycle state): at most one revive per session.
     private var hasUsedRevive: Bool = false
     private var perfectsInFirst20Ref: Int = 0
+    /// Signed timing error (ms) of every scored tap, for SessionMetrics.
+    private var tapErrorsMs: [Double] = []
+    private var hitsRef: Int = 0
+    /// The round was ended with QUIT (not by its timer or lives).
+    private var endedByQuit = false
+    /// Mode timer length, captured once at setup (Practice reads it from settings).
+    private var timerDurationRef: Double = 0
     /// Server-issued session (Cloud Function `startGame`), requested at GO.
     private var scoreSessionTask: Task<String?, Never>? = nil
     private var duelSessionTask: Task<String?, Never>? = nil
@@ -163,7 +177,13 @@ final class GameViewModel: ObservableObject {
         self.combo = 0
         self.comboRef = 0
         self.maxComboRef = 0
-        self.timeLeft = mode.hasTimer ? mode.timerDuration : GameConfig.timedDuration
+        self.timerDurationRef = mode.timerDuration
+        self.timeLeft = mode.hasTimer ? timerDurationRef : GameConfig.timedDuration
+        self.tapErrorsMs = []
+        self.tapErrorsMs.reserveCapacity(512)
+        self.hitsRef = 0
+        self.endedByQuit = false
+        self.lastTapErrorMs = nil
         self.positionRef = 0.0
         self.directionRef = 1.0
         self.hasUsedRevive = false
@@ -205,6 +225,12 @@ final class GameViewModel: ObservableObject {
         }
 
         phase = .countdown(Self.countdownStart)
+        if Perf.probeEnabled {
+            FrameMonitor.shared.noteGameStarted()
+            FrameMonitor.shared.isInGameplay = true
+            FrameMonitor.shared.context = "countdown:\(mode.rawValue)"
+        }
+        AdManager.shared.isGameplayActive = true
         soundEngine?.play(.countdown)
         // The display link drives the countdown too, so it honours suspension
         // (previously an asyncAfter chain kept running in the background).
@@ -252,7 +278,10 @@ final class GameViewModel: ObservableObject {
             duelSessionTask = nil
         }
         phase = .playing
-        AnalyticsService.logGameStart(mode: mode.rawValue)
+        if Perf.probeEnabled { FrameMonitor.shared.context = "playing:\(mode.rawValue)" }
+        Perf.measure("analytics.gameStart") {
+            AnalyticsService.logGameStart(mode: mode.rawValue)
+        }
     }
 
     /// playing → revive | finished.
@@ -300,6 +329,7 @@ final class GameViewModel: ObservableObject {
 
     /// any (countdown | playing | revive) → finished. Quit button.
     func quit() {
+        if phase != .finished { endedByQuit = true }
         finish()
     }
 
@@ -308,7 +338,15 @@ final class GameViewModel: ObservableObject {
         guard phase != .finished else { return }
         phase = .finished
         displayLink?.invalidate()
-        finalizeAndReport()
+        if Perf.probeEnabled {
+            FrameMonitor.shared.isInGameplay = false
+            FrameMonitor.shared.context = "roundEnd:\(mode.rawValue)"
+        }
+        AdManager.shared.isGameplayActive = false
+        PerfRoundEnd.pending = Perf.begin("nav.roundEndToGameOver")
+        Perf.measure("game.finish") {
+            finalizeAndReport()
+        }
     }
 
     // MARK: - CADisplayLink game loop (60fps)
@@ -387,7 +425,7 @@ final class GameViewModel: ObservableObject {
         if mode == .mirror {
             let flipChance = min(GameConfig.mirrorFlipCap,
                                  GameConfig.mirrorBaseFlipChance + elapsed * GameConfig.mirrorFlipGrowth)
-            if Double.random(in: 0...1) < flipChance {
+            if Double.random(in: 0...1) < Self.mirrorFlipProbability(perFrameAt60Hz: flipChance, delta: delta) {
                 directionRef *= -1
             }
             speedRef = max(GameConfig.mirrorSpeedFloor,
@@ -405,10 +443,12 @@ final class GameViewModel: ObservableObject {
         // Timed / Rush: count down
         if mode.hasTimer {
             let elapsed = playElapsed - timerBonus
-            let duration = mode.timerDuration
+            let duration = timerDurationRef
             let remaining = max(0, duration - elapsed)
-            // Only publish when it changes visually (every ~0.1s) to reduce re-renders
-            if abs(timeLeft - remaining) >= 0.09 || remaining <= 0 {
+            // Publish only when the displayed whole second changes: the HUD shows
+            // ceil(timeLeft), and every publish re-renders the whole GameView
+            // (was ~11×/s, now 1×/s).
+            if ceil(timeLeft) != ceil(remaining) || remaining <= 0 {
                 timeLeft = remaining
             }
 
@@ -431,6 +471,15 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    /// The Mirror flip chance was tuned as a per-frame probability at 60 fps.
+    /// Applied per frame it made difficulty depend on frame rate (120 Hz =
+    /// twice the flips; a dropped frame = fewer). Convert to the equivalent
+    /// probability for the real elapsed time: identical at exactly 60 fps.
+    nonisolated static func mirrorFlipProbability(perFrameAt60Hz p: Double, delta: Double) -> Double {
+        guard p > 0, delta > 0 else { return 0 }
+        return 1 - pow(1 - min(p, 1), delta * 60)
+    }
+
     // MARK: - Tap handler
     /// - Parameter touchTimestamp: the UITouch timestamp (same clock as
     ///   CADisplayLink: CACurrentMediaTime). When provided, the tap is scored at
@@ -443,6 +492,7 @@ final class GameViewModel: ObservableObject {
         let tapStartedAt = CACurrentMediaTime()
         defer {
             let tapElapsedMs = (CACurrentMediaTime() - tapStartedAt) * 1000
+            if Perf.probeEnabled { FrameMonitor.shared.recordSpan("game.tap", ms: tapElapsedMs) }
             if tapElapsedMs >= perfTapThresholdMs {
                 print("[Perf][Tap] \(String(format: "%.2f", tapElapsedMs))ms mode=\(mode.rawValue)")
             }
@@ -484,6 +534,9 @@ final class GameViewModel: ObservableObject {
                                              perfectScale: dynamicPerfectScale,
                                              strictPerfectOnly: mode == .precision)
         let points = TimingEngine.basePoints(for: accuracy)
+        let errorMs = SessionMetrics.signedErrorMs(position: pos, direction: dirAtTap, speed: speedRef)
+        tapErrorsMs.append(errorMs)
+        if accuracy != .miss { hitsRef += 1 }
 
         // Combo
         let prevCombo = comboRef
@@ -639,6 +692,7 @@ final class GameViewModel: ObservableObject {
         lastTapAccuracy = accuracy
         lastTapTiming = accuracy == .perfect ? nil : TimingEngine.timing(position: pos, direction: dirAtTap)
         lastTapPoints = finalPoints
+        if mode == .practice { lastTapErrorMs = errorMs }
         tapSequence &+= 1
     }
 
@@ -649,9 +703,27 @@ final class GameViewModel: ObservableObject {
         let isNewBest = scoreRef > profile.bestScore(for: mode) && scoreRef > 0
         profile.updateBestScore(scoreRef, for: mode)
 
+        // Every coin grant below goes through the economy seam: flag OFF it is
+        // the unchanged local arithmetic; flag ON it only enqueues outbox events
+        // (in memory + one small file write, at round end — never per tap).
+        let economy = EconomyManager.shared.service
+        let hasValidDuelContext = duelContext?.mode == mode && !(duelContext?.duelId.isEmpty ?? true)
         var coinsEarned = 0
         coinsEarned = GameConfig.calcGameCoins(score: scoreRef, maxCombo: maxComboRef, mode: mode)
-        if coinsEarned > 0 { profile.coins += coinsEarned }
+        var gameplayEventKey: UUID? = nil
+        if mode.earnCoins {
+            let grant: EconomyGrant
+            if hasValidDuelContext, let duelID = duelContext?.duelId {
+                grant = .duel(duelID: duelID)
+            } else {
+                grant = .gameplay(GameplayFacts(
+                    mode: mode, score: scoreRef, maxCombo: maxComboRef, perfects: perfectCountRef,
+                    taps: totalTapsRef, durationMs: Int(playElapsed * 1_000), playedAt: Date(),
+                    sessionID: UUID().uuidString.lowercased()))
+            }
+            gameplayEventKey = economy.recordGrant(grant, legacyCoins: coinsEarned,
+                                                   countsTowardTotalEarned: false, profile: &profile)
+        }
 
         profile.stats.totalGames += 1
         if maxComboRef > profile.stats.highestCombo { profile.stats.highestCombo = maxComboRef }
@@ -694,7 +766,8 @@ final class GameViewModel: ObservableObject {
         let newAchievements = Achievement.check(gameData: gameData, profile: profile)
         for ach in newAchievements {
             profile.achievements.append(ach.id)
-            profile.coins += ach.reward
+            economy.recordGrant(.achievement(id: ach.id), legacyCoins: ach.reward,
+                                countsTowardTotalEarned: false, profile: &profile)
         }
 
         if !profile.activeChallenge.isEmpty,
@@ -709,9 +782,10 @@ final class GameViewModel: ObservableObject {
             ) {
                 profile.completedChallenges.append(challenge.id)
                 let reward = Challenge.parseReward(challenge.rewardLabel)
-                profile.coins += reward.coins
-                profile.stats.totalCoinsEarned += reward.coins
-                if let theme = reward.theme, !profile.ownedItems.contains(theme) {
+                economy.recordGrant(.challenge(id: challenge.id), legacyCoins: reward.coins,
+                                    countsTowardTotalEarned: true, profile: &profile)
+                // Flag ON: the server adds the theme with the challenge grant.
+                if !economy.isAuthoritative, let theme = reward.theme, !profile.ownedItems.contains(theme) {
                     profile.ownedItems.append(theme)
                 }
                 profile.activeChallenge = ""
@@ -721,8 +795,10 @@ final class GameViewModel: ObservableObject {
         var quests = DailyQuest.loadSaved() ?? DailyQuest.generateForToday()
         DailyQuest.updateProgress(quests: &quests, score: scoreRef, maxCombo: maxComboRef,
                                   mode: mode, coinsEarned: coinsEarned, perfects: perfectCountRef)
+        let questDay = EconomyDates.utcDay()
         for i in quests.indices where quests[i].completed && !quests[i].rewardClaimed {
-            profile.coins += quests[i].reward
+            economy.recordGrant(.quest(id: quests[i].id, difficulty: quests[i].difficulty, serverDay: questDay),
+                                legacyCoins: quests[i].reward, countsTowardTotalEarned: false, profile: &profile)
             quests[i].rewardClaimed = true
         }
         DailyQuest.save(quests: quests)
@@ -734,13 +810,15 @@ final class GameViewModel: ObservableObject {
         if let lvl = leveledUp { AnalyticsService.logLevelUp(newLevel: lvl) }
         for ach in newAchievements { AnalyticsService.logAchievementUnlocked(achievementId: ach.id) }
 
-        let hasValidDuelContext = duelContext?.mode == mode && !(duelContext?.duelId.isEmpty ?? true)
         let isDuelSession = hasValidDuelContext
+        let metrics = makeSessionMetrics()
+        if let metrics { SessionMetricsStore.shared.record(metrics) }
         let result = GameResult(
             score: scoreRef, maxCombo: maxComboRef, mode: mode,
             coinsEarned: coinsEarned, xpEarned: xpEarned,
             leveledUp: leveledUp, newAchievements: newAchievements, isNewBest: isNewBest,
-            isDuelSession: isDuelSession
+            isDuelSession: isDuelSession, metrics: metrics,
+            economyEventKey: economy.isAuthoritative ? gameplayEventKey : nil
         )
 
         Task {
@@ -762,12 +840,44 @@ final class GameViewModel: ObservableObject {
         }
 
         onGameFinished?(result)
+        // Off the render path: the flush starts after the Game Over transition.
+        economy.scheduleFlush(reason: .gameOver)
+    }
+
+    /// Timing statistics for the round just finished. Internal for tests.
+    func makeSessionMetrics() -> SessionMetrics? {
+        let key = mode == .practice
+            ? PracticeSession.protocolKey(duration: Int(timerDurationRef))
+            : mode.rawValue
+        return SessionMetrics.compute(mode: mode, protocolKey: key, durationSec: playElapsed,
+                                      errorsMs: tapErrorsMs, hits: hitsRef,
+                                      perfects: perfectCountRef, completed: !endedByQuit)
+    }
+
+    /// True when the clock is not running although the round is unfinished —
+    /// e.g. a full-screen cover (consent form, ad) made GameView disappear and
+    /// `cleanup()` stopped the display link.
+    var needsLoopRestart: Bool {
+        phase != .finished && displayLink == nil
+    }
+
+    /// GameView re-appeared after an interruption: restart the clock. A round
+    /// that was mid-play gets the usual short 3-2-1 instead of resuming instantly.
+    /// Previously nothing restarted the link and the screen stayed frozen.
+    func resumeAfterViewReappeared() {
+        guard needsLoopRestart else { return }
+        if Perf.probeEnabled { FrameMonitor.shared.isInGameplay = true }
+        AdManager.shared.isGameplayActive = true
+        startGameLoop()
+        if phase == .playing { startResumeCountdown() }
     }
 
     // MARK: - Cleanup
     /// View teardown. Stops the clock; the display link was the only driver of
     /// countdown and gameplay, so nothing can advance the phase afterwards.
     func cleanup() {
+        if Perf.probeEnabled { FrameMonitor.shared.isInGameplay = false }
+        AdManager.shared.isGameplayActive = false
         displayLink?.invalidate()
         displayLink = nil
         displayLinkProxy = nil
@@ -783,6 +893,7 @@ final class GameViewModel: ObservableObject {
 
     func appDidBecomeActive() {
         guard isSuspended else { return }
+        if Perf.probeEnabled { FrameMonitor.shared.context = "resumed:\(mode.rawValue)" }
         isSuspended = false
         lastTimestamp = 0   // first frame after resume has delta 0
         if phase == .playing { startResumeCountdown() }
@@ -810,6 +921,16 @@ final class GameViewModel: ObservableObject {
         if abs(tapBarPerfectZoneScale - newScale) > 0.0001 {
             tapBarPerfectZoneScale = newScale
         }
+    }
+}
+
+/// Holds the open "round end → Game Over visible" interval across views.
+@MainActor
+enum PerfRoundEnd {
+    static var pending: PerfInterval?
+    static func complete() {
+        pending?.end()
+        pending = nil
     }
 }
 

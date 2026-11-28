@@ -3,7 +3,7 @@ import XCTest
 /// Guideline 5.1.2(i): the ATT prompt must appear before any tracking, and the app must
 /// keep working whatever the user answers. Runs the real system prompt (Springboard).
 /// Real ads stay off (`-PTUITestNoAds`); `-PTUITestConsentFlow` enables the consent flow.
-/// Uses the Debug backend like ModeRuntimeQATests (one anonymous test player).
+/// Uses the offline backend: nothing is written to the production Supabase project.
 final class TrackingConsentUITests: XCTestCase {
 
     private let app = XCUIApplication()
@@ -12,7 +12,7 @@ final class TrackingConsentUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app.resetAuthorizationStatus(for: .userTracking)
-        app.launchArguments += ["-PTUITestNoAds", "-PTUITestConsentFlow"]
+        app.launchArguments += ["-PTUITestNoAds", "-PTUITestConsentFlow", "-PTUITestOfflineBackend"]
     }
 
     func test_deny_tracking_gameplay_still_available() {
@@ -49,8 +49,14 @@ final class TrackingConsentUITests: XCTestCase {
         XCTAssertTrue(trackingAlert.label.contains("Perfect Tap") || trackingAlert.staticTexts.count > 0)
         let buttons = trackingAlert.buttons
         XCTAssertEqual(buttons.count, 2, "unexpected alert: \(trackingAlert.debugDescription)")
-        buttons.element(boundBy: allow ? 1 : 0).tap()
-        XCTAssertTrue(trackingAlert.waitForNonExistence(timeout: 5))
+        let choice = buttons.element(boundBy: allow ? 1 : 0)
+        choice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        if !trackingAlert.waitForNonExistence(timeout: 3), choice.exists {
+            // Springboard occasionally consumes the first synthesized tap while
+            // the localized ATT sheet is still settling on the simulator.
+            choice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(trackingAlert.waitForNonExistence(timeout: 8))
     }
 
     private func reachHome() {

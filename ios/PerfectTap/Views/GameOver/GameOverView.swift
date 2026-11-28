@@ -15,6 +15,7 @@ struct GameOverView: View {
     @State private var xpBarProgress: Double = 0
     @State private var isWatchingAd = false
     @State private var didDoubleCoins = false
+    @State private var doubleCoinsUnavailableToday = false
     /// Blocks double taps on PLAY AGAIN / HOME while the (async) post-game
     /// interstitial check runs — otherwise two GameViews could be pushed.
     @State private var isNavigating = false
@@ -76,6 +77,8 @@ struct GameOverView: View {
         }
         .navigationBarHidden(true)
         .onAppear {
+            PerfRoundEnd.complete()
+            if Perf.probeEnabled { FrameMonitor.shared.context = "gameOver" }
             withAnimation(.easeOut(duration: 0.8).delay(0.4)) {
                 xpBarProgress = profile.xp > 0 ? Double(profile.xp) / Double(GameConfig.xpForLevel(profile.level)) : 0
             }
@@ -136,16 +139,18 @@ struct GameOverView: View {
                     statCard(icon: "trophy.fill", label: "BEST", value: "\(profile.bestScore(for: result.mode))", color: .yellow)
                     statCard(icon: "bolt.fill",  label: "COMBO", value: "×\(result.maxCombo)",                   color: Color(red: 0.22, green: 0.82, blue: 0.98))
                     if result.coinsEarned > 0 {
-                        statCard(icon: "dollarsign.circle.fill", label: "EARNED", value: "+\(result.coinsEarned)", color: Color(red: 0.98, green: 0.73, blue: 0.26))
+                        statCard(icon: "dollarsign.circle.fill", label: result.economyEventKey == nil ? "EARNED" : "PENDING", value: "+\(result.coinsEarned)", color: Color(red: 0.98, green: 0.73, blue: 0.26))
                     }
                 }
+            } else if result.mode == .practice {
+                practiceSummary
             } else {
                 VStack(spacing: 10) {
                     Text("NO SCORE MODE")
                         .font(.system(size: 18, weight: .black))
                         .tracking(2)
                         .foregroundColor(.white.opacity(0.75))
-                    Text("This mode is about consistency and focus, not points.")
+                    Text("This mode is about the feel of timing, not points.")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.45))
                         .multilineTextAlignment(.center)
@@ -159,6 +164,44 @@ struct GameOverView: View {
                 .fill(Color.white.opacity(0.04))
                 .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.08)))
         )
+    }
+
+    // MARK: - Practice Session summary (game statistics, not a medical measure)
+    @ViewBuilder
+    private var practiceSummary: some View {
+        VStack(spacing: 14) {
+            if let m = result.metrics {
+                Text("±\(Int(m.sdErrorMs.rounded())) ms")
+                    .font(.system(size: 56, weight: .black, design: .monospaced))
+                    .foregroundColor(.white)
+                Text("TIMING SPREAD (LOWER = MORE CONSISTENT)")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundColor(.white.opacity(0.4))
+                HStack(spacing: 12) {
+                    statCard(icon: "scope", label: "AVG OFF", value: "\(Int(m.meanAbsErrorMs.rounded())) ms", color: Color(red: 0.22, green: 0.82, blue: 0.98))
+                    statCard(icon: "checkmark.circle.fill", label: "HITS", value: "\(Int((m.hitRate * 100).rounded()))%", color: Color(red: 0.29, green: 0.86, blue: 0.50))
+                    statCard(icon: "hand.tap.fill", label: "TAPS", value: "\(m.taps)", color: .white.opacity(0.7))
+                }
+                Text(PracticeSummary.biasText(m.meanSignedErrorMs))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+            } else {
+                Text("No taps recorded this session.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            Button { router.replaceStack(with: [.timingProgress]) } label: {
+                Label("SEE YOUR TREND", systemImage: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 12, weight: .black))
+                    .tracking(1.5)
+                    .foregroundColor(Color(red: 0.36, green: 0.85, blue: 0.90))
+            }
+            Text(PracticeSummary.disclaimer)
+                .font(.system(size: 10))
+                .foregroundColor(.white.opacity(0.35))
+                .multilineTextAlignment(.center)
+        }
     }
 
     private func statCard(icon: String, label: String, value: String, color: Color) -> some View {
@@ -265,16 +308,30 @@ struct GameOverView: View {
     private var actionButtons: some View {
         VStack(spacing: 12) {
             // Double Coins (watch ad)
-            if result.coinsEarned > 0 && !didDoubleCoins {
+            if result.coinsEarned > 0 && !didDoubleCoins && !doubleCoinsUnavailableToday {
                 Button {
                     guard !isWatchingAd else { return }
                     isWatchingAd = true
                     Task {
-                        let watched = await AdManager.shared.showRewardedAd(placement: .doubleCoins)
+                        let verification = await Backend.shared.authoritativeDayVerification(forceRefresh: true)
+                        guard let day = verification.dayKey,
+                              RewardClaimLimiter.shared.canClaim(.doubleCoins, day: day, userID: Backend.shared.currentUID) else {
+                            isWatchingAd = false
+                            doubleCoinsUnavailableToday = true
+                            return
+                        }
+                        let economy = EconomyManager.shared.service
+                        let claimIndex = RewardClaimLimiter.shared.nextClaimIndex(
+                            for: .doubleCoins, day: day, userID: Backend.shared.currentUID)
+                        // SSV grant = the referenced gameplay grant, once (contract).
+                        let ssv = economy.rewardedVerification(
+                            for: .doubleCoins, claimIndex: claimIndex, referenceEventKey: result.economyEventKey)
+                        let watched = await AdManager.shared.showRewardedAd(placement: .doubleCoins,
+                                                                            verification: ssv)
                         isWatchingAd = false
-                        if watched {
+                        if watched, RewardClaimLimiter.shared.record(.doubleCoins, day: day, userID: Backend.shared.currentUID) {
                             didDoubleCoins = true
-                            EconomyManager.shared.addCoins(result.coinsEarned, source: .gameplay)
+                            economy.rewardedAdCompleted(.doubleCoins, legacyCoins: result.coinsEarned)
                             profile = PlayerProfile.load() ?? PlayerProfile()
                         }
                     }
@@ -285,7 +342,7 @@ struct GameOverView: View {
                         } else {
                             Image(systemName: "play.rectangle.fill")
                                 .font(.system(size: 16))
-                            Text("DOUBLE COINS (+\(result.coinsEarned))")
+                            Text("WATCH OPTIONAL AD — DOUBLE COINS (+\(result.coinsEarned))")
                                 .font(.system(size: 15, weight: .black))
                                 .tracking(1)
                         }
@@ -342,10 +399,7 @@ struct GameOverView: View {
                     gameOverAdFlowLog("Button tapped: SEE DUEL RESULTS")
                     navigateWithPostGameInterstitial {
                         gameOverAdFlowLog("Navigation start: SEE DUEL RESULTS")
-                        router.popToRoot()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            router.push(.duelResults)
-                        }
+                        router.replaceStack(with: [.duelResults])
                     }
                 } label: {
                     HStack(spacing: 10) {
@@ -372,12 +426,9 @@ struct GameOverView: View {
                     gameOverAdFlowLog("Button tapped: PLAY AGAIN")
                     navigateWithPostGameInterstitial {
                         gameOverAdFlowLog("Navigation start: PLAY AGAIN")
-                        // Pop to root first, then push game — prevents unbounded nav stack growth
+                        // One stack replacement — bounded stack, Home not re-mounted in between.
                         DuelContext.clear()
-                        router.popToRoot()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            router.push(.game(result.mode))
-                        }
+                        router.replaceStack(with: [.game(result.mode)])
                     }
                 } label: {
                     HStack(spacing: 10) {
@@ -439,7 +490,8 @@ struct GameOverView: View {
         case .invisibleZone: return "REVEALED"
         case .chaos:         return "CHAOS ENDED"
         case .tinyWindow:    return "WINDOW CLOSED"
-        case .focus:         return "FOCUS SESSION COMPLETE"
+        case .focus:         return "SESSION COMPLETE"
+        case .practice:      return "PRACTICE COMPLETE"
         case .zen:           return "SESSION COMPLETE"
         default:             return "GAME OVER"
         }
