@@ -1,18 +1,19 @@
--- QA (Agent E) — reproduces a pre-existing defect in private.purchase_economy_item
--- (supabase/migrations/20261125130443_authoritative_economy_ledger.sql).
+-- QA-01 REGRESSION TEST (was: Agent E's reproduction of a defect in
+-- private.purchase_economy_item, 20261125130443_authoritative_economy_ledger.sql).
 --
--- When apply_economy_delta() sees an event_key that was already used it returns
--- status 'duplicate' and charges nothing — but purchase_economy_item() then still
--- calls set_profile_item() for the NEW item id. Replaying an old event key with a
--- different item therefore grants that item for free.
+-- The defect: apply_economy_delta() answered `duplicate` for a reused event_key
+-- (no charge) and purchase_economy_item() still granted the NEW item, so
+-- replaying an old key with a different item granted it for free.
 --
--- Also checks that the PROPOSED bundle RPC (supabase/proposals/) does not have the
--- defect, when the proposal file is applied on top (second half, optional).
+-- FIXED on release/1.2.0 by supabase/migrations/20261127110000_economy_hardening.sql
+-- (finding C1): a replay of the SAME purchase returns `duplicate`; reusing the key
+-- for a different item fails `invalid_payload` and grants / charges nothing.
+-- The server fix lives only there (also covered by
+-- supabase/tests/database/economy_hardening.test.sql); this file only asserts it.
 --
--- Run ONLY against a throwaway database with every migration applied, e.g.
---   docker run -d --name qa-pg -p 127.0.0.1:55790:5432 -e POSTGRES_PASSWORD=x public.ecr.aws/supabase/postgres:17.11.0.018
---   (apply supabase/migrations/*.sql in order, then this file with psql)
--- Everything runs in one transaction and is rolled back.
+-- Run ONLY against a throwaway database with every release/1.2.0 migration
+-- applied (see supabase/proposals/README.md for the container recipe), then this
+-- file with psql. Everything runs in one transaction and is rolled back.
 begin;
 create extension if not exists pgtap with schema extensions;
 do $$
@@ -21,7 +22,7 @@ begin
   select n.nspname into s from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pgtap';
   perform set_config('search_path', 'public, ' || quote_ident(coalesce(s, 'extensions')), false);
 end $$;
-select plan(7);
+select plan(10);
 
 insert into auth.users (id, email, aud, role) values
   ('eeeeeeee-0000-0000-0000-000000000001', 'qa-dup@test.local', 'authenticated', 'authenticated');
@@ -53,18 +54,24 @@ select is((purchase_economy_item('e0000000-0000-0000-0000-000000000001', 'theme_
   'applied', 'first purchase (theme_neon, 250) applied');
 select is((get_my_economy_state()->>'confirmedBalance')::bigint, 750::bigint, 'charged 250 once');
 
--- Replay the SAME event key with a DIFFERENT, more expensive item.
-select is((purchase_economy_item('e0000000-0000-0000-0000-000000000001', 'theme_matrix')->>'status'),
-  'duplicate', 'reused event key is reported as duplicate');
+-- Replay the SAME event key with a DIFFERENT, more expensive item: refused.
+select throws_ok($$ select purchase_economy_item('e0000000-0000-0000-0000-000000000001', 'theme_matrix') $$,
+  'P0001', 'invalid_payload', 'QA-01: reused event key with a different item is refused (invalid_payload)');
+select is((get_my_economy_state()->>'confirmedBalance')::bigint, 750::bigint, 'QA-01: refused replay charged nothing');
+select ok(not coalesce(get_my_profile()->'owned_items' ? 'theme_matrix', false),
+  'QA-01: reused event key does NOT grant a different item');
+
+-- Replay of the SAME purchase stays idempotent.
+select is((purchase_economy_item('e0000000-0000-0000-0000-000000000001', 'theme_neon')->>'status'),
+  'duplicate', 'replaying the same purchase is a duplicate');
 select is((get_my_economy_state()->>'confirmedBalance')::bigint, 750::bigint, 'duplicate charged nothing');
 
--- EXPECTED (secure): a duplicate grants nothing. This assertion FAILS on the
--- current migrations: theme_matrix (2500 coins) is granted for free.
-select ok(not (get_my_profile()->'owned_items' ? 'theme_matrix'),
-  'duplicate event key must NOT grant a different item (fails = defect present)');
-
--- Sanity: the original item is owned.
+-- Sanity: the original item is owned, exactly one debit recorded.
 select ok(get_my_profile()->'owned_items' ? 'theme_neon', 'original item owned');
+select pg_temp.as_admin();
+select is((select count(*)::int from private.economy_events
+           where user_id = 'eeeeeeee-0000-0000-0000-000000000001' and source = 'shop_purchase'), 1,
+  'exactly one shop debit');
 
 select * from finish();
 rollback;

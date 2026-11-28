@@ -21,6 +21,17 @@ Owner: Agent D (shop / economy integration). Contract: `INTEGRATION_CONTRACT.md`
   ownership first and then call `CosmeticLoadoutStore.shared.equip`. They
   refuse unowned items and change nothing. `isEquipped` means the stored loadout,
   checked against the profile's ownership, renders this item in its slot.
+- **Canonical items only (QA-13).** `isCosmeticOwned`, `canPurchaseCosmetic` and
+  `ShopItem.cosmetic(_:)` look up the catalog copy (`CosmeticCatalog.item(id:)`). They never
+  trust a caller-supplied `isDefault`, `collectionID`, price or availability. A value
+  that claims a different slot or collection than the catalog is refused
+  (`EconomyManager.canonicalCosmetic` returns nil). A forged value "claiming default" for a
+  paid id is not owned.
+- **Lookups are O(1) (QA-17).** `ShopItem.allItems` is a stored `static let` with
+  an id index (`ShopItem.item(id:)`, `cosmeticPrice`). `isCosmeticEquipped(_:in: profile)`
+  checks only the stored selection of the item's own slot. Views that already hold
+  `CosmeticLoadoutStore.shared.resolved` can call
+  `EconomyManager.isCosmeticEquipped(_:in: resolved)`, which is a dictionary lookup.
 
 ## 2. Fair bundle policy (implemented)
 
@@ -73,12 +84,22 @@ round(1,100 × 1,320 / 1,620) = **896**.
   is not the confirmed one, and `insufficientCoins` when the balance is too low. Otherwise it
   deducts **once**, appends every missing id (no duplicates) and makes **one**
   `persistProfile` call (the same local save + cloud sync as `updateProfile`). Then it refreshes the loadout store.
-- **Re-entrancy:** `cosmeticPurchaseInFlight` returns `.inProgress` for a second call that
-  starts while the first is running. Double taps are idempotent: the second call finds
-  everything owned, returns `.alreadyOwned` and charges nothing.
-  `expectedPrice` makes sure the player is never charged a price they did not
-  confirm. If ownership changed between the confirmation dialog and the purchase,
-  the call returns `priceChanged` and charges nothing.
+- **Double charges (QA-18).** There is no in-flight flag. The former
+  `cosmeticPurchaseInFlight` was a no-op: `purchaseCosmetics` is synchronous and
+  `@MainActor`, so two calls can never interleave. Four things actually prevent a double charge:
+  1. serial execution: check, deduct, grant and persist run with no suspension point, so the
+     next call reads the updated profile;
+  2. the ownership re-check: a repeat finds nothing missing, returns `.alreadyOwned` and
+     charges nothing;
+  3. `expectedPrice`: if ownership or price changed after the confirmation, the call returns
+     `.priceChanged` and charges nothing;
+  4. `CosmeticPurchaseFlow.isPurchasing`, which drops a second `confirm` while one
+     is running. This matters for the async single-item path, whose `legacyBuy` re-checks
+     ownership as well.
+  `.inProgress` is still in the result enum (for `CosmeticPurchaseFlow`'s switch) but is
+  never returned. A future asynchronous server bundle path must add its own
+  in-flight guard and idempotency key. Tests: `CosmeticQATests.testDoubleConfirmOfSingleItemChargesOnce`,
+  `CosmeticEconomyHardeningTests.testDoubleConfirmOfBundleChargesOnce`.
 - Analytics: on success the existing `AnalyticsService.logShopItemBought` fires,
   with the item id or bundle id and the coins charged. This is the same event the legacy shop sends.
 
@@ -97,7 +118,9 @@ purchase:
   **"Preview only — coming soon"**, and the Studio tab shows a banner. Preview and
   equipping already-owned items keep working.
 - Server proposal (not applied): `supabase/proposals/2026112800_cosmetic_studio_catalog.sql`
-  plus `README.md`.
+  plus `README.md`. It was rebased onto the release/1.2.0 hardening migration. It also registers
+  the cosmetic ids (disabled) under every config, so that while the authoritative economy is on, a
+  client profile save cannot add them to `owned_items` (F1).
 
 ## 4. Preview isolation
 
@@ -116,6 +139,8 @@ the encoded PlayerProfile, the coins and the loadout store are all unchanged.
 ## 5. Known limitations / follow-ups
 
 - Cross-device loadout sync needs the PlayerProfile change from contract §6. Ownership already syncs.
+  The proposed field, merge rule and server validation are in `LOADOUT_SYNC_CONTRACT.md`.
+  The pure helpers are in `Models/Cosmetics/CosmeticLoadoutSync.swift` (not wired).
 - No haptic preview in the Studio yet. Agent C's `HapticsEngine` routing could add a
   "Feel" button.
 - Authoritative prices for cosmetics exist only in the SQL proposal. The client's
