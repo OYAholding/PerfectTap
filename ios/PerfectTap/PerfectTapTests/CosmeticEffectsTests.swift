@@ -200,6 +200,147 @@ final class CosmeticEffectsTests: XCTestCase {
         XCTAssertLessThanOrEqual(flashes.count, 7)
     }
 
+    // MARK: Core Animation timeline (QA-02)
+
+    private var allSpecs: [CosmeticBurstSpec] {
+        var out: [CosmeticBurstSpec] = []
+        for item in catalogEffectItems {
+            for mode in [CosmeticEffectMode.full, .reduced] {
+                for seq in [1, 2, 99] { if let s = spec(for: item, mode: mode, sequence: seq) { out.append(s) } }
+            }
+        }
+        return out
+    }
+
+    /// The sampled tracks are exactly the frame function: every primitive the
+    /// painter would draw at a sample time is in its track, and nothing else.
+    func testTimelineReproducesTheFrameFunction() {
+        for s in allSpecs {
+            let (times, tracks) = CosmeticEffectTimeline.tracks(for: s)
+            XCTAssertEqual(times.first, 0); XCTAssertEqual(times.last, 1)
+            XCTAssertGreaterThanOrEqual(Double(times.count - 1), s.lifetime * CosmeticEffectTimeline.sampleRate - 1e-9)
+            XCTAssertLessThanOrEqual(tracks.count, CosmeticEffectBounds.maxPrimitivesPerBurst, "\(s.style)")
+            XCTAssertEqual(Set(tracks.map(\.id)).count, tracks.count, "track ids unique")
+            for (k, t) in times.enumerated() {
+                let drawn = CosmeticEffectFrames.primitives(for: s, progress: t).filter { $0.opacity > CosmeticEffectTimeline.minOpacity }
+                let sampled = tracks.compactMap { $0.samples[k] }
+                XCTAssertEqual(Set(drawn.map(\.track)).count, drawn.count, "\(s.style) t=\(t): duplicate track id in one frame")
+                XCTAssertEqual(sampled.count, drawn.count, "\(s.style) t=\(t)")
+                for p in drawn { XCTAssertTrue(sampled.contains(p), "\(s.style) t=\(t) \(p.kind)") }
+            }
+            for track in tracks {
+                for p in track.samples.compactMap({ $0 }) {
+                    XCTAssertEqual(p.kind, track.kind); XCTAssertEqual(p.colorIndex, track.colorIndex)
+                    XCTAssertEqual(p.additive, track.additive)
+                }
+                XCTAssertEqual(track.opacity(at: times.count - 1), 0, "every track ends invisible")
+                XCTAssertEqual(track.filledSamples.count, times.count)
+            }
+        }
+    }
+
+    /// Back-to-front order of the tracks matches the painter's drawing order in every frame.
+    func testTimelineKeepsDrawingOrder() {
+        for s in allSpecs {
+            let (times, tracks) = CosmeticEffectTimeline.tracks(for: s)
+            let rank = Dictionary(uniqueKeysWithValues: tracks.enumerated().map { ($1.id, $0) })
+            for t in times {
+                let order = CosmeticEffectFrames.primitives(for: s, progress: t)
+                    .filter { $0.opacity > CosmeticEffectTimeline.minOpacity }.compactMap { rank[$0.track] }
+                XCTAssertEqual(order, order.sorted(), "\(s.style) t=\(t)")
+            }
+        }
+    }
+
+    @MainActor
+    func testCALayerTreeIsBoundedAndSelfAnimating() {
+        for s in allSpecs {
+            let tree = CosmeticEffectCARenderer.makeLayer(spec: s, radius: 90, center: CGPoint(x: 200, y: 600),
+                                                          elapsed: 0, screenScale: 3)
+            let tracks = tree.sublayers ?? []
+            XCTAssertLessThanOrEqual(tracks.count, CosmeticEffectBounds.maxPrimitivesPerBurst)
+            XCTAssertEqual(tracks.count, CosmeticEffectTimeline.tracks(for: s).tracks.count)
+            for layer in tracks {
+                for key in ["position", "transform", "opacity"] {
+                    let a = layer.animation(forKey: key) as? CAKeyframeAnimation
+                    XCTAssertNotNil(a, "\(s.style) \(key)")
+                    XCTAssertEqual(a?.duration ?? 0, s.lifetime, accuracy: 1e-9)
+                }
+                XCTAssertEqual(layer.opacity, 0, "model value is the (empty) end state")
+                XCTAssertLessThanOrEqual(layer.sublayers?.count ?? 0, 3)
+            }
+        }
+    }
+
+    /// Warming covers every sprite a burst can draw, so a tap never rasterises.
+    @MainActor
+    func testWarmCoversEverySpriteAFiringBurstUses() {
+        let atlas = CosmeticShapeSpriteAtlas.shared
+        for collection in ["quack_attack", "purrfect_tap", "boom_mode"] {
+            var loadout = CosmeticLoadout()
+            loadout.apply(collection: CosmeticCatalog.collection(id: collection)!)
+            let resolved = ResolvedCosmetics.resolve(loadout, isOwned: { _ in true })
+            atlas.removeAll()
+            atlas.warm(CosmeticEffectAssets.spriteKeys(for: resolved), screenScale: 3)
+            for event in CosmeticEvent.allCases {
+                for level in [EffectsLevel.full, .reduced] {
+                    for seq in [3, 4, 5] {
+                        guard let s = CosmeticEffectPlanner.spec(resolved: resolved, trigger: CosmeticEffectTrigger(event: event, sequence: seq),
+                                                                 level: level) else { continue }
+                        _ = CosmeticEffectCARenderer.makeLayer(spec: s, radius: 90, center: .zero, elapsed: 0, screenScale: 3)
+                    }
+                }
+            }
+            XCTAssertEqual(atlas.syncMisses, 0, "\(collection): a sprite was rasterised at fire time")
+        }
+    }
+
+    func testShapeSpritesRasterise() {
+        let c = CosmeticRGBA(r: 1, g: 0.5, b: 0.2)
+        let shapes: [CosmeticSpriteKey.Shape] = [.glow, .droplet, .streak, .streakCore, .star, .twinkle, .puff, .puffStroked,
+                                                 .burst, .dot, .featherFallback]
+        for shape in shapes {
+            let key = CosmeticSpriteKey(shape: shape, color: c, color2: CosmeticRGBA(r: 1, g: 1, b: 0))
+            let image = CosmeticShapeRasterizer.image(key, scale: 2)
+            XCTAssertNotNil(image, "\(shape)")
+            XCTAssertEqual(CGFloat(image?.width ?? 0), (key.canvas.width * 2).rounded(.up), accuracy: 1, "\(shape)")
+        }
+    }
+
+    /// The host keeps at most two burst trees and drops each when it ends.
+    @MainActor
+    func testHostViewIsBoundedAndIdlesWhenDone() {
+        let host = CosmeticEffectHostView(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        let item = CosmeticCatalog.item(id: "quack_attack.tapEffect")!
+        var q = CosmeticBurstQueue()
+        let now = Date().timeIntervalSinceReferenceDate
+        for i in 1...4 {
+            q.push(spec(for: item, mode: .full, sequence: i)!, id: i, at: now)
+            host.sync(q.bursts, now: now)
+            XCTAssertLessThanOrEqual(host.liveBurstCount, CosmeticEffectBounds.maxConcurrentBursts)
+            XCTAssertLessThanOrEqual(host.layer.sublayers?.count ?? 0, CosmeticEffectBounds.maxConcurrentBursts)
+        }
+        // Already-finished bursts are never (re)added.
+        let late = CosmeticEffectHostView(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        late.sync(q.bursts, now: now + 5)
+        XCTAssertEqual(late.liveBurstCount, 0)
+        host.sync([], now: now)
+        XCTAssertEqual(host.liveBurstCount, 0)
+        XCTAssertTrue(host.layer.sublayers?.isEmpty ?? true)
+        let gone = expectation(description: "tree removed after its lifetime")
+        q.removeAll()
+        q.push(spec(for: item, mode: .full, sequence: 9)!, id: 9, at: now)
+        host.sync(q.bursts, now: now)
+        XCTAssertEqual(host.liveBurstCount, 1)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (spec(for: item, mode: .full)!.lifetime + 0.3)) {
+            XCTAssertEqual(host.liveBurstCount, 0)
+            gone.fulfill()
+        }
+        wait(for: [gone], timeout: 3)
+        XCTAssertFalse(host.isUserInteractionEnabled)
+        XCTAssertTrue(host.accessibilityElementsHidden)
+    }
+
     // MARK: Visual QA (opt-in)
 
     /// Renders a filmstrip per collection when TEST_RUNNER_PT_EFFECT_FILMSTRIP_DIR is set
