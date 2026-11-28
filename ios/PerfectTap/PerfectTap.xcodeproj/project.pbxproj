@@ -81,6 +81,7 @@
 		7090E1A18FB68AFA101A7545 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 946E4BF59404191A9E2C2DF9 /* GoogleService-Info.plist */; };
 		70BE372EF3941AB38A73F383 /* quack_attack_good_v2.caf in Resources */ = {isa = PBXBuildFile; fileRef = 2529053F88CED05CC4B688C6 /* quack_attack_good_v2.caf */; };
 		76CD747A939FDF3E3A682F01 /* boom_mode_lifeLost.caf in Resources */ = {isa = PBXBuildFile; fileRef = 185404CE21873AC6091C5C20 /* boom_mode_lifeLost.caf */; };
+		777B81450897D6B601A00BF6 /* CosmeticLoadoutSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E03C6ED3C448512CCD5CFA8 /* CosmeticLoadoutSync.swift */; };
 		7C5443B3DBF64C6BDF65802A /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6D3450CFE33A0B375A5B9D /* AppRouter.swift */; };
 		8147FDC8D2E7FB561FCC0C25 /* CosmeticEffectLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 861B27A6BA38A7C071658BBF /* CosmeticEffectLayer.swift */; };
 		81883FA7FEB5987F535EBF13 /* FriendDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38AF5DD8F1F1A59913B28ED8 /* FriendDetailView.swift */; };
@@ -147,6 +148,7 @@
 		DD540EF8DDE124CA7828A42D /* AdManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC219F16D11B4A20869DC746 /* AdManager.swift */; };
 		DFC30E95FE10244BDC3688E0 /* SetUsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5743C0587E2AA0DE2A228632 /* SetUsernameView.swift */; };
 		E3D45BCA84AD6F72B9BEC1E7 /* quack_attack_great_v2.caf in Resources */ = {isa = PBXBuildFile; fileRef = 811D97FACDD4DA524044FF2B /* quack_attack_great_v2.caf */; };
+		E93F986911BF6F73ED3CE571 /* CosmeticEconomyHardeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7478B988DDDC71BD138D7016 /* CosmeticEconomyHardeningTests.swift */; };
 		EE0A2737B24B631FFDE99888 /* DuelLobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AB144655DBE70DAD84BC758 /* DuelLobbyView.swift */; };
 		EE17B897592BE4BBDCEB18D7 /* BackendCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2754EC3C8C3DAFD69C770B5 /* BackendCodecTests.swift */; };
 		EF915D8F1D2B60F4C47ACE46 /* Duel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271370FE4E4C5B3A2AFE4210 /* Duel.swift */; };
@@ -217,6 +219,7 @@
 		185404CE21873AC6091C5C20 /* boom_mode_lifeLost.caf */ = {isa = PBXFileReference; path = boom_mode_lifeLost.caf; sourceTree = "<group>"; };
 		19581BED35BE4B63D0B38ACB /* boom_mode_tap.caf */ = {isa = PBXFileReference; path = boom_mode_tap.caf; sourceTree = "<group>"; };
 		1A8FC689866162402B344D47 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		1E03C6ED3C448512CCD5CFA8 /* CosmeticLoadoutSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CosmeticLoadoutSync.swift; sourceTree = "<group>"; };
 		1F19064322EEC58A61CCBCE2 /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 		20FD533043DB51B7BA04E556 /* boom_mode_miss.caf */ = {isa = PBXFileReference; path = boom_mode_miss.caf; sourceTree = "<group>"; };
 		2529053F88CED05CC4B688C6 /* quack_attack_good_v2.caf */ = {isa = PBXFileReference; path = quack_attack_good_v2.caf; sourceTree = "<group>"; };
@@ -260,6 +263,7 @@
 		72098502BDE8B021E2D907AE /* quack_attack_good_v3.caf */ = {isa = PBXFileReference; path = quack_attack_good_v3.caf; sourceTree = "<group>"; };
 		729B65091672749BC9495B84 /* EconomyFollowupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconomyFollowupTests.swift; sourceTree = "<group>"; };
 		7360A518FAF9C17C987B6751 /* boom_mode_gameOver.caf */ = {isa = PBXFileReference; path = boom_mode_gameOver.caf; sourceTree = "<group>"; };
+		7478B988DDDC71BD138D7016 /* CosmeticEconomyHardeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CosmeticEconomyHardeningTests.swift; sourceTree = "<group>"; };
 		7539EAD42771C9D0F85CC093 /* purrfect_tap_miss.caf */ = {isa = PBXFileReference; path = purrfect_tap_miss.caf; sourceTree = "<group>"; };
 		788832A8C3713EBCBE16BCDD /* CosmeticStudioShopSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CosmeticStudioShopSection.swift; sourceTree = "<group>"; };
 		7952A5493EC9D1FE66767438 /* GameplayPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameplayPerformanceTests.swift; sourceTree = "<group>"; };
@@ -409,6 +413,7 @@
 				443E680D3FDA294FEE80B8F3 /* BalancedEconomyTests.swift */,
 				69354A2F4E975FB7571BF152 /* ConsentFlowTests.swift */,
 				CDC3A22C2B0142DE34A89A3D /* CosmeticAudioTests.swift */,
+				7478B988DDDC71BD138D7016 /* CosmeticEconomyHardeningTests.swift */,
 				0C91154C5DDE6BABA6E3F58B /* CosmeticEffectsTests.swift */,
 				AE36DC1843F84D423FBCBFE4 /* CosmeticGameplayIntegrationTests.swift */,
 				0B5ECE384218FAC010C71329 /* CosmeticLoadoutTests.swift */,
@@ -766,6 +771,7 @@
 			children = (
 				D50D4E4FE3E7FBF8127F96C1 /* CosmeticCatalog.swift */,
 				80F8735F859569B7FB0F098A /* CosmeticLoadoutStore.swift */,
+				1E03C6ED3C448512CCD5CFA8 /* CosmeticLoadoutSync.swift */,
 				EAA38510432CDB1298A1A926 /* CosmeticModels.swift */,
 			);
 			path = Cosmetics;
@@ -1030,6 +1036,7 @@
 				D050D7398BD9EC10A77B3585 /* CosmeticEffectPainter.swift in Sources */,
 				AE014049A6FA236894695FD9 /* CosmeticGameplayViews.swift in Sources */,
 				9D528193613B8841E8DE0EF8 /* CosmeticLoadoutStore.swift in Sources */,
+				777B81450897D6B601A00BF6 /* CosmeticLoadoutSync.swift in Sources */,
 				6C484A46F4E4A52EE8A240F9 /* CosmeticModels.swift in Sources */,
 				08157918E4393D7A1B879728 /* CosmeticPreviewStudioView.swift in Sources */,
 				AEB40A3761EE32BE1B140682 /* CosmeticPurchaseFlow.swift in Sources */,
@@ -1116,6 +1123,7 @@
 				F85622C6DD74A09BD1E9B723 /* BalancedEconomyTests.swift in Sources */,
 				4EB36449BD47BD8F7DF1D7BD /* ConsentFlowTests.swift in Sources */,
 				1056E68B2C75AE973B797190 /* CosmeticAudioTests.swift in Sources */,
+				E93F986911BF6F73ED3CE571 /* CosmeticEconomyHardeningTests.swift in Sources */,
 				9ED3B57D20106BCD897B6E81 /* CosmeticEffectsTests.swift in Sources */,
 				0B032FDFDFA90C55840E47BC /* CosmeticGameplayIntegrationTests.swift in Sources */,
 				448095B06C0F57BF0E191DAC /* CosmeticLoadoutTests.swift in Sources */,
