@@ -64,7 +64,9 @@ struct ShopItem: Identifiable {
         return avatars.first(where: { $0.id == canonical })?.icon ?? "😊"
     }
 
-    static func item(id: String) -> ShopItem? { allItems.first { $0.id == id } }
+    /// O(1): `itemsByID` is built once from `allItems` (QA-17). First entry wins
+    /// for a duplicated id, exactly like the former `allItems.first { $0.id == id }`.
+    static func item(id: String) -> ShopItem? { itemsByID[id] }
     static func item(productID: String) -> ShopItem? { premium.first { $0.premiumProductID == productID } }
 }
 
@@ -162,10 +164,15 @@ extension ShopItem {
     }
 
     /// All items across all categories (premium and cosmetics included, for
-    /// ownership lookups, legacy buy, restore and sync).
-    static var allItems: [ShopItem] {
+    /// ownership lookups, legacy buy, restore and sync). Stored once (QA-17):
+    /// every component is itself a `static let`, so prices were already fixed at
+    /// first access and concatenating them on every call only cost time.
+    static let allItems: [ShopItem] =
         themes + premium + tapFX + trails + badges + avatars + cosmetics + cosmeticDefaults
-    }
+
+    /// Id index over `allItems` (first occurrence wins).
+    private static let itemsByID: [String: ShopItem] =
+        Dictionary(allItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 }
 
 // MARK: - Cosmetic Studio bridge
@@ -196,13 +203,19 @@ extension ShopItem {
     }
 
     /// Shop item for a catalog item (nil only for unknown ids).
+    /// Looked up by id in the catalog (O(1)); a caller-built value whose
+    /// slot / collection disagree with the catalog's copy gets nil (QA-13).
     static func cosmetic(_ item: CosmeticItem) -> ShopItem? {
-        item.isDefault ? cosmeticDefaults.first { $0.id == item.id } : cosmetics.first { $0.id == item.id }
+        guard let canonical = CosmeticCatalog.item(id: item.id),
+              canonical.slot == item.slot, canonical.collectionID == item.collectionID,
+              let shopItem = itemsByID[item.id], shopItem.category == .cosmetics else { return nil }
+        return shopItem
     }
 
-    /// Live coin price of a cosmetic item (0 for defaults).
+    /// Live coin price of a cosmetic item (0 for defaults and unknown ids). O(1).
     static func cosmeticPrice(_ itemID: String) -> Int {
-        cosmetics.first { $0.id == itemID }?.price ?? 0
+        guard let shopItem = itemsByID[itemID], shopItem.category == .cosmetics else { return 0 }
+        return shopItem.price
     }
 
     /// Live price of a full bundle (nothing owned yet).

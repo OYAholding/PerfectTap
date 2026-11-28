@@ -182,20 +182,27 @@ final class EconomyManager {
 
     // MARK: - Cosmetic Studio (docs/cosmetics/OWNERSHIP_AND_ECONOMY.md)
 
-    /// Re-entrancy guard: one cosmetic coin purchase at a time (double taps,
-    /// a confirmation dialog confirmed twice, Studio + sheet racing).
-    private var cosmeticPurchaseInFlight = false
-
     /// Cosmetic coin purchases exist only on the legacy (local) economy. With
     /// the authoritative economy ON the server catalog does not know these ids
     /// (`item_unavailable`) — the Studio shows them as "Preview only".
     /// Proposal for the server side: supabase/proposals/.
     var cosmeticPurchasesAvailable: Bool { !service.isAuthoritative }
 
+    /// The catalog's copy of `item` (QA-13). Ownership, price and availability
+    /// are decided on this copy, never on fields of a caller-built value.
+    /// nil when the id is unknown or the value claims another slot/collection
+    /// than the catalog (a forged value is refused, not reinterpreted).
+    nonisolated static func canonicalCosmetic(_ item: CosmeticItem) -> CosmeticItem? {
+        guard let canonical = CosmeticCatalog.item(id: item.id),
+              canonical.slot == item.slot, canonical.collectionID == item.collectionID else { return nil }
+        return canonical
+    }
+
     /// The item can be bought with coins right now (not owned is checked separately).
     func canPurchaseCosmetic(_ item: CosmeticItem) -> Bool {
-        cosmeticPurchasesAvailable && !item.isDefault && item.availability == .available
-            && ShopItem.cosmeticPrice(item.id) > 0
+        guard cosmeticPurchasesAvailable, let canonical = Self.canonicalCosmetic(item) else { return false }
+        return !canonical.isDefault && canonical.availability == .available
+            && ShopItem.cosmeticPrice(canonical.id) > 0
     }
 
     func canPurchaseCosmeticBundle(_ bundle: CosmeticBundle) -> Bool {
@@ -206,16 +213,46 @@ final class EconomyManager {
         }
     }
 
+    /// Owned = the CATALOG item for this id is a free default, or the id is in
+    /// `ownedItems` (QA-13). A caller-supplied `isDefault` / `collectionID` is
+    /// never trusted: a forged value "claiming default" for a paid id is not owned.
     func isCosmeticOwned(_ item: CosmeticItem, in profile: PlayerProfile) -> Bool {
-        item.isDefault || Self.isOwned(item.id, in: profile)
+        Self.isCosmeticOwned(id: item.id, in: profile)
+    }
+
+    nonisolated static func isCosmeticOwned(id: String, in profile: PlayerProfile) -> Bool {
+        guard let canonical = CosmeticCatalog.item(id: id) else { return false }
+        return canonical.isDefault || isOwned(canonical.id, in: profile)
     }
 
     /// Equipped = what gameplay will actually render for that slot (the stored
-    /// selection validated against this profile's ownership).
+    /// selection validated against this profile's ownership). O(1) per call
+    /// (QA-17): only the stored selection of the item's own slot is validated —
+    /// the same rule `ResolvedCosmetics.resolve` applies per slot — instead of
+    /// resolving all nine slots for every card.
     func isCosmeticEquipped(_ item: CosmeticItem, in profile: PlayerProfile) -> Bool {
-        let loadout = CosmeticLoadoutStore.shared.loadout
-        let resolved = ResolvedCosmetics.resolve(loadout) { Self.isOwned($0, in: profile) }
-        return resolved.item(for: item.slot).id == item.id
+        Self.isCosmeticEquipped(item, loadout: CosmeticLoadoutStore.shared.loadout, in: profile)
+    }
+
+    nonisolated static func isCosmeticEquipped(_ item: CosmeticItem, loadout: CosmeticLoadout,
+                                               in profile: PlayerProfile) -> Bool {
+        guard let canonical = CosmeticCatalog.item(id: item.id), canonical.slot == item.slot else { return false }
+        let selectedID = loadout.itemID(for: canonical.slot)
+        let rendersSelection: Bool = {
+            guard let selected = CosmeticCatalog.item(id: selectedID), selected.slot == canonical.slot else { return false }
+            return selected.isDefault || isOwned(selectedID, in: profile)
+        }()
+        let renderedID = rendersSelection ? selectedID : CosmeticCatalog.defaultItemID(for: canonical.slot)
+        return renderedID == canonical.id
+    }
+
+    /// Cheapest check for views that already hold a resolved loadout (e.g.
+    /// `CosmeticLoadoutStore.shared.resolved`, read once per render): a
+    /// dictionary lookup, no ownership work at all. Same answer as
+    /// `isCosmeticEquipped(_:in: profile)` whenever `resolved` was resolved
+    /// against that profile.
+    nonisolated static func isCosmeticEquipped(_ item: CosmeticItem, in resolved: ResolvedCosmetics) -> Bool {
+        resolved.item(for: item.slot).id == item.id
     }
 
     /// Equip one cosmetic. Refuses (returns false, changes nothing) when not owned.
@@ -252,7 +289,9 @@ final class EconomyManager {
         case priceChanged(current: Int)
         /// Preview only (authoritative economy) or not purchasable.
         case unavailable
-        /// Another cosmetic purchase is still running.
+        /// Reserved; `purchaseCosmetics` never returns it today (see QA-18 note
+        /// there). Kept so `CosmeticPurchaseFlow`'s exhaustive switch and a
+        /// future asynchronous server path keep compiling.
         case inProgress
     }
 
@@ -298,12 +337,25 @@ final class EconomyManager {
             .reduce(0) { $0 + ShopItem.cosmeticPrice($1) }
     }
 
+    /// Double-charge protection (QA-18). There is deliberately no "in flight"
+    /// flag: this function is synchronous and `@MainActor`, so two calls can
+    /// never interleave — a flag set and cleared inside it could never be
+    /// observed by another caller. What actually prevents a double charge:
+    ///  1. Serial execution: check, deduct and grant run without a suspension
+    ///     point, and the profile is persisted before returning, so the next
+    ///     call (second tap, second confirmation Task) reads the updated profile.
+    ///  2. Ownership re-check: `plan` recomputes the missing ids from that fresh
+    ///     profile; a repeat finds nothing missing ⇒ `.alreadyOwned`, no charge.
+    ///  3. `expectedPrice`: if ownership or price changed after the player saw
+    ///     the confirmation, the computed price differs ⇒ `.priceChanged`, no charge.
+    ///  4. UI: `CosmeticPurchaseFlow.isPurchasing` drops a second `confirm` while
+    ///     one is running (it matters for the async single-item path,
+    ///     `buyItemForCurrentRollout`, whose legacy buy re-checks ownership too).
+    /// An asynchronous (server) bundle path must add its own in-flight guard and
+    /// an idempotency key; this function stays legacy/local only.
     private func purchaseCosmetics(expectedPrice: Int?,
                                    plan: (PlayerProfile) -> (missing: [String], price: Int)) -> CosmeticPurchaseResult {
         guard !service.isAuthoritative else { return .unavailable }
-        guard !cosmeticPurchaseInFlight else { return .inProgress }
-        cosmeticPurchaseInFlight = true
-        defer { cosmeticPurchaseInFlight = false }
 
         var profile = currentProfile()
         let (missing, price) = plan(profile)
