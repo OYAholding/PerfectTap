@@ -100,25 +100,48 @@ GameOverView.onAppear ─► one-shot CosmeticEffectLayer(.gameOver) overlay
 - **Art** is aspect-fit (emblem, life icons) or aspect-fill clipped to the
   capsule (button background) — never stretched.
 - **EffectsLevel.** `.off`: no glow (themed button shadow radius × 0), no
-  effects, no game-over overlay. `.reduced`: effect layers draw short static
-  fades (Agent B). Legacy particles keep their existing `showsParticles` gate.
-- **Effect placement.** Accuracy events originate at the TAP button (unit
-  point 0.5, 0.86) so the timing zones stay readable; life lost originates at
-  the lives HUD (0.82, 0.08). Two layers, so a miss that costs a life shows both.
+  effects, no game-over overlay. `.reduced` (and Reduce Motion): a single short
+  static fade per burst, no movement. Legacy particles keep their existing
+  `showsParticles` gate.
+- **Emblem layout (QA-09/QA-10).** `ThemedTapButtonLayout` (pure, tested) puts the
+  emblem inside the capsule with the art's flat-cut bottom on the capsule's bottom
+  edge (clipped, under the rim), centres the label in the remaining space, and
+  never lets art and label intersect: emblem shrinks first, then the font, and
+  only then is the emblem dropped (small Studio chips).
+- **Effect placement.** Accuracy events originate just above the TAP label
+  (unit point 0.5, 0.79) so neither the label nor the timing zones are covered;
+  life lost originates at the lives HUD, located with an anchor preference
+  (correct on iPad). Two layers, so a miss that costs a life shows both.
 - **Legacy particles.** Shown only while the Perfect Effect is
   `.legacyParticles` (default). If a themed Tap Effect is equipped too, legacy
   particles keep PERFECT only, so GREAT never shows two bursts.
+- **Effect renderer (QA-02).** Bursts are rendered with **Core Animation**, not a
+  SwiftUI Canvas. When a burst fires, `CosmeticEffectTimeline` samples the pure
+  frame model (`CosmeticEffectFrames`) once at 30 keyframes/s; `CosmeticEffectCARenderer`
+  turns each primitive track into one keyframed `CALayer` (shape layers for rings and
+  slashes, pre-rasterised sprites from `CosmeticShapeSpriteAtlas` for glows, stars,
+  puffs; additive blending kept). The animation then runs in the render server:
+  **zero main-thread work per frame**. `CosmeticEffectHostView` keeps ≤ 2 bursts and
+  removes each when it ends. The Canvas painter remains only as the reference
+  renderer for filmstrip tests.
 
 ## 6. Performance rules
 
 1. No disk I/O, JSON decoding, catalog scans or `UIImage(named:)` on the tap
-   path. The loadout is resolved once per round; `CosmeticImageCache.preload`
-   looks up every referenced image at bootstrap and memoises misses too.
-2. Resolve is O(slots) over in-memory data (`PlayerProfile.load()` is cached).
-3. Sound packs are selected/preloaded in `GameViewModel.setup` (before the
-   countdown). `playTapOutcome` only enqueues playback.
-4. Effects are bounded (≤ 24 particles, ≤ 1.2 s) and idle when finished
-   (Agent B's contract in `CosmeticEffectLayer.swift`).
+   path. The loadout is resolved once per round.
+2. Images and effect sprites are warmed **off the main thread** before play:
+   `CosmeticImageCache.warm` (decodes with `preparingForDisplay`) from Home appear
+   and GameView bootstrap; `CosmeticEffectAssets.warm` rasterises every sprite a
+   burst can use. Tests assert zero sprites are drawn at tap time.
+3. Resolve is O(slots) over in-memory data (`PlayerProfile.load()` is cached).
+4. Sound packs are selected/preloaded in `GameViewModel.setup` (before the
+   countdown) on a dedicated user-initiated decode queue; `playTapOutcome` only
+   enqueues playback. Until a pack is ready, taps fall back to the classic tones.
+5. Effects are bounded (≤ 24 primitives, ≤ 1.2 s, game over ≤ 1.8 s, ≤ 2 concurrent
+   bursts) and leave no layers behind.
+6. Measurements and rejected experiments: `docs/cosmetics/PERF_QA02.md`.
+   Simulator numbers only — a physical-device Instruments pass is required before
+   the flag is enabled in Release.
 
 ## 7. Gameplay isolation
 

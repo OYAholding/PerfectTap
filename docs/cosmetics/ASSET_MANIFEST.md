@@ -5,7 +5,6 @@
 > QA contact sheet: `design/cosmetics/previews/extracted_contact_sheet.png`.
 > **Replacing art:** see [`ART_REPLACEMENT_SPEC.md`](ART_REPLACEMENT_SPEC.md). It covers drawn sizes, canvas and pixel sizes, safe areas, file limits and the drop-in procedure (no code changes).
 > **Owner review page:** `design/cosmetics/review/index.html`, built by `python3 scripts/cosmetics/build_review_page.py`. It shows every asset @2x/@3x on dark and checkerboard tiles, plus the 33 sounds.
-> (These lines were added by hand. Re-running `extract_assets.swift` regenerates this file without them, so add them to the script's template.)
 
 **Source:** `design/cosmetics/source/theme_event_sheet_v1.webp` (1536×1024 concept sheet).
 **Licence / ownership:** owner-supplied concept art; **ownership and licence are not yet confirmed — the owner must confirm before release.**
