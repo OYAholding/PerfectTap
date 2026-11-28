@@ -34,13 +34,13 @@ final class CosmeticPurchaseFlow: ObservableObject {
         var title: String {
             switch self {
             case .item(let item, let price):
-                return "Unlock \(item.name) for \(price) coins?"
+                return "Unlock \(item.name) for \(CoinFormat.coins(price))?"
             case .bundle(let quote, let name):
                 return quote.ownedCount > 0
-                    ? "Complete \(name) for \(quote.completionPrice) coins?"
-                    : "Unlock \(name) bundle for \(quote.completionPrice) coins?"
+                    ? "Complete \(name) for \(CoinFormat.coins(quote.completionPrice))?"
+                    : "Unlock \(name) bundle for \(CoinFormat.coins(quote.completionPrice))?"
             case .items(let items, let price):
-                return "Unlock \(items.count) item\(items.count == 1 ? "" : "s") for \(price) coins?"
+                return "Unlock \(items.count) item\(items.count == 1 ? "" : "s") for \(CoinFormat.coins(price))?"
             }
         }
 
@@ -52,7 +52,7 @@ final class CosmeticPurchaseFlow: ObservableObject {
                 let missing = quote.missingItemIDs.count
                 var text = "Adds the \(missing) item\(missing == 1 ? "" : "s") you don't own yet."
                 if quote.ownedCount > 0 { text += " Items you already own are not charged again." }
-                if quote.savings > 0 { text += " Saves \(quote.savings) coins versus buying them one by one." }
+                if quote.savings > 0 { text += " Saves \(CoinFormat.coins(quote.savings)) versus buying them one by one." }
                 return text
             case .items(let items, _):
                 return items.map(\.name).joined(separator: ", ")
@@ -163,13 +163,13 @@ final class CosmeticPurchaseFlow: ObservableObject {
         case .purchased(let granted, let charged):
             AnalyticsService.logShopItemBought(itemId: analyticsID, price: charged)
             lastGranted = granted
-            message = "\(successName) unlocked for \(charged) coins."
+            message = "\(successName) unlocked for \(CoinFormat.coins(charged))."
         case .alreadyOwned:
             message = "You already own these items. Nothing was charged."
         case .insufficientCoins(let needed):
-            message = "Not enough coins. You need \(needed) more."
+            message = "Not enough coins. You need \(CoinFormat.string(needed)) more."
         case .priceChanged(let current):
-            message = "The price is now \(current) coins. Nothing was charged — please confirm again."
+            message = "The price is now \(CoinFormat.coins(current)). Nothing was charged — please confirm again."
         case .unavailable:
             showPreviewOnly()
         case .inProgress:
@@ -179,7 +179,7 @@ final class CosmeticPurchaseFlow: ObservableObject {
 
     private func ensureAffordable(_ price: Int, spendable: Int) -> Bool {
         guard spendable >= price else {
-            message = "Not enough coins. You need \(price - spendable) more."
+            message = "Not enough coins. You need \(CoinFormat.string(price - spendable)) more."
             return false
         }
         return true
@@ -209,7 +209,7 @@ private struct CosmeticPurchaseFlowModifier: ViewModifier {
                 isPresented: Binding(get: { flow.pending != nil }, set: { if !$0 { flow.pending = nil } }),
                 presenting: flow.pending
             ) { request in
-                Button("Unlock for \(request.price) coins") { Task { await flow.confirm(request) } }
+                Button("Unlock for \(CoinFormat.coins(request.price))") { Task { await flow.confirm(request) } }
                 Button("Cancel", role: .cancel) { flow.pending = nil }
             } message: { request in
                 Text(request.detail)

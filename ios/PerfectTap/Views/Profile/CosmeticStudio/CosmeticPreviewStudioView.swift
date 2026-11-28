@@ -86,7 +86,7 @@ final class CosmeticPreviewModel: ObservableObject {
         // Immediate feedback for what was just picked.
         switch item.slot {
         case .tapSound:       fire(.perfect)
-        case .tapEffect:      fire(.tap)
+        case .tapEffect:      fire(.good)
         case .perfectEffect:  fire(.perfect)
         case .missEffect:     fire(.miss)
         case .lifeLostEffect: fire(.lifeLost)
@@ -105,21 +105,71 @@ final class CosmeticPreviewModel: ObservableObject {
         resetLives()
     }
 
-    // MARK: Mock gameplay moments
+    // MARK: Mock gameplay moments (QA-08: the preview plays what gameplay plays)
 
-    func fire(_ event: CosmeticEvent) {
+    /// The gameplay moment a preview control imitates. Gameplay never emits
+    /// `.tap` (every scored tap has a grade), so the tap button stands for a
+    /// GOOD tap — the most common real tap.
+    static func gameplayEvent(forPreview event: CosmeticEvent) -> CosmeticEvent {
+        event == .tap ? .good : event
+    }
+
+    /// The scored-tap outcome gameplay would hand the audio policy for `event`
+    /// (nil for game over, which is not a tap).
+    static func gameplayOutcome(for event: CosmeticEvent) -> TapSoundOutcome? {
+        switch gameplayEvent(forPreview: event) {
+        case .tap, .good: return TapSoundOutcome(accuracy: .good)
+        case .great:      return TapSoundOutcome(accuracy: .great)
+        case .perfect:    return TapSoundOutcome(accuracy: .perfect)
+        case .miss:       return TapSoundOutcome(accuracy: .miss)
+        case .lifeLost:   return TapSoundOutcome(accuracy: .miss, lostLife: true)
+        case .gameOver:   return nil
+        }
+    }
+
+    /// The pack event to preview for `event`: whatever `CosmeticAudioPolicy`
+    /// picks for the same gameplay moment with `packID` (nil = gameplay is
+    /// silent there, e.g. the classic pack's game over). Never `.tap`.
+    static func soundEvent(forPreview event: CosmeticEvent, packID: String) -> CosmeticEvent? {
+        let cue: SoundCue
+        if let outcome = gameplayOutcome(for: event) {
+            cue = CosmeticAudioPolicy.cue(for: outcome, packID: packID)
+        } else {
+            cue = CosmeticAudioPolicy.gameOverCue(packID: packID)
+        }
+        switch cue {
+        case .pack(let packEvent): return packEvent
+        case .silent:              return nil
+        case .tone(let tone):
+            // Classic pack: previewSound maps these events back to the same tone
+            // (CosmeticAudioPolicy.defaultPreviewTone).
+            switch tone {
+            case .perfect, .comboMilestone: return .perfect
+            case .great:                    return .great
+            case .miss, .comboBreak:        return .miss
+            default:                        return .good
+            }
+        }
+    }
+
+    func fire(_ requested: CosmeticEvent) {
+        let event = Self.gameplayEvent(forPreview: requested)
         sequence += 1
         trigger = CosmeticEffectTrigger(event: event, sequence: sequence)
         if event == .perfect, item(for: .perfectEffect).assets.effectStyle == .legacyParticles {
             legacyParticleAccuracy = .perfect
             legacyParticleTrigger = UUID()
         }
-        playSound(event, resolved.soundPackID)
+        let packID = resolved.soundPackID
+        if let sound = Self.soundEvent(forPreview: event, packID: packID) {
+            playSound(sound, packID)
+        }
         // Haptic styles are sold too, so they must be feelable here (QA-03).
         playHaptic(event, resolved.hapticStyleID)
     }
 
-    func tap() { fire(.tap) }
+    /// The preview tap button: a GOOD tap, exactly as in gameplay.
+    func tap() { fire(.good) }
 
     func loseLife() {
         guard lives > 0 else { return }
@@ -165,6 +215,7 @@ struct CosmeticPreviewStudioView: View {
     @StateObject private var flow = CosmeticPurchaseFlow()
     @State private var profile: PlayerProfile = EconomyManager.shared.currentProfile()
     @State private var equipNote: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let relay: IndicatorRelay = {
         let r = IndicatorRelay()
@@ -179,10 +230,13 @@ struct CosmeticPreviewStudioView: View {
 
     private var spendable: Int { EconomyManager.shared.service.spendableBalance(profile: profile) }
     private var fallbackColors: [Color] { [themeManager.current.barGradient.0, themeManager.current.barGradient.1] }
-    private func isOwned(_ item: CosmeticItem) -> Bool { EconomyManager.shared.isCosmeticOwned(item, in: profile) }
+    private var isLarge: Bool { dynamicTypeSize.isAccessibilitySize }
 
     var body: some View {
-        ZStack {
+        // Ownership + prices once per render (QA-17); chips read plain values.
+        let state = CosmeticStudioRenderState.live(profile: profile, loadout: CosmeticLoadoutStore.shared.loadout,
+                                                   spendable: spendable)
+        return ZStack {
             StudioStyle.background.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
@@ -192,14 +246,14 @@ struct CosmeticPreviewStudioView: View {
                         momentButtons
                         collectionChips
                         ForEach(CosmeticSlot.allCases) { slot in
-                            slotPicker(slot)
+                            slotPicker(slot, state: state)
                         }
                         StudioDebugPriceNote()
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
                 }
-                bottomBar
+                bottomBar(state: state)
             }
         }
         .preferredColorScheme(.dark)
@@ -264,7 +318,7 @@ struct CosmeticPreviewStudioView: View {
             Button { model.tap() } label: { EmptyView() }
                 .buttonStyle(SkinPressStyle(item: resolved.item(for: .tapButton), colors: fallbackColors))
                 .accessibilityLabel("Tap button preview")
-                .accessibilityHint("Plays the tap effect and sound")
+                .accessibilityHint("Plays what a GOOD tap plays in a game: effect, sound and haptic")
         }
         .padding(14)
         .background(themeManager.current.backgroundColor)
@@ -287,27 +341,29 @@ struct CosmeticPreviewStudioView: View {
         .accessibilityHidden(true)
     }
 
+    /// Same anchors as gameplay: tap-accuracy bursts start at the button
+    /// (GameView uses y 0.79), a lost life at the lives HUD.
     private func origin(for event: CosmeticEvent?) -> UnitPoint {
         switch event {
         case .lifeLost: return UnitPoint(x: 0.85, y: 0.15)
         case .gameOver: return UnitPoint(x: 0.5, y: 0.5)
-        case .tap:      return UnitPoint(x: 0.5, y: 0.78)
-        default:        return UnitPoint(x: 0.5, y: 0.45)
+        default:        return UnitPoint(x: 0.5, y: 0.78)
         }
     }
 
+    /// One button per gameplay moment; each plays exactly what that moment
+    /// plays in a game (QA-08, AUDIO_POLICY §1a).
     private var momentButtons: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                momentButton("Perfect", "star.fill", StudioStyle.purple) { model.fire(.perfect) }
-                momentButton("Miss", "xmark.circle.fill", Color(red: 0.92, green: 0.27, blue: 0.27)) { model.fire(.miss) }
-                momentButton("Game Over", "flag.checkered", .white.opacity(0.7)) { model.fire(.gameOver) }
-            }
-            HStack(spacing: 8) {
-                momentButton("Lose a life", "heart.slash.fill", .pink) { model.loseLife() }
-                    .disabled(model.lives == 0)
-                momentButton("Reset", "arrow.counterclockwise", .white.opacity(0.7)) { model.resetLives() }
-            }
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: isLarge ? 1 : 3)
+        return LazyVGrid(columns: columns, spacing: 8) {
+            momentButton("Good", "hand.tap.fill", StudioStyle.green) { model.fire(.good) }
+            momentButton("Great", "hand.thumbsup.fill", Color(red: 0.22, green: 0.58, blue: 0.98)) { model.fire(.great) }
+            momentButton("Perfect", "star.fill", StudioStyle.purple) { model.fire(.perfect) }
+            momentButton("Miss", "xmark.circle.fill", Color(red: 0.92, green: 0.27, blue: 0.27)) { model.fire(.miss) }
+            momentButton("Lose a life", "heart.slash.fill", .pink) { model.loseLife() }
+                .disabled(model.lives == 0)
+            momentButton("Game Over", "flag.checkered", .white.opacity(0.7)) { model.fire(.gameOver) }
+            momentButton("Reset lives", "arrow.counterclockwise", .white.opacity(0.7)) { model.resetLives() }
         }
     }
 
@@ -316,7 +372,8 @@ struct CosmeticPreviewStudioView: View {
             Label(title, systemImage: icon)
                 .font(.caption.weight(.bold))
                 .foregroundColor(color)
-                .lineLimit(1).minimumScaleFactor(0.7)
+                .lineLimit(isLarge ? 2 : 1).minimumScaleFactor(isLarge ? 1 : 0.7)
+                .padding(.horizontal, 4)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background(color.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -337,7 +394,7 @@ struct CosmeticPreviewStudioView: View {
                                     .fill(LinearGradient(colors: StudioStyle.palette(collection.palette),
                                                          startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(width: 16, height: 16)
-                                Text(collection.name).font(.caption.weight(.bold))
+                                Text(collection.name).font(.caption.weight(.bold)).fixedSize()
                             }
                             .foregroundColor(.white)
                             .padding(.horizontal, 12)
@@ -353,22 +410,21 @@ struct CosmeticPreviewStudioView: View {
         }
     }
 
-    private func slotPicker(_ slot: CosmeticSlot) -> some View {
+    private func slotPicker(_ slot: CosmeticSlot, state: CosmeticStudioRenderState) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle(slot.title, icon: slot.systemImage)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(CosmeticCatalog.items(in: slot).filter { $0.availability != .hidden || isOwned($0) }) { item in
-                        chip(item)
+                    ForEach(CosmeticCatalog.items(in: slot).filter { $0.availability != .hidden || state.isOwned($0) }) { item in
+                        chip(item, owned: state.isOwned(item), price: state.price(item))
                     }
                 }
             }
         }
     }
 
-    private func chip(_ item: CosmeticItem) -> some View {
+    private func chip(_ item: CosmeticItem, owned: Bool, price: Int) -> some View {
         let selected = model.isSelected(item)
-        let owned = isOwned(item)
         let collectionName = CosmeticCatalog.collection(id: item.collectionID)?.name ?? ""
         return Button { model.select(item) } label: {
             VStack(spacing: 4) {
@@ -389,7 +445,7 @@ struct CosmeticPreviewStudioView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .accessibilityLabel("\(item.name), \(collectionName)")
-        .accessibilityValue(owned ? (item.isDefault ? "Free" : "Owned") : "Locked, \(ShopItem.cosmeticPrice(item.id)) coins")
+        .accessibilityValue(owned ? (item.isDefault ? "Free" : "Owned") : "Locked, \(CoinFormat.coins(price))")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -402,39 +458,45 @@ struct CosmeticPreviewStudioView: View {
 
     // MARK: Bottom bar
 
-    private var bottomBar: some View {
-        let unowned = model.unownedItems(isOwned: isOwned)
+    private func bottomBar(state: CosmeticStudioRenderState) -> some View {
+        let unowned = model.unownedItems(isOwned: state.isOwned)
         let price = EconomyManager.shared.cheaperBundle(for: unowned, in: profile)?.quote.completionPrice
             ?? EconomyManager.shared.cosmeticItemsPrice(unowned, in: profile)
-        return VStack(spacing: 6) {
-            HStack(spacing: 10) {
-                StudioActionButton(title: "Equip owned", systemImage: "checkmark.circle.fill",
-                                   color: StudioStyle.green) {
-                    let equipped = model.equipOwned(isOwned: isOwned) { EconomyManager.shared.equipCosmetic($0) }
-                    equipNote = unowned.isEmpty
-                        ? "Equipped. Your next game uses this look."
-                        : "Equipped \(equipped.count) owned item\(equipped.count == 1 ? "" : "s"). Locked items stay as they were."
-                }
-                .accessibilityHint("Applies only the items you own")
-                if !unowned.isEmpty {
-                    if flow.purchasesAvailable {
-                        StudioActionButton(title: "Unlock \(unowned.count) item\(unowned.count == 1 ? "" : "s") · \(price) \u{1FA99}",
-                                           systemImage: "lock.open.fill",
-                                           color: spendable >= price ? StudioStyle.gold : .gray) {
-                            flow.requestItems(unowned, profile: profile, spendable: spendable)
-                        }
-                        .disabled(flow.isPurchasing)
-                        .accessibilityLabel("Unlock \(unowned.count) items for \(price) coins")
-                    } else {
-                        StudioPreviewOnlyLabel()
+        let equipButton = StudioActionButton(title: "Equip owned", systemImage: "checkmark.circle.fill",
+                                             color: StudioStyle.green, expand: isLarge) {
+            let equipped = model.equipOwned(isOwned: state.isOwned) { EconomyManager.shared.equipCosmetic($0) }
+            equipNote = unowned.isEmpty
+                ? "Equipped. Your next game uses this look."
+                : "Equipped \(equipped.count) owned item\(equipped.count == 1 ? "" : "s"). Locked items stay as they were."
+        }
+        .accessibilityHint("Applies only the items you own")
+        let unlockTitle = "Unlock \(unowned.count) item\(unowned.count == 1 ? "" : "s")"
+        let unlock = Group {
+            if !unowned.isEmpty {
+                if flow.purchasesAvailable {
+                    StudioActionButton(title: unlockTitle, systemImage: "lock.open.fill",
+                                       color: state.spendable >= price ? StudioStyle.gold : .gray,
+                                       expand: isLarge, coins: price) {
+                        flow.requestItems(unowned, profile: profile, spendable: spendable)
                     }
+                    .disabled(flow.isPurchasing)
+                    .accessibilityLabel("\(unlockTitle), \(CoinFormat.coins(price))")
+                } else {
+                    StudioPreviewOnlyLabel()
                 }
+            }
+        }
+        return VStack(spacing: 6) {
+            if isLarge {
+                VStack(spacing: 8) { equipButton; unlock }
+            } else {
+                HStack(spacing: 10) { equipButton; unlock }
             }
             if model.hasChanges {
                 Button("Back to my equipped look") { model.resetDraft() }
                     .font(.caption.weight(.semibold))
                     .foregroundColor(.white.opacity(0.5))
-                    .frame(minHeight: 32)
+                    .frame(minHeight: 44)
             }
         }
         .padding(.horizontal, 16)

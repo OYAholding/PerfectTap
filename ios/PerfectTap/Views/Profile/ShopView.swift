@@ -197,13 +197,13 @@ struct ShopView: View {
     private var balanceRow: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "dollarsign.circle.fill")
+                Image(systemName: StudioStyle.coinSymbol)   // shared with every Studio price (QA-19)
                     .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
-                Text("\(spendable) coins")
+                Text(CoinFormat.coins(spendable))
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(Color(red: 0.98, green: 0.73, blue: 0.26))
                 if economyStatus.pendingCoins > 0 {
-                    Text("+\(economyStatus.pendingCoins) pending")
+                    Text("+\(CoinFormat.string(economyStatus.pendingCoins)) pending")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.5))
                 }

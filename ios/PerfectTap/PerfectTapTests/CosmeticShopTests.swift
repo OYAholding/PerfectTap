@@ -411,4 +411,147 @@ final class CosmeticShopTests: XCTestCase {
         model.resetDraft()
         XCTAssertEqual(model.item(for: .lifeIcon).id, CosmeticCatalog.defaultItemID(for: .lifeIcon))
     }
+
+    // MARK: QA-08 — preview audio = gameplay audio
+
+    /// The sound gameplay's policy picks for a GOOD tap, as a previewable event.
+    private func gameplayGoodEvent(packID: String) -> CosmeticEvent {
+        switch CosmeticAudioPolicy.cue(for: TapSoundOutcome(accuracy: .good), packID: packID) {
+        case .pack(let event): return event
+        case .tone(let tone):
+            XCTAssertEqual(tone, .good)
+            return .good   // previewSound(.good) plays the classic GOOD tone
+        case .silent: XCTFail("a GOOD tap is never silent"); return .tap
+        }
+    }
+
+    func testPreviewTapPlaysWhatAGoodTapPlaysForEveryPack() {
+        XCTAssertFalse(SoundPackCatalog.all.isEmpty)
+        for pack in SoundPackCatalog.all {
+            let expected = gameplayGoodEvent(packID: pack.id)
+            XCTAssertEqual(CosmeticPreviewModel.soundEvent(forPreview: .tap, packID: pack.id), expected, pack.id)
+            XCTAssertEqual(expected, .good, "\(pack.id): a GOOD tap plays the pack's good sound")
+            for event in CosmeticEvent.allCases {
+                XCTAssertNotEqual(CosmeticPreviewModel.soundEvent(forPreview: event, packID: pack.id), .tap,
+                                  "\(pack.id) \(event): the preview never plays the unused tap sound")
+            }
+        }
+    }
+
+    func testPreviewTapButtonFiresGoodEffectSoundAndHaptic() {
+        var sounds: [(CosmeticEvent, String)] = []
+        var haptics: [CosmeticEvent] = []
+        let model = CosmeticPreviewModel(start: .default, playSound: { sounds.append(($0, $1)) }, stopSound: {},
+                                         playHaptic: { event, _ in haptics.append(event) })
+        model.tryCollection(CosmeticCatalog.collection(id: "quack_attack")!)
+        sounds.removeAll(); haptics.removeAll()
+
+        model.tap()
+        XCTAssertEqual(sounds.map(\.0), [.good])
+        XCTAssertEqual(sounds.map(\.1), ["quack_attack"])
+        XCTAssertEqual(haptics, [.good])
+        XCTAssertEqual(model.trigger?.event, .good, "Tap Effect fires as on a GOOD tap")
+
+        // Picking a Tap Effect previews it as a GOOD tap too (not `.tap`).
+        model.select(item("boom_mode.tapEffect"))
+        XCTAssertEqual(model.trigger?.event, .good)
+    }
+
+    func testPreviewMomentButtonsMatchGameplayPolicy() {
+        let themed: [CosmeticEvent: CosmeticEvent] = [.good: .good, .great: .great, .perfect: .perfect,
+                                                      .miss: .miss, .lifeLost: .lifeLost, .gameOver: .gameOver]
+        for (moment, expected) in themed {
+            XCTAssertEqual(CosmeticPreviewModel.soundEvent(forPreview: moment, packID: "boom_mode"), expected, "\(moment)")
+        }
+        // Classic: a lost life sounds like the classic miss; game over is silent.
+        XCTAssertEqual(CosmeticPreviewModel.soundEvent(forPreview: .lifeLost, packID: "default"), .miss)
+        XCTAssertNil(CosmeticPreviewModel.soundEvent(forPreview: .gameOver, packID: "default"))
+        XCTAssertEqual(CosmeticPreviewModel.soundEvent(forPreview: .great, packID: "default"), .great)
+
+        var sounds: [CosmeticEvent] = []
+        let model = CosmeticPreviewModel(start: .default, playSound: { e, _ in sounds.append(e) }, stopSound: {},
+                                         playHaptic: { _, _ in })
+        model.fire(.gameOver)
+        XCTAssertTrue(sounds.isEmpty, "classic game over plays nothing, as in gameplay")
+        model.loseLife()
+        XCTAssertEqual(sounds, [.miss])
+        XCTAssertEqual(model.trigger?.event, .lifeLost)
+    }
+
+    // MARK: QA-19 — one coin formatter
+
+    func testCoinFormatterGroupsThousands() {
+        let en = Locale(identifier: "en_US")
+        XCTAssertEqual(CoinFormat.string(1_100, locale: en), "1,100")
+        XCTAssertEqual(CoinFormat.string(300, locale: en), "300")
+        XCTAssertEqual(CoinFormat.string(0, locale: en), "0")
+        XCTAssertEqual(CoinFormat.string(1_234_567, locale: en), "1,234,567")
+        XCTAssertEqual(CoinFormat.coins(1_620, locale: en), "1,620 coins")
+        XCTAssertEqual(CoinFormat.coins(1, locale: en), "1 coin")
+        XCTAssertEqual(CoinFormat.string(1_100), CoinFormat.string(1_100, locale: .current))
+    }
+
+    func testBundleAccessibilityLabelReadsNaturally() {
+        let quote = economy.bundleQuote(quack)
+        XCTAssertEqual(studioBundleAccessibilityLabel(quote),
+                       "Unlock bundle, \(CoinFormat.coins(1_100)), \(CoinFormat.string(1_620)) if bought separately")
+        setOwned([duckButtonID])
+        XCTAssertEqual(studioBundleAccessibilityLabel(economy.bundleQuote(quack)),
+                       "Complete set, \(CoinFormat.coins(896)), \(CoinFormat.string(1_320)) if bought separately")
+    }
+
+    func testStudioSourcesUseTheShopCoinGlyphNotTheEmoji() throws {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Views/Profile/CosmeticStudio")
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path), !files.isEmpty else {
+            throw XCTSkip("sources not readable from the test host: \(dir.path)")
+        }
+        for name in files where name.hasSuffix(".swift") {
+            let source = try String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8)
+            XCTAssertFalse(source.contains("\\u{1FA99}") || source.contains("\u{1FA99}"), "\(name) uses the coin emoji")
+        }
+        XCTAssertEqual(StudioStyle.coinSymbol, "dollarsign.circle.fill", "same glyph as the shop balance row")
+    }
+
+    // MARK: QA-17 — per-render state computed once
+
+    func testRenderStateLooksUpEachItemOnceAndMatchesEconomy() {
+        setOwned([duckButtonID, pawLivesID, "quack_attack.tapSound"])
+        economy.equipCosmetic(item(duckButtonID))
+        economy.equipCosmetic(item(pawLivesID))
+        defer { CosmeticLoadoutStore.shared.equip(CosmeticCatalog.defaultItem(for: .tapButton))
+                CosmeticLoadoutStore.shared.equip(CosmeticCatalog.defaultItem(for: .lifeIcon)) }
+        let p = profile()
+        var ownedLookups = 0
+        var priceLookups = 0
+        let state = CosmeticStudioRenderState(loadout: CosmeticLoadoutStore.shared.loadout, spendable: 500,
+                                              isOwned: { ownedLookups += 1; return EconomyManager.isOwned($0, in: p) },
+                                              price: { priceLookups += 1; return ShopItem.cosmeticPrice($0) })
+        let nonDefault = CosmeticCatalog.items.filter { !$0.isDefault }.count
+        XCTAssertLessThanOrEqual(ownedLookups, CosmeticCatalog.items.count, "one ownership lookup per item at most")
+        XCTAssertEqual(priceLookups, nonDefault, "one price lookup per purchasable item")
+
+        // Reading every card (as a render does) performs no further lookups.
+        for item in CosmeticCatalog.items {
+            let card = state.card(for: item)
+            XCTAssertEqual(card.owned, economy.isCosmeticOwned(item, in: p), item.id)
+            XCTAssertEqual(card.equipped, economy.isCosmeticEquipped(item, in: p), item.id)
+            XCTAssertEqual(card.price, ShopItem.cosmeticPrice(item.id), item.id)
+            XCTAssertEqual(card.affordable, 500 >= card.price, item.id)
+        }
+        for bundle in CosmeticCatalog.bundles {
+            XCTAssertEqual(state.quote(for: bundle), economy.bundleQuote(bundle, in: p), bundle.id)
+        }
+        XCTAssertLessThanOrEqual(ownedLookups, CosmeticCatalog.items.count)
+        XCTAssertEqual(priceLookups, nonDefault)
+
+        XCTAssertTrue(state.card(for: item(duckButtonID)).equipped)
+        XCTAssertEqual(state.card(for: item(duckButtonID)).accessibilityValue, "Equipped")
+        XCTAssertEqual(state.card(for: item("quack_attack.tapSound")).accessibilityValue, "Owned")
+        XCTAssertEqual(state.card(for: CosmeticCatalog.defaultItem(for: .tapButton)).accessibilityValue, "Free",
+                       "Classic is owned and not equipped while the duck button is")
+        let locked = state.card(for: item("boom_mode.tapButton"))
+        XCTAssertEqual(locked.accessibilityValue,
+                       "Locked, \(CoinFormat.coins(locked.price))" + (locked.affordable ? "" : ", not enough coins"))
+    }
 }

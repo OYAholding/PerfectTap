@@ -9,6 +9,9 @@ enum StudioStyle {
     static let purple = Color(red: 0.59, green: 0.28, blue: 0.98)
     static let card = Color.white.opacity(0.04)
     static let stroke = Color.white.opacity(0.08)
+    /// The coin glyph of the shop header balance row (`ShopView.balanceRow`):
+    /// every Studio price uses it (QA-19), never the coin emoji (U+1FA99).
+    static let coinSymbol = "dollarsign.circle.fill"
 
     static func rarityColor(_ rarity: ShopRarity) -> Color {
         switch rarity {
@@ -22,6 +25,50 @@ enum StudioStyle {
     static func palette(_ colors: [CosmeticRGBA], fallback: [Color] = [purple, Color(red: 0.22, green: 0.87, blue: 0.98)]) -> [Color] {
         let mapped = colors.map(\.color)
         return mapped.count >= 2 ? mapped : (mapped.isEmpty ? fallback : mapped + mapped)
+    }
+}
+
+// MARK: - Coins (QA-19)
+
+/// The one number formatter for coin amounts in the shop: grouping separators
+/// ("1,100" in English), no decimals. Used by every Studio price, the Studio
+/// action bars, the Preview Studio unlock bar, purchase alerts and the shop
+/// balance row.
+enum CoinFormat {
+    private static let currentLocaleFormatter = makeFormatter(.current)
+
+    private static func makeFormatter(_ locale: Locale) -> NumberFormatter {
+        let f = NumberFormatter()
+        f.locale = locale
+        f.numberStyle = .decimal
+        f.usesGroupingSeparator = true
+        f.maximumFractionDigits = 0
+        return f
+    }
+
+    /// "1,100" (grouped number only).
+    static func string(_ amount: Int, locale: Locale? = nil) -> String {
+        let formatter = locale.map(makeFormatter) ?? currentLocaleFormatter
+        return formatter.string(from: NSNumber(value: amount)) ?? String(amount)
+    }
+
+    /// "1,100 coins" / "1 coin" — for alerts and VoiceOver, where no glyph can be drawn.
+    static func coins(_ amount: Int, locale: Locale? = nil) -> String {
+        "\(string(amount, locale: locale)) \(amount == 1 ? "coin" : "coins")"
+    }
+}
+
+/// Coin glyph + grouped amount. VoiceOver reads "1,100 coins".
+struct StudioCoinAmount: View {
+    let amount: Int
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: StudioStyle.coinSymbol)
+            Text(CoinFormat.string(amount))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(CoinFormat.coins(amount))
     }
 }
 
@@ -70,11 +117,14 @@ struct StudioBadge: View {
     let text: String
     var systemImage: String? = nil
     var color: Color
+    /// Appends the coin glyph + formatted amount (price badges).
+    var coins: Int? = nil
 
     var body: some View {
         HStack(spacing: 3) {
             if let systemImage { Image(systemName: systemImage) }
-            Text(text)
+            if !text.isEmpty { Text(text) }
+            if let coins { StudioCoinAmount(amount: coins) }
         }
         .font(.caption2.weight(.black))
         .foregroundColor(color)
@@ -92,14 +142,27 @@ struct StudioActionButton: View {
     var foreground: Color = .black
     var filled: Bool = true
     var expand: Bool = false
+    /// Appends " · <coin> 1,100" to the title (price buttons).
+    var coins: Int? = nil
     let action: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 if let systemImage { Image(systemName: systemImage) }
-                Text(title).lineLimit(1).minimumScaleFactor(0.75)
+                // At accessibility sizes wrap instead of shrinking to an unreadable size.
+                Text(title)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.75)
+                if let coins {
+                    Text("·")
+                    StudioCoinAmount(amount: coins).fixedSize()
+                }
             }
+            .multilineTextAlignment(.center)
+            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
             .font(.footnote.weight(.black))
             .foregroundColor(filled ? foreground : color)
             .padding(.horizontal, 12)
@@ -114,8 +177,12 @@ struct StudioActionButton: View {
 struct StudioDebugPriceNote: View {
     var body: some View {
         #if DEBUG
-        Text("DEBUG: proposed prices (unapproved, docs/cosmetics/SHOP_CATALOG_PROPOSAL.md)")
+        // Capped size (QA-20): a developer note must not take a whole screen at
+        // accessibility text sizes.
+        Text("DEBUG · proposed prices, unapproved (SHOP_CATALOG_PROPOSAL.md)")
             .font(.caption2.weight(.semibold))
+            .dynamicTypeSize(...DynamicTypeSize.large)
+            .lineLimit(2)
             .foregroundColor(.orange.opacity(0.85))
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel("Debug build: proposed prices, not approved")
